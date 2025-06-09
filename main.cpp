@@ -35,27 +35,28 @@ int main()
 	Input input;
 	input.init(window);
 
+	// Initialise the UI manager // We dont have any ui to manage yet
 	UIManager ui;
 	ToolState toolState;
 
 	// Initialise cells
 	CellManager cellManager;
-	for (int i = 0; i < 1000; i++)
-	{
-		// Add a cell with random position, velocity, mass and radius
-		cellManager.addCell(
-			glm::vec3(rand() % 100 - 50, rand() % 100 - 50, rand() % 100 - 50), // Random position
-			glm::vec3(rand() % 10 - 5, rand() % 10 - 5, rand() % 10 - 5), // Random velocity
-			static_cast<float>(rand() % 10 + 1), // Random mass between 1 and 10
-			static_cast<float>(rand() % 5 + 1) // Random radius between 1 and 5
-		);
-	}
-	//cellManager.addCell(
-	//	glm::vec3(0.0f, 0.0f, 0.0f), // Position
-	//	glm::vec3(0.0), // Velocity
-	//	1.0f, // Mass
-	//	1.0f // Radius
-	//);
+	//for (int i = 0; i < 1000; i++)
+	//{
+	//	// Add a cell with random position, velocity, mass and radius
+	//	cellManager.addCell(
+	//		glm::vec3(rand() % 100 - 50, rand() % 100 - 50, rand() % 100 - 50), // Random position
+	//		glm::vec3(rand() % 10 - 5, rand() % 10 - 5, rand() % 10 - 5), // Random velocity
+	//		static_cast<float>(rand() % 10 + 1), // Random mass between 1 and 10
+	//		static_cast<float>(rand() % 5 + 1) // Random radius between 1 and 5
+	//	);
+	//}
+	cellManager.addCell(
+		glm::vec3(0.0f), // Position
+		glm::vec3(0.0), // Velocity
+		1.0f, // Mass
+		1.0f // Radius
+	);
 
 	// Main while loop
 	while (!glfwWindowShouldClose(window))

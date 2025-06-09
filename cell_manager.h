@@ -95,8 +95,8 @@ struct CellManager {
                 float minDistance = radii[i] + radii[j];
                 if (distance < minDistance) {
 					// Collision detected, resolve it
+					force += delta * (minDistance - distance); // Push apart proportional to the overlap
                 }
-            	force += -delta / (distance * distance);
 			}
             accelerations[i] += force / masses[i]; // Apply force to cell i
         }
