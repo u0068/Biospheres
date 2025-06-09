@@ -1,0 +1,8 @@
+28/05/2025:
+Start of the project. Initial setup of the repository and basic structure.
+
+29/05/2025:
+A bit of cleanup.
+Made fullscreen quad rendering work with a shader.
+
+30/05/2025:
