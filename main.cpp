@@ -16,6 +16,7 @@
 #include "fullscreen_quad.h"
 #include "input.h"
 #include "ui_manager.h"
+#include "camera.h"
 
 //// If you're a dev, please help me I have no idea what im doing
 
@@ -31,14 +32,15 @@ int main()
 	Shader cellShader("shaders/default.vert", "shaders/cells.frag");
 
 	const ImGuiIO& io = initImGui(window); // This also initialises ImGui io
-
 	Input input;
 	input.init(window);
+
+	// Initialise the camera
+	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f)); // Start further back to see the cell
 
 	// Initialise the UI manager // We dont have any ui to manage yet
 	UIManager ui;
 	ToolState toolState;
-
 	// Initialise cells
 	CellManager cellManager;
 	//for (int i = 0; i < 1000; i++)
@@ -47,8 +49,7 @@ int main()
 	//	cellManager.addCell(
 	//		glm::vec3(rand() % 100 - 50, rand() % 100 - 50, rand() % 100 - 50), // Random position
 	//		glm::vec3(rand() % 10 - 5, rand() % 10 - 5, rand() % 10 - 5), // Random velocity
-	//		static_cast<float>(rand() % 10 + 1), // Random mass between 1 and 10
-	//		static_cast<float>(rand() % 5 + 1) // Random radius between 1 and 5
+	//		static_cast<float>(rand() % 10 + 1), // Random mass between 1 and 10	//		static_cast<float>(rand() % 5 + 1) // Random radius between 1 and 5
 	//	);
 	//}
 	cellManager.addCell(
@@ -58,9 +59,17 @@ int main()
 		1.0f // Radius
 	);
 
+	// Timing variables
+	float deltaTime = 0.0f;
+	float lastFrame = 0.0f;
 	// Main while loop
 	while (!glfwWindowShouldClose(window))
 	{
+		// Calculate delta time
+		float currentFrame = static_cast<float>(glfwGetTime());
+		deltaTime = currentFrame - lastFrame;
+		lastFrame = currentFrame;
+
 		//// First we do some init stuff
 		/// Don't need to clear the framebuffer, as all pixels will be overwritten by the fullscreen quad
 		/// Tell OpenGL a new frame is about to begin
@@ -79,8 +88,8 @@ int main()
 
 		if (!ImGui::GetIO().WantCaptureMouse)
 		{
-			// Handle input that affects the simulation
-			//input.handleInput();
+			// Handle camera input
+			camera.processInput(input, deltaTime);
 		}
 
 
@@ -88,14 +97,14 @@ int main()
 		cellManager.updateCells();
 
 
-
 		//// Then we handle rendering
-		cellManager.renderCells(glm::vec2(width, height), cellShader);
+		cellManager.renderCells(glm::vec2(width, height), cellShader, camera);
 
 		//// Then we handle ImGUI
-		//ui.renderUI();
-		ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+		//ui.renderUI();		ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 		ImGui::Text("Frame time: %.3f ms", 1000.0f / ImGui::GetIO().Framerate);
+		ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", camera.getPosition().x, camera.getPosition().y, camera.getPosition().z);
+		ImGui::Text("Controls: WASD to move, Q/E to roll, Right-click+drag to look, Space/C for up/down");
 
 		ImGui::ShowDemoWindow();
 

@@ -1,17 +1,21 @@
 #include "cell_manager.h"
 #include "fullscreen_quad.h"
 #include "ui_manager.h"
+#include "camera.h"
 
-void CellManager::renderCells(glm::vec2 resolution, Shader cellShader)
+void CellManager::renderCells(glm::vec2 resolution, Shader cellShader, Camera& camera)
 {
     // Tell OpenGL which Shader Program we want to use
-    cellShader.use(); // This is just a wrapper for glUseProgram(shaderProgram.ID);
-
-    // First we need to set all the uniforms that the shader needs
+    cellShader.use(); // This is just a wrapper for glUseProgram(shaderProgram.ID);    // First we need to set all the uniforms that the shader needs
 	// Reminder that the naming convention for uniforms in glsl is u_camelCase and in C++ is snake_case
     cellShader.setInt("u_cellCount", cell_count);
     cellShader.setVec2("u_resolution", resolution);
-    // Later we will also need to set the camera position and view direction
+    
+    // Set camera uniforms
+    cellShader.setVec3("u_cameraPos", camera.getPosition());
+    cellShader.setVec3("u_cameraFront", camera.getFront());
+    cellShader.setVec3("u_cameraRight", camera.getRight());
+    cellShader.setVec3("u_cameraUp", camera.getUp());
 
     // Then we need to pack the cell data into a format suitable for the GPU
 	std::vector<GPUPackedCell> packedCells; // later maybe lets preallocate this vector to avoid reallocations. I will need to set up profiling first to see if it makes a difference

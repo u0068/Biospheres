@@ -18,6 +18,10 @@ out vec4 fragColor;
 
 uniform int u_cellCount;
 uniform vec2 u_resolution;
+uniform vec3 u_cameraPos;
+uniform vec3 u_cameraFront;
+uniform vec3 u_cameraRight;
+uniform vec3 u_cameraUp;
 
 const int MAX_ITERATIONS = 100;
 const int MAX_DISTANCE = 100;
@@ -54,16 +58,22 @@ vec3 getNormal(vec3 point) {
 }
 
 vec3 getRayDirection(vec2 uv) {
-    // Will need to adjust this for the camera setup later
+    // Calculate ray direction using camera vectors
     float fov = 1.0;
     vec2 ndc = (uv / u_resolution.y) * 2.0 - 1.0;
-    return normalize(vec3(ndc.x, ndc.y, -fov));
+    
+    // Apply aspect ratio correction
+    ndc.x *= u_resolution.x / u_resolution.y;
+    
+    // Create ray direction using camera basis vectors
+    vec3 rayDir = normalize(u_cameraFront * fov + u_cameraRight * ndc.x + u_cameraUp * ndc.y);
+    return rayDir;
 }
 
 // This runs for every pixel
 void main() {
     vec2 uv = gl_FragCoord.xy;
-    vec3 camPos = vec3(0.0, 0.0, 2.0);
+    vec3 camPos = u_cameraPos;
     vec3 rayDir = getRayDirection(uv);
 
     float t = 0.0; // This is the distance along the ray

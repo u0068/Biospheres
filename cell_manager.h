@@ -4,6 +4,9 @@
 #include "input.h"
 #include "glm/glm.hpp"
 
+// Forward declaration
+class Camera;
+
 //struct ToolState;
 
 struct GPUPackedCell {
@@ -34,11 +37,10 @@ struct CellManager {
     std::vector<float> masses;
 	std::vector<float> radii; // I might make radius depend on the mass later, but for now we will keep it simple
     int cell_count{0};
-
 	// We declare functions in the struct, but we will define them in the cell_manager.cpp file.
 	// This is because when a file is edited, the compiler will also have to recompile all the files that include it.
 	// So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
-    void renderCells(glm::vec2 resolution, Shader cellShader);
+    void renderCells(glm::vec2 resolution, Shader cellShader, class Camera& camera);
     void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius);
     void updateCells();
     void updateCellPositionsAndVelocities();

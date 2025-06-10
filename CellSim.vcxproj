@@ -159,8 +159,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-  </ItemDefinitionGroup>
-  <ItemGroup>
+  </ItemDefinitionGroup>  <ItemGroup>
+    <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
     <ClCompile Include="fullscreen_quad.cpp" />
     <ClCompile Include="glad.c" />
@@ -178,8 +178,8 @@
     <ClCompile Include="input.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="shader_class.cpp" />
-  </ItemGroup>
-  <ItemGroup>
+  </ItemGroup>  <ItemGroup>
+    <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="fullscreen_quad.h" />
