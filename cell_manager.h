@@ -4,6 +4,8 @@
 #include "input.h"
 #include "glm.hpp"
 #include <glad/glad.h>
+
+#include "config.h"
 #include "sphere_mesh.h"
 
 // Forward declaration
@@ -43,16 +45,16 @@ struct CellManager {
     int cell_count{ 0 };
 
     // Configuration
-    static const int MAX_CELLS = 10000;
-    static const int DEFAULT_CELL_COUNT = 100;
+    static constexpr int MAX_CELLS = config::MAX_CELLS;
+    static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
     float spawnRadius = 15.0f;  // Acts as both spawn area and containment barrier
 
     // Constructor and destructor
     CellManager();
     ~CellManager();
     // We declare functions in the struct, but we will define them in the cell_manager.cpp file.
-// This is because when a file is edited, the compiler will also have to recompile all the files that include it.
-// So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
+	// This is because when a file is edited, the compiler will also have to recompile all the files that include it.
+	// So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
     void initializeGPUBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);

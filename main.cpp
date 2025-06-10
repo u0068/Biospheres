@@ -24,16 +24,14 @@
 void checkGLError(const char* operation) {
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after " << operation << ": " << error << std::endl;
+        std::cerr << "OpenGL error after " << operation << ": " << error << "\n";
     }
 }
 
 // GLFW error callback
 void glfwErrorCallback(int error, const char* description) {
-    std::cerr << "GLFW Error " << error << ": " << description << std::endl;
+    std::cerr << "GLFW Error " << error << ": " << description << "\n";
 }
-
-//// If you're a dev, please help me I have no idea what im doing
 
 int main()
 {
@@ -56,7 +54,7 @@ int main()
 	UIManager uiManager;
 	// Initialise cells
 	CellManager cellManager;
-	cellManager.spawnCells(500); // For testing, spawn 500 cells
+	cellManager.spawnCells(1000);
 
 	// Timing variables
 	float deltaTime = 0.0f;
@@ -91,12 +89,12 @@ int main()
 		// Handle minimize/restore transitions
 		if (isMinimized && !wasMinimized) {
 			// Just became minimized
-			std::cout << "Window minimized, suspending rendering" << std::endl;
+			std::cout << "Window minimized, suspending rendering\n";
 			wasMinimized = true;
 			isCurrentlyMinimized = true;
 		} else if (!isMinimized && wasMinimized) {
 			// Just restored from minimize
-			std::cout << "Window restored, resuming rendering" << std::endl;
+			std::cout << "Window restored, resuming rendering\n";
 			wasMinimized = false;
 			isCurrentlyMinimized = false;
 			// Give the driver a moment to stabilize
@@ -155,7 +153,7 @@ int main()
 			checkGLError("glClear");
 		} catch (...) {
 			// If OpenGL operations fail, skip this frame
-			std::cerr << "OpenGL viewport/clear failed, skipping frame" << std::endl;
+			std::cerr << "OpenGL viewport/clear failed, skipping frame\n";
 			glfwPollEvents();
 			continue;
 		}
@@ -181,9 +179,9 @@ int main()
 		try {
 			cellManager.updateCells(deltaTime);
 		} catch (const std::exception& e) {
-			std::cerr << "Exception in cell simulation: " << e.what() << std::endl;
+			std::cerr << "Exception in cell simulation: " << e.what() << "\n";
 		} catch (...) {
-			std::cerr << "Unknown exception in cell simulation" << std::endl;
+			std::cerr << "Unknown exception in cell simulation\n";
 		}
 
 		//// Then we handle rendering
@@ -191,9 +189,9 @@ int main()
 			cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
 			checkGLError("renderCells");
 		} catch (const std::exception& e) {
-			std::cerr << "Exception in cell rendering: " << e.what() << std::endl;
+			std::cerr << "Exception in cell rendering: " << e.what() << "\n";
 		} catch (...) {
-			std::cerr << "Unknown exception in cell rendering" << std::endl;
+			std::cerr << "Unknown exception in cell rendering\n";
 		}//// Then we handle ImGUI
 		//ui.renderUI();
 		
@@ -270,7 +268,7 @@ int main()
 			glfwSwapBuffers(window);
 			checkGLError("glfwSwapBuffers");
 		} catch (const std::exception& e) {
-			std::cerr << "Exception in ImGui/buffer swap: " << e.what() << std::endl;
+			std::cerr << "Exception in ImGui/buffer swap: " << e.what() << "\n";
 			// Try to recover by just swapping buffers
 			try {
 				glfwSwapBuffers(window);
@@ -278,7 +276,7 @@ int main()
 				// If even buffer swap fails, just continue to next frame
 			}
 		} catch (...) {
-			std::cerr << "Unknown exception in ImGui/buffer swap" << std::endl;
+			std::cerr << "Unknown exception in ImGui/buffer swap\n";
 			// Try to recover by just swapping buffers
 			try {
 				glfwSwapBuffers(window);

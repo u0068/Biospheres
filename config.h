@@ -13,5 +13,8 @@ namespace config
 	constexpr int OPENGL_VERSION_MINOR{ 3 };
 	constexpr const char* GLSL_VERSION{"#version 430"};
 	constexpr const char* APPLICATION_NAME{ "Biospheres 2" };
+
+	constexpr int MAX_CELLS{ 50000 };
+	constexpr int DEFAULT_CELL_COUNT{ 1000 };
 };
 
