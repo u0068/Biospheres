@@ -35,29 +35,18 @@ struct ComputeCell {
 };
 
 struct CellManager {
-	// GPU-based cell management using compute shaders
-	// This replaces the CPU-based vectors with GPU buffer objects
-	// The compute shaders handle physics calculations and position updates
-      // GPU buffer objects
-    GLuint cellBuffer = 0;           // SSBO for compute cell data
-    GLuint instanceBuffer = 0;       // VBO for instance rendering data
-    
-    // Sphere mesh for instanced rendering
-    SphereMesh sphereMesh;
-    
-    // Asynchronous readback system for performance monitoring
-    GLuint readbackBuffer = 0;       // Buffer for async GPU->CPU data transfer
-    GLsync readbackFence = nullptr;  // Sync object for async operations
-    bool readbackInProgress = false;
-    float readbackCooldown = 0.0f;   // Timer to limit readback frequency
-    static constexpr float READBACK_INTERVAL = 0.5f; // Readback every 0.5 seconds
-      // Compute shaders
-    Shader* physicsShader = nullptr;
-    Shader* updateShader = nullptr;
-    Shader* extractShader = nullptr;  // For extracting instance data efficiently
-    
-    // CPU-side storage for initialization and debugging
-    std::vector<ComputeCell> cpuCells;
+	// Rather than having a class for each cell, we will have a single CellManager class that manages all cells.
+	// That way we can leverage the power of data oriented design to optimize our rendering and updates.
+	// This is because when the cpu loads data into the cache, it will load a whole cache line at once, which is usually 64 bytes.
+	// So for example when it loads the position of a cell, it will also load the positions of then next few cells as well.
+	// So it won't have to load the positions of each cell one by one, which would be very inefficient.
+	// On second thought, since we are doing as much as possible on the GPU, we might not need to worry about this as much.
+	// So at some point we might want to switch to a class for each cell, but for now we will keep it like this because it's not causing any issues.
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> velocities;
+    std::vector<glm::vec3> accelerations;
+    std::vector<float> masses;
+	std::vector<float> radii; // I might make radius depend on the mass later, but for now we will keep it simple
     int cell_count{0};
     
     // Configuration
