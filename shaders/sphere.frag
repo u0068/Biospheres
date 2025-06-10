@@ -27,19 +27,13 @@ void main() {
     // Simple lighting calculation
     vec3 lightDir = normalize(uLightDir);
     float lambertian = max(0.1, dot(normal, lightDir));
-    
-    // Add some specular reflection
+      // Add some specular reflection
     vec3 viewDir = normalize(vCameraPos - vWorldPos);
     vec3 reflectDir = reflect(-lightDir, normal);
     float specular = pow(max(0.0, dot(viewDir, reflectDir)), 32.0) * 0.3;
     
-    // Color based on position for variety (you can change this to use instance ID later)
-    float hash = sin(vInstanceCenter.x * 0.1) * sin(vInstanceCenter.y * 0.1) * sin(vInstanceCenter.z * 0.1);
-    vec3 baseColor = vec3(
-        0.5 + 0.5 * sin(hash),
-        0.5 + 0.5 * sin(hash + 2.0),
-        0.5 + 0.5 * sin(hash + 4.0)
-    );
+    // Base color is white by default
+    vec3 baseColor = vec3(0.9, 0.9, 0.9); // Slightly off-white for better lighting visibility
     
     // Highlight selected cell
     if (isSelected) {

@@ -519,6 +519,12 @@ void CellManager::updateCellData(int index, const ComputeCell& newData) {
             selectedCell.cellData = newData;
         }
         
-        updateGPUBuffers();
+        // Update only the specific cell in the GPU buffer (like dragSelectedCell does)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
+                       index * sizeof(ComputeCell), 
+                       sizeof(ComputeCell), 
+                       &cpuCells[index]);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 }
