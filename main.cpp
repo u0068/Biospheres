@@ -14,7 +14,6 @@
 #include "glfw_helpers.h"
 #include "imgui_helpers.h"
 #include "config.h"
-#include "fullscreen_quad.h"
 #include "input.h"
 #include "ui_manager.h"
 #include "camera.h"
@@ -26,8 +25,6 @@ int main()
 	initGLFW();
 	GLFWwindow* window = createWindow();
 	initGLAD(window);
-	// This is the quad that we will render everything on
-	initFullscreenQuad();
 	// Load the sphere shader for instanced rendering
 	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 
@@ -180,7 +177,6 @@ int main()
 	}
 
 	// destroy and terminate everything before ending the ID
-	destroyFullscreenQuad();
 	shutdownImGui();
 	glfwDestroyWindow(window);
 	glfwTerminate();

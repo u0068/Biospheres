@@ -159,10 +159,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-  </ItemDefinitionGroup>  <ItemGroup>
+  </ItemDefinitionGroup>
+  <ItemGroup>
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
-    <ClCompile Include="fullscreen_quad.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
@@ -174,15 +174,16 @@
     <ClCompile Include="imgui\imgui_impl_glfw.cpp" />
     <ClCompile Include="imgui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="imgui\imgui_tables.cpp" />
-    <ClCompile Include="imgui\imgui_widgets.cpp" />    <ClCompile Include="input.cpp" />
+    <ClCompile Include="imgui\imgui_widgets.cpp" />
+    <ClCompile Include="input.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="shader_class.cpp" />
     <ClCompile Include="sphere_mesh.cpp" />
-  </ItemGroup><ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
-    <ClInclude Include="fullscreen_quad.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
     <ClInclude Include="ui_manager.h" />
@@ -196,11 +197,13 @@
     <ClInclude Include="imgui\imstb_rectpack.h" />
     <ClInclude Include="imgui\imstb_textedit.h" />
     <ClInclude Include="imgui\imstb_truetype.h" />
-    <ClInclude Include="input.h" />    <ClInclude Include="Libraries\include\glad\glad.h" />
+    <ClInclude Include="input.h" />
+    <ClInclude Include="Libraries\include\glad\glad.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="shader_class.h" />
     <ClInclude Include="sphere_mesh.h" />
-  </ItemGroup>  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
     <None Include="shaders\cell_physics.comp" />
     <None Include="shaders\cell_update.comp" />
     <None Include="shaders\cells.frag" />
