@@ -52,7 +52,7 @@ int main()
 	//	);
 	//}
 	cellManager.addCell(
-		glm::vec3(0.0f), // Position
+		glm::vec3(0.0, 0.0, 0.0), // Position
 		glm::vec3(0.0), // Velocity
 		1.0f, // Mass
 		1.0f // Radius

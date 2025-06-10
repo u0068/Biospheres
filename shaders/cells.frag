@@ -2,6 +2,10 @@
 
 struct Cell 
 {
+	/// Reminder that vec3 is 12 bytes in c++, but it is 16 bytes in GLSL.
+	/// and the struct size must be a multiple of 16 bytes for optimal performance on the GPU.
+    /// So some padding may be necessary.
+    /// The misalignment due to incorrect padding will lead to strange errors as data is misinterpreted.
                             // Base Alignment	//Aligned Offset
     vec4 positionAndRadius; // 16 bytes         // 0 bytes      // x, y, z, radius
 };
@@ -20,22 +24,22 @@ const int MAX_DISTANCE = 100;
 const float MIN_DISTANCE = 0.001;
 
 
-float sphereSDF(vec3 p, vec3 center, float radius) {
+float sphereSDF(vec3 point, vec3 center, float radius) {
     // Signed distance function for a sphere
     // Returns the distance from point p to the surface of the sphere
     // If the point is inside the sphere, it returns a negative value
-    return length(p - center) - radius;
+    return length(point - center) - radius;
 }
 
-float sceneSDF(vec3 p) {
-    float d = 9999.0;
+float sceneSDF(vec3 point) {
+    float dist = 9999.0;
     // Iterate through all cells to find the minimum distance to any cell
     for (int i = 0; i < u_cellCount; ++i) {
         vec3 center = cells[i].positionAndRadius.xyz;
         float r = cells[i].positionAndRadius.w;
-        d = min(d, sphereSDF(p, center, r));
+        dist = min(dist, sphereSDF(point, center, r)); // This can be changed to smooth min to make the cells blend together
     }
-    return d;
+    return dist;
 }
 
 vec3 getNormal(vec3 point) {
@@ -50,7 +54,7 @@ vec3 getNormal(vec3 point) {
 }
 
 vec3 getRayDirection(vec2 uv) {
-    // Adjust this for your camera setup
+    // Will need to adjust this for the camera setup later
     float fov = 1.0;
     vec2 ndc = (uv / u_resolution.y) * 2.0 - 1.0;
     return normalize(vec3(ndc.x, ndc.y, -fov));
@@ -66,10 +70,10 @@ void main() {
     float dist; // Distance from the ray to the scene SDF
     float closestDist = 9999.0; // Initialize to a large value
     for (int i = 0; i < MAX_ITERATIONS; ++i) {
-        vec3 p = camPos + rayDir * t;
-        dist = sceneSDF(p);
+        vec3 point = camPos + rayDir * t; // Calculate the point along the ray
+        dist = sceneSDF(point);
         if (dist < MIN_DISTANCE) { // If the distance is very small, we are close to the surface
-            vec3 normal = getNormal(p);
+            vec3 normal = getNormal(point);
             fragColor = vec4(normal * 0.5 + 0.5, 1.0); // Color based on normal
             //fragColor = vec4(1.0, 0.5, 0.5, 1.0);
             return;
@@ -80,5 +84,5 @@ void main() {
         if (t > MAX_DISTANCE) break;
     }
 
-    fragColor = vec4(1/(10*closestDist + 1.)); // Fallback color if no surface is hit. For now, just a gradient based on closest approach to the surface
+    fragColor = vec4(1/(100*closestDist + 1.)); // Fallback color if no surface is hit. For now, just a gradient based on closest approach to the surface
 }

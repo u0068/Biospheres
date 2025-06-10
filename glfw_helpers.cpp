@@ -7,8 +7,7 @@
 
 void initGLFW()
 {
-	// TO-DO: Add conditional compilation for debug context
-	//// Request debug context
+	//// Request debug context // It seems to not be necessary for now, glDebugOutput is sufficient
 	//glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 
     //int flags; glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
@@ -30,14 +29,12 @@ void initGLFW()
 	// Tell GLFW we are using the CORE profile
 	// So that means we only have the modern functions
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-
 }
 
 GLFWwindow* createWindow()
 {
 	// Create a GLFWwindow object
-	GLFWwindow* window = glfwCreateWindow(config::INITIAL_WINDOW_WIDTH, config::INITIAL_WINDOW_HEIGHT, "Biospheres 2", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(config::INITIAL_WINDOW_WIDTH, config::INITIAL_WINDOW_HEIGHT, config::APPLICATION_NAME, NULL, NULL);
 	// Error check if the window fails to create
 	if (window == NULL)
 	{

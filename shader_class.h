@@ -3,8 +3,7 @@
 #include<glad/glad.h>
 #include<string>
 #include<iostream>
-#include <vec2.hpp>
-#include <vector>
+#include <glm.hpp>
 
 
 std::string get_file_contents(const char* filename);

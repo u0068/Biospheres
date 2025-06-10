@@ -166,7 +166,6 @@
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
-    <ClCompile Include="renderer.cpp" />
     <ClCompile Include="ui_manager.cpp" />
     <ClCompile Include="imgui_helpers.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
@@ -186,7 +185,6 @@
     <ClInclude Include="fullscreen_quad.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
-    <ClInclude Include="renderer.h" />
     <ClInclude Include="ui_manager.h" />
     <ClInclude Include="imgui_helpers.h" />
     <ClInclude Include="imgui\imconfig.h" />

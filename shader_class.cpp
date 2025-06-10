@@ -9,6 +9,8 @@ std::string get_file_contents(const char* filename)
 	std::ifstream file(filename, std::ios::binary);
 	if (file)
 	{
+		// Get the size of the file and read its contents into a string
+		// I don't remember the details of this code, but it works, and we will probably never need to change it
 		std::string contents;
 		file.seekg(0, std::ios::end);
 		contents.resize(file.tellg());
@@ -17,6 +19,7 @@ std::string get_file_contents(const char* filename)
 		file.close();
 		return(contents);
 	}
+	// If this point is reached, then the file could not be opened, so we throw an error
 	std::cout << "ERROR::SHADER::READING_FILE_FAILED: " << filename << "\n";
 	std::cout << "Make sure that the file path is correct!";
 	throw(errno);
@@ -47,7 +50,7 @@ Shader::Shader(const char* vertexFile, const char* fragmentFile)
 	if (!success)
 	{
 		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-		//Make sure there are no typos on the name
+		//Make sure there are no typos in the name!
 
 	}
 

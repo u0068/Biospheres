@@ -2,6 +2,7 @@
 #include "cell_manager.h"
 #include "imgui.h"
 
+// All of this is outdated and needs to be redone for 3D
 
 void UIManager::drawToolSelector(ToolState& toolState) {
     const char* tools[] = { "None", "Add", "Edit", "Move (UNIMPLEMENTED)" };

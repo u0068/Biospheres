@@ -20,6 +20,10 @@ bool Input::isMouseButtonPressed(int button)
     return glfwGetMouseButton(window, button) == GLFW_PRESS;
 }
 
+bool Input::isMouseJustPressed(int button) {
+	return currentMouseButtons[button] && !previousMouseButtons[button]; // Check if the button is currently pressed and was not pressed in the previous frame
+}
+
 glm::vec2 Input::getMousePosition(bool flip_y) // Flips Y axis for OpenGL coordinates
 {
     double x, y;
@@ -40,8 +44,4 @@ void Input::update() {
         previousMouseButtons[button] = currentMouseButtons[button];
         currentMouseButtons[button] = glfwGetMouseButton(window, button) == GLFW_PRESS;
     }
-}
-
-bool Input::isMouseJustPressed(int button) {
-    return currentMouseButtons[button] && !previousMouseButtons[button];
 }
