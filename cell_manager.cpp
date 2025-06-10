@@ -115,7 +115,7 @@ void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, fl
 }
 
 void CellManager::updateCells(float deltaTime) {
-    if (cell_count == 0) return;
+    if (cell_count == 0) return; 
 
     // Run physics computation on GPU
     runPhysicsCompute(deltaTime);

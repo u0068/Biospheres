@@ -66,13 +66,16 @@
     <ClCompile Include="glfw_helpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="fullscreen_quad.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="input.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ui_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="camera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sphere_mesh.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -122,9 +125,6 @@
     <ClInclude Include="glfw_helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="fullscreen_quad.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Libraries\include\glad\glad.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -135,6 +135,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="camera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sphere_mesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -151,11 +157,20 @@
     <None Include="shaders\test.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
-    <None Include="sphere.vert">
+    <None Include="shaders\sphere.vert">
       <Filter>Resource Files\shaders</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Text Include="devlog.txt" />
+    <None Include="shaders\cell_physics.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell_update.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\extract_instances.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\sphere.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
