@@ -25,6 +25,9 @@ struct ToolState
 class UIManager
 {
 public:
+    void renderCellInspector(CellManager& cellManager);
+    void renderSelectionInfo(CellManager& cellManager);
+    
 private:
     void drawToolSelector(ToolState& toolState);
     void drawToolSettings(ToolState& toolState, CellManager& cellManager);

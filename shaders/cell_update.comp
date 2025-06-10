@@ -19,12 +19,18 @@ layout(std430, binding = 0) restrict buffer CellBuffer {
 uniform float u_deltaTime;
 uniform int u_cellCount;
 uniform float u_damping;
+uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
     // Check bounds
     if (index >= u_cellCount) {
+        return;
+    }
+    
+    // Skip position updates for dragged cell - position is set directly by dragging
+    if (int(index) == u_draggedCellIndex) {
         return;
     }
     

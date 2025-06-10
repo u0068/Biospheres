@@ -33,9 +33,9 @@ int main()
 	input.init(window);
 	// Initialise the camera
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f)); // Start further back to see the cell
-
 	// Initialise the UI manager // We dont have any ui to manage yet
 	ToolState toolState;
+	UIManager uiManager;
 	// Initialise cells
 	CellManager cellManager;
 		// Add multiple cells for testing instanced rendering
@@ -106,11 +106,17 @@ int main()
 		// Take care of all GLFW events
 		glfwPollEvents();
 		input.update();
-
 		if (!ImGui::GetIO().WantCaptureMouse)
 		{
 			// Handle camera input
-			camera.processInput(input, deltaTime);
+			camera.processInput(input, deltaTime);			// Handle cell selection and dragging
+			glm::vec2 mousePos = input.getMousePosition(false); // Get raw screen coordinates
+			bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
+			bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
+			float scrollDelta = input.getScrollDelta();
+			
+			cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera, 
+			                           isLeftMousePressed, isLeftMouseDown, scrollDelta);
 		}
 
 		//// Then we handle cell simulation
@@ -119,6 +125,10 @@ int main()
 		//// Then we handle rendering
 		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);		//// Then we handle ImGUI
 		//ui.renderUI();
+		
+		// Cell Inspector and Selection UI
+		uiManager.renderCellInspector(cellManager);
+		uiManager.renderSelectionInfo(cellManager);
 		
 		// Performance Monitor with readable update rate
 		ImGui::Begin("Performance Monitor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
@@ -143,17 +153,29 @@ int main()
 		if (renderer) ImGui::Text("GPU: %s", renderer);
 		ImGui::Text("Total triangles: ~%d", 192 * cellManager.getCellCount());
 		ImGui::End();
-		
-		// Camera Controls
+				// Camera Controls
 		ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 		glm::vec3 camPos = camera.getPosition();
 		ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
 		ImGui::Separator();
-		ImGui::Text("Controls:");
+		ImGui::Text("Camera Controls:");
 		ImGui::BulletText("WASD - Move");
 		ImGui::BulletText("Q/E - Roll");
 		ImGui::BulletText("Space/C - Up/Down");
 		ImGui::BulletText("Right-click + Drag - Look");
+		ImGui::Separator();
+		ImGui::Text("Cell Interaction:");
+		ImGui::BulletText("Left-click - Select cell");
+		ImGui::BulletText("Left-click + Drag - Move selected cell");
+		ImGui::BulletText("Scroll Wheel - Adjust drag distance");
+		
+		// Show current selection info
+		if (cellManager.hasSelectedCell()) {
+			ImGui::Separator();
+			const auto& selection = cellManager.getSelectedCell();
+			ImGui::Text("Selected: Cell #%d", selection.cellIndex);
+			ImGui::Text("Drag Distance: %.1f", selection.dragDistance);
+		}
 		ImGui::End();
 
 		ImGui::ShowDemoWindow();

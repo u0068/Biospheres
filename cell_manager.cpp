@@ -2,6 +2,9 @@
 #include "camera.h"
 #include <iostream>
 #include <cassert>
+#include <cfloat>
+#include <cmath>
+#include <GLFW/glfw3.h>
 #include <gtc/matrix_transform.hpp>
 
 CellManager::CellManager() {
@@ -71,6 +74,18 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     cellShader.setMat4("uView", view);
     cellShader.setVec3("uCameraPos", camera.getPosition());
     cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
+    
+    // Set selection highlighting uniforms
+    if (selectedCell.isValid) {
+        glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndRadius);
+        float selectedRadius = selectedCell.cellData.positionAndRadius.w;
+        cellShader.setVec3("uSelectedCellPos", selectedPos);
+        cellShader.setFloat("uSelectedCellRadius", selectedRadius);
+    } else {
+        cellShader.setVec3("uSelectedCellPos", glm::vec3(-9999.0f)); // Invalid position
+        cellShader.setFloat("uSelectedCellRadius", 0.0f);
+    }
+    cellShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
 
     // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
     glEnable(GL_DEPTH_TEST);
@@ -156,6 +171,10 @@ void CellManager::runPhysicsCompute(float deltaTime) {
     physicsShader->setFloat("u_deltaTime", deltaTime);
     physicsShader->setInt("u_cellCount", cell_count);
     physicsShader->setFloat("u_damping", 0.98f);
+    
+    // Pass dragged cell index to skip its physics
+    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+    physicsShader->setInt("u_draggedCellIndex", draggedIndex);
 
     // Bind cell buffer
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
@@ -175,6 +194,10 @@ void CellManager::runUpdateCompute(float deltaTime) {
     updateShader->setFloat("u_deltaTime", deltaTime);
     updateShader->setInt("u_cellCount", cell_count);
     updateShader->setFloat("u_damping", 0.98f);
+    
+    // Pass dragged cell index to skip its position updates
+    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+    updateShader->setInt("u_draggedCellIndex", draggedIndex);
 
     // Bind cell buffer
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
@@ -211,5 +234,232 @@ void CellManager::spawnCells(int count) {
         float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
 
         addCell(position, velocity, mass, cellRadius);
+    }
+}
+
+// Cell selection and interaction implementation
+void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& screenSize, 
+                                  const Camera& camera, bool isMousePressed, bool isMouseDown, 
+                                  float scrollDelta) {
+    // Handle scroll wheel to adjust drag distance when cell is selected
+    if (selectedCell.isValid && scrollDelta != 0.0f) {
+        float scrollSensitivity = 2.0f;
+        selectedCell.dragDistance += scrollDelta * scrollSensitivity;
+        selectedCell.dragDistance = glm::clamp(selectedCell.dragDistance, 1.0f, 100.0f);
+        
+        // If we're dragging, update the cell position to maintain the new distance
+        if (isDraggingCell) {
+            glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+            glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
+            dragSelectedCell(newWorldPos);
+        }
+    }
+    
+    if (isMousePressed && !isDraggingCell) {
+        // Start new selection with improved raycasting
+        glm::vec3 rayOrigin = camera.getPosition();
+        glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+        
+        int selectedIndex = selectCellAtPosition(rayOrigin, rayDirection);
+        if (selectedIndex >= 0) {
+            selectedCell.cellIndex = selectedIndex;
+            selectedCell.cellData = cpuCells[selectedIndex];
+            selectedCell.isValid = true;
+            
+            // Calculate the distance from camera to the selected cell
+            glm::vec3 cellPosition = glm::vec3(selectedCell.cellData.positionAndRadius);
+            selectedCell.dragDistance = glm::distance(rayOrigin, cellPosition);
+            
+            // Calculate drag offset for smooth dragging
+            glm::vec3 mouseWorldPos = rayOrigin + rayDirection * selectedCell.dragDistance;
+            selectedCell.dragOffset = cellPosition - mouseWorldPos;
+            
+            isDraggingCell = true;
+            
+            // Debug output
+            std::cout << "Selected cell " << selectedIndex << " at distance " << selectedCell.dragDistance << std::endl;
+        } else {
+            clearSelection();
+        }
+    }
+    
+    if (isDraggingCell && isMouseDown && selectedCell.isValid) {
+        // Continue dragging at the maintained distance
+        glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+        glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
+        dragSelectedCell(newWorldPos + selectedCell.dragOffset);
+    }
+      if (!isMouseDown) {
+        if (isDraggingCell) {
+            endDrag();
+        }
+    }
+}
+
+int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
+    float closestDistance = FLT_MAX;
+    int closestCellIndex = -1;
+    
+    // Debug output for raycasting
+    std::cout << "Raycasting from (" << rayOrigin.x << ", " << rayOrigin.y << ", " << rayOrigin.z 
+              << ") in direction (" << rayDirection.x << ", " << rayDirection.y << ", " << rayDirection.z << ")" << std::endl;
+    
+    for (int i = 0; i < cell_count; i++) {
+        glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndRadius);
+        float cellRadius = cpuCells[i].positionAndRadius.w;
+        
+        float intersectionDistance;
+        if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance)) {
+            if (intersectionDistance < closestDistance && intersectionDistance > 0) {
+                closestDistance = intersectionDistance;
+                closestCellIndex = i;
+            }
+        }
+    }
+    
+    if (closestCellIndex >= 0) {
+        std::cout << "Found intersection with cell " << closestCellIndex << " at distance " << closestDistance << std::endl;
+    } else {
+        std::cout << "No cell intersections found" << std::endl;
+    }
+    
+    return closestCellIndex;
+}
+
+void CellManager::dragSelectedCell(const glm::vec3& newWorldPosition) {
+    if (!selectedCell.isValid) return;
+    
+    // Update CPU cell data
+    cpuCells[selectedCell.cellIndex].positionAndRadius.x = newWorldPosition.x;
+    cpuCells[selectedCell.cellIndex].positionAndRadius.y = newWorldPosition.y;
+    cpuCells[selectedCell.cellIndex].positionAndRadius.z = newWorldPosition.z;
+    
+    // Clear velocity when dragging to prevent conflicts with physics
+    cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
+    cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
+    cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
+    
+    // Update cached selected cell data
+    selectedCell.cellData = cpuCells[selectedCell.cellIndex];
+    
+    // Update GPU buffer immediately to ensure compute shaders see the new position
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
+                   selectedCell.cellIndex * sizeof(ComputeCell), 
+                   sizeof(ComputeCell), 
+                   &cpuCells[selectedCell.cellIndex]);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::clearSelection() {
+    selectedCell.cellIndex = -1;
+    selectedCell.isValid = false;
+    isDraggingCell = false;
+}
+
+void CellManager::endDrag() {
+    if (isDraggingCell && selectedCell.isValid) {
+        // Reset velocity to zero when ending drag to prevent sudden jumps
+        cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
+        cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
+        cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
+        
+        // Update the GPU buffer with the final state
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
+                       selectedCell.cellIndex * sizeof(ComputeCell), 
+                       sizeof(ComputeCell), 
+                       &cpuCells[selectedCell.cellIndex]);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
+    
+    isDraggingCell = false;
+}
+
+glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::vec2& screenSize, 
+                                        const Camera& camera) {
+    // Convert screen coordinates to normalized device coordinates (-1 to 1)
+    // Screen coordinates: (0,0) is top-left, (width,height) is bottom-right
+    // NDC coordinates: (-1,-1) is bottom-left, (1,1) is top-right
+    float x = (2.0f * mousePos.x) / screenSize.x - 1.0f;
+    float y = 1.0f - (2.0f * mousePos.y) / screenSize.y; // Convert from screen Y (top-down) to NDC Y (bottom-up)
+    
+    // Create projection matrix (matching the one used in rendering)
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
+                                          screenSize.x / screenSize.y, 
+                                          0.1f, 1000.0f);
+    
+    // Create view matrix
+    glm::mat4 view = camera.getViewMatrix();
+    
+    // Calculate inverse view-projection matrix
+    glm::mat4 inverseVP = glm::inverse(projection * view);
+    
+    // Create normalized device coordinate points for near and far planes
+    glm::vec4 rayClipNear = glm::vec4(x, y, -1.0f, 1.0f);
+    glm::vec4 rayClipFar = glm::vec4(x, y, 1.0f, 1.0f);
+    
+    // Transform to world space
+    glm::vec4 rayWorldNear = inverseVP * rayClipNear;
+    glm::vec4 rayWorldFar = inverseVP * rayClipFar;
+    
+    // Convert from homogeneous coordinates
+    rayWorldNear /= rayWorldNear.w;
+    rayWorldFar /= rayWorldFar.w;
+    
+    // Calculate ray direction
+    glm::vec3 rayDirection = glm::normalize(glm::vec3(rayWorldFar) - glm::vec3(rayWorldNear));
+    
+    return rayDirection;
+}
+
+bool CellManager::raySphereIntersection(const glm::vec3& rayOrigin, const glm::vec3& rayDirection,
+                                       const glm::vec3& sphereCenter, float sphereRadius, float& distance) {
+    glm::vec3 oc = rayOrigin - sphereCenter;
+    float a = glm::dot(rayDirection, rayDirection);
+    float b = 2.0f * glm::dot(oc, rayDirection);
+    float c = glm::dot(oc, oc) - sphereRadius * sphereRadius;
+    
+    float discriminant = b * b - 4 * a * c;
+    
+    if (discriminant < 0) {
+        return false; // No intersection
+    }
+    
+    float sqrtDiscriminant = sqrt(discriminant);
+    
+    // Calculate both possible intersection points
+    float t1 = (-b - sqrtDiscriminant) / (2.0f * a);
+    float t2 = (-b + sqrtDiscriminant) / (2.0f * a);
+    
+    // Use the closest positive intersection (in front of the ray origin)
+    if (t1 > 0.001f) { // Small epsilon to avoid self-intersection
+        distance = t1;
+        return true;
+    } else if (t2 > 0.001f) {
+        distance = t2;
+        return true;
+    }
+    
+    return false; // Both intersections are behind the ray origin or too close
+}
+
+ComputeCell CellManager::getCellData(int index) const {
+    if (index >= 0 && index < cell_count) {
+        return cpuCells[index];
+    }
+    return ComputeCell{}; // Return empty cell if index is invalid
+}
+
+void CellManager::updateCellData(int index, const ComputeCell& newData) {
+    if (index >= 0 && index < cell_count) {
+        cpuCells[index] = newData;
+        
+        // Update selected cell cache if this is the selected cell
+        if (selectedCell.isValid && selectedCell.cellIndex == index) {
+            selectedCell.cellData = newData;
+        }
+        
+        updateGPUBuffers();
     }
 }

@@ -7,6 +7,8 @@ static glm::vec2 last_mouse_pos;
 static GLFWwindow* window;
 static bool currentMouseButtons[GLFW_MOUSE_BUTTON_LAST + 1];
 static bool previousMouseButtons[GLFW_MOUSE_BUTTON_LAST + 1];
+static float scrollDelta;
+static bool hasScrolled;
 
 class Input {
 private:
@@ -18,4 +20,7 @@ public:
     static void update();
     static bool isMouseJustPressed(int button);
     static GLFWwindow* getWindow();
+    static float getScrollDelta();
+    static bool hasScrollInput();
+    static void setScrollCallback();
 };

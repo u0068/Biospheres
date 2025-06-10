@@ -1,13 +1,25 @@
 #include "input.h"
 #include <iostream>
 
+// Scroll wheel callback function
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    scrollDelta = static_cast<float>(yoffset);
+    hasScrolled = true;
+}
+
 void Input::init(GLFWwindow* _window)
 {
     window = _window;
 	is_dragging = false;
     last_mouse_pos = { 0.0f, 0.0f };
+    scrollDelta = 0.0f;
+    hasScrolled = false;
+    
     // Set the input mode to capture the mouse cursor
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    
+    // Set up scroll callback
+    glfwSetScrollCallback(window, scrollCallback);
 }
 
 bool Input::isKeyPressed(int key)
@@ -44,6 +56,20 @@ void Input::update() {
         previousMouseButtons[button] = currentMouseButtons[button];
         currentMouseButtons[button] = glfwGetMouseButton(window, button) == GLFW_PRESS;
     }
+    
+    // Reset scroll state after each frame
+    if (!hasScrolled) {
+        scrollDelta = 0.0f;
+    }
+    hasScrolled = false;
+}
+
+float Input::getScrollDelta() {
+    return scrollDelta;
+}
+
+bool Input::hasScrollInput() {
+    return hasScrolled || (scrollDelta != 0.0f);
 }
 
 GLFWwindow* Input::getWindow() {
