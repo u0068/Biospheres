@@ -177,7 +177,7 @@ int main()
 		}
 		//// Then we handle cell simulation
 		try {
-			Timer timer("Cell Physics Update");
+			TimerGPU timer("Cell Physics Update");
 			cellManager.updateCells(deltaTime);
 		} catch (const std::exception& e) {
 			std::cerr << "Exception in cell simulation: " << e.what() << "\n";
@@ -187,7 +187,7 @@ int main()
 
 		//// Then we handle rendering
 		try {
-			Timer timer("Cell Rendering Update");
+			TimerGPU timer("Cell Rendering Update");
 			cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
 			checkGLError("renderCells");
 		} catch (const std::exception& e) {
