@@ -8,6 +8,8 @@
 #include<GLFW/glfw3.h>
 #include<glm.hpp>
 #include<algorithm>
+#include<thread>
+#include<chrono>
 
 #include "cell_manager.h"
 #include "glad_helpers.h"
@@ -18,10 +20,26 @@
 #include "ui_manager.h"
 #include "camera.h"
 
+// Simple OpenGL error checking function
+void checkGLError(const char* operation) {
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        std::cerr << "OpenGL error after " << operation << ": " << error << std::endl;
+    }
+}
+
+// GLFW error callback
+void glfwErrorCallback(int error, const char* description) {
+    std::cerr << "GLFW Error " << error << ": " << description << std::endl;
+}
+
 //// If you're a dev, please help me I have no idea what im doing
 
 int main()
 {
+	// Set up error callback before initializing GLFW
+	glfwSetErrorCallback(glfwErrorCallback);
+	
 	initGLFW();
 	GLFWwindow* window = createWindow();
 	initGLAD(window);
@@ -68,6 +86,12 @@ int main()
 	int frameCount = 0;
 	float frameTimeAccumulator = 0.0f;
 	
+	// Window state tracking
+	bool wasMinimized = false;
+	bool isCurrentlyMinimized = false;
+	int lastKnownWidth = 0;
+	int lastKnownHeight = 0;
+	
 	// Main while loop
 	while (!glfwWindowShouldClose(window))
 	{		// Calculate delta time
@@ -75,7 +99,40 @@ int main()
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
 		
-		// Update performance monitoring
+		// Check window state first - before any OpenGL operations
+		int currentWidth, currentHeight;
+		glfwGetFramebufferSize(window, &currentWidth, &currentHeight);
+		bool isMinimized = (currentWidth == 0 || currentHeight == 0) || glfwGetWindowAttrib(window, GLFW_ICONIFIED);
+		
+		// Handle minimize/restore transitions
+		if (isMinimized && !wasMinimized) {
+			// Just became minimized
+			std::cout << "Window minimized, suspending rendering" << std::endl;
+			wasMinimized = true;
+			isCurrentlyMinimized = true;
+		} else if (!isMinimized && wasMinimized) {
+			// Just restored from minimize
+			std::cout << "Window restored, resuming rendering" << std::endl;
+			wasMinimized = false;
+			isCurrentlyMinimized = false;
+			// Give the driver a moment to stabilize
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		
+		// If minimized, do minimal processing and skip to next frame
+		if (isCurrentlyMinimized || isMinimized) {
+			glfwPollEvents();
+			glfwSwapBuffers(window);
+			std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60fps limit when minimized
+			continue;
+		}
+		
+		// Store valid dimensions
+		if (currentWidth > 0 && currentHeight > 0) {
+			lastKnownWidth = currentWidth;
+			lastKnownHeight = currentHeight;
+		}
+				// Update performance monitoring
 		frameCount++;
 		frameTimeAccumulator += deltaTime;
 		
@@ -88,24 +145,42 @@ int main()
 			frameTimeAccumulator = 0.0f;
 			lastPerfUpdate = currentFrame;
 		}
-		//// First we do some init stuff
+		
+		// Use the valid dimensions we stored
+		int width = lastKnownWidth;
+		int height = lastKnownHeight;
+		
+		// Final safety check - if we still don't have valid dimensions, skip this frame
+		if (width <= 0 || height <= 0) {
+			glfwPollEvents();
+			continue;
+		}		//// First we do some init stuff
 		/// Clear the framebuffer for proper 3D rendering
 		/// Tell OpenGL a new frame is about to begin
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-		int width, height;
-		glfwGetFramebufferSize(window, &width, &height);
-		glViewport(0, 0, width, height);
 		
-		// Clear framebuffer once at the start of the frame
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+		// Set viewport with our validated dimensions
+		try {
+			glViewport(0, 0, width, height);
+			checkGLError("glViewport");
+			
+			// Clear framebuffer once at the start of the frame
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			checkGLError("glClear");
+		} catch (...) {
+			// If OpenGL operations fail, skip this frame
+			std::cerr << "OpenGL viewport/clear failed, skipping frame" << std::endl;
+			glfwPollEvents();
+			continue;
+		}
 		//// Then we handle input
 		/// I should probably put this stuff in a separate function instead of having it in the main loop
 		// Take care of all GLFW events
 		glfwPollEvents();
 		input.update();
+
 		if (!ImGui::GetIO().WantCaptureMouse)
 		{
 			// Handle camera input
@@ -118,12 +193,24 @@ int main()
 			cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera, 
 			                           isLeftMousePressed, isLeftMouseDown, scrollDelta);
 		}
-
 		//// Then we handle cell simulation
-		cellManager.updateCells(deltaTime);
+		try {
+			cellManager.updateCells(deltaTime);
+		} catch (const std::exception& e) {
+			std::cerr << "Exception in cell simulation: " << e.what() << std::endl;
+		} catch (...) {
+			std::cerr << "Unknown exception in cell simulation" << std::endl;
+		}
 
 		//// Then we handle rendering
-		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);		//// Then we handle ImGUI
+		try {
+			cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
+			checkGLError("renderCells");
+		} catch (const std::exception& e) {
+			std::cerr << "Exception in cell rendering: " << e.what() << std::endl;
+		} catch (...) {
+			std::cerr << "Unknown exception in cell rendering" << std::endl;
+		}//// Then we handle ImGUI
 		//ui.renderUI();
 		
 		// Cell Inspector and Selection UI
@@ -179,23 +266,42 @@ int main()
 		ImGui::End();
 
 		ImGui::ShowDemoWindow();
-
 		// Renders the ImGUI elements last, so that they are on top of everything else
-		ImGui::Render();
+		try {
+			ImGui::Render();
+			checkGLError("ImGui::Render");
 
-		// Update and Render additional Platform Windows
-		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-		{
-			GLFWwindow* backup_current_context = glfwGetCurrentContext();
-			ImGui::UpdatePlatformWindows();
-			ImGui::RenderPlatformWindowsDefault();
-			glfwMakeContextCurrent(backup_current_context);
+			// Update and Render additional Platform Windows
+			if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+			{
+				GLFWwindow* backup_current_context = glfwGetCurrentContext();
+				ImGui::UpdatePlatformWindows();
+				ImGui::RenderPlatformWindowsDefault();
+				glfwMakeContextCurrent(backup_current_context);
+			}
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			checkGLError("ImGui_ImplOpenGL3_RenderDrawData");
+
+			// Swap the back buffer with the front buffer, so that the rendered image is displayed on the screen
+			glfwSwapBuffers(window);
+			checkGLError("glfwSwapBuffers");
+		} catch (const std::exception& e) {
+			std::cerr << "Exception in ImGui/buffer swap: " << e.what() << std::endl;
+			// Try to recover by just swapping buffers
+			try {
+				glfwSwapBuffers(window);
+			} catch (...) {
+				// If even buffer swap fails, just continue to next frame
+			}
+		} catch (...) {
+			std::cerr << "Unknown exception in ImGui/buffer swap" << std::endl;
+			// Try to recover by just swapping buffers
+			try {
+				glfwSwapBuffers(window);
+			} catch (...) {
+				// If even buffer swap fails, just continue to next frame
+			}
 		}
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-
-		// Swap the back buffer with the front buffer, so that the rendered image is displayed on the screen
-		glfwSwapBuffers(window);
 	}
 
 	// destroy and terminate everything before ending the ID
