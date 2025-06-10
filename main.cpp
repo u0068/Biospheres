@@ -53,10 +53,9 @@ int main()
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f)); // Start further back to see the cell
 	// Initialise the UI manager // We dont have any ui to manage yet
 	ToolState toolState;
-	UIManager uiManager;
-	// Initialise cells
+	UIManager uiManager;	// Initialise cells
 	CellManager cellManager;
-	cellManager.spawnCells(500); // For testing, spawn 500 cells
+	cellManager.spawnCells(); // Use default cell count from config
 
 	// Timing variables
 	float deltaTime = 0.0f;

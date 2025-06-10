@@ -1,5 +1,6 @@
 #include "cell_manager.h"
 #include "camera.h"
+#include "config.h"
 #include <iostream>
 #include <cassert>
 #include <cfloat>
@@ -27,20 +28,20 @@ void CellManager::initializeGPUBuffers() {
     // Create compute buffer for cell data
     glGenBuffers(1, &cellBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, config::MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     // Create instance buffer for rendering (contains position + radius)
     glGenBuffers(1, &instanceBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
-    glBufferData(GL_ARRAY_BUFFER, MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     // Setup the sphere mesh to use our instance buffer
     sphereMesh.setupInstanceBuffer(instanceBuffer);
 
     // Reserve CPU storage
-    cpuCells.reserve(MAX_CELLS);
+    cpuCells.reserve(config::MAX_CELLS);
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
@@ -117,7 +118,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
 }
 
 void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius) {
-    if (cell_count >= MAX_CELLS) {
+    if (cell_count >= config::MAX_CELLS) {
         std::cout << "Warning: Maximum cell count reached!" << std::endl;
         return;
     }
@@ -232,7 +233,7 @@ void CellManager::runUpdateCompute(float deltaTime) {
 }
 
 void CellManager::spawnCells(int count) {
-    for (int i = 0; i < count && cell_count < MAX_CELLS; ++i) {
+    for (int i = 0; i < count && cell_count < config::MAX_CELLS; ++i) {
         // Random position within spawn radius
         float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
         float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
@@ -280,12 +281,15 @@ void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& s
             glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
             dragSelectedCell(newWorldPos);
         }
-    }
-    
-    if (isMousePressed && !isDraggingCell) {
+    }    if (isMousePressed && !isDraggingCell) {
+        // Sync current cell positions from GPU before attempting selection
+        syncCellPositionsFromGPU();
+        
         // Start new selection with improved raycasting
         glm::vec3 rayOrigin = camera.getPosition();
         glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+          // Debug: Print mouse coordinates and ray info (reduced logging)
+        std::cout << "Mouse click at (" << mousePos.x << ", " << mousePos.y << ")" << std::endl;
         
         int selectedIndex = selectCellAtPosition(rayOrigin, rayDirection);
         if (selectedIndex >= 0) {
@@ -326,10 +330,10 @@ void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& s
 int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
     float closestDistance = FLT_MAX;
     int closestCellIndex = -1;
+    int intersectionCount = 0;
     
     // Debug output for raycasting
-    std::cout << "Raycasting from (" << rayOrigin.x << ", " << rayOrigin.y << ", " << rayOrigin.z 
-              << ") in direction (" << rayDirection.x << ", " << rayDirection.y << ", " << rayDirection.z << ")" << std::endl;
+    std::cout << "Testing " << cell_count << " cells for intersection..." << std::endl;
     
     for (int i = 0; i < cell_count; i++) {
         glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndRadius);
@@ -337,6 +341,10 @@ int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec
         
         float intersectionDistance;
         if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance)) {
+            intersectionCount++;
+            std::cout << "Cell " << i << " at (" << cellPosition.x << ", " << cellPosition.y << ", " << cellPosition.z 
+                     << ") radius " << cellRadius << " intersected at distance " << intersectionDistance << std::endl;
+                     
             if (intersectionDistance < closestDistance && intersectionDistance > 0) {
                 closestDistance = intersectionDistance;
                 closestCellIndex = i;
@@ -344,10 +352,11 @@ int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec
         }
     }
     
+    std::cout << "Found " << intersectionCount << " intersections total" << std::endl;
     if (closestCellIndex >= 0) {
-        std::cout << "Found intersection with cell " << closestCellIndex << " at distance " << closestDistance << std::endl;
+        std::cout << "Selected closest cell " << closestCellIndex << " at distance " << closestDistance << std::endl;
     } else {
-        std::cout << "No cell intersections found" << std::endl;
+        std::cout << "No valid cell intersections found" << std::endl;
     }
     
     return closestCellIndex;
@@ -403,6 +412,32 @@ void CellManager::endDrag() {
     isDraggingCell = false;
 }
 
+void CellManager::syncCellPositionsFromGPU() {
+    if (cell_count == 0) return;
+    
+    // Bind the cell buffer and read current positions back to CPU
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    
+    // Use glMapBuffer for efficient GPU->CPU data transfer
+    ComputeCell* gpuData = static_cast<ComputeCell*>(glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY));
+    
+    if (gpuData) {
+        // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
+        for (int i = 0; i < cell_count; i++) {
+            // Only sync position and radius, preserve velocity and mass from CPU
+            cpuCells[i].positionAndRadius = gpuData[i].positionAndRadius;
+        }
+        
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        
+        std::cout << "Synced " << cell_count << " cell positions from GPU" << std::endl;
+    } else {
+        std::cerr << "Failed to map GPU buffer for readback" << std::endl;
+    }
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
 glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                         const Camera& camera) {
     // Safety check for zero screen size
@@ -415,7 +450,8 @@ glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::v
     // NDC coordinates: (-1,-1) is bottom-left, (1,1) is top-right
     float x = (2.0f * mousePos.x) / screenSize.x - 1.0f;
     float y = 1.0f - (2.0f * mousePos.y) / screenSize.y; // Convert from screen Y (top-down) to NDC Y (bottom-up)
-      // Create projection matrix (matching the one used in rendering)
+    
+    // Create projection matrix (matching the one used in rendering)
     float aspectRatio = screenSize.x / screenSize.y;
     if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio)) {
         return camera.getFront(); // Return camera forward direction as fallback
@@ -424,7 +460,8 @@ glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::v
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
                                           aspectRatio, 
                                           0.1f, 1000.0f);
-      // Create view matrix
+    
+    // Create view matrix
     glm::mat4 view = camera.getViewMatrix();
     
     // Calculate inverse view-projection matrix with error checking
@@ -446,7 +483,8 @@ glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::v
     // Transform to world space
     glm::vec4 rayWorldNear = inverseVP * rayClipNear;
     glm::vec4 rayWorldFar = inverseVP * rayClipFar;
-      // Convert from homogeneous coordinates with safety checks
+    
+    // Convert from homogeneous coordinates with safety checks
     if (abs(rayWorldNear.w) < 1e-6f || abs(rayWorldFar.w) < 1e-6f) {
         return camera.getFront(); // Return camera forward direction as fallback
     }

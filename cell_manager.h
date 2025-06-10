@@ -5,6 +5,7 @@
 #include "glm.hpp"
 #include <glad/glad.h>
 #include "sphere_mesh.h"
+#include "config.h"
 
 // Forward declaration
 class Camera;
@@ -20,10 +21,11 @@ struct CellManager {
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates
-      // GPU buffer objects
+    
+    // GPU buffer objects
     GLuint cellBuffer = 0;           // SSBO for compute cell data
     GLuint instanceBuffer = 0;       // VBO for instance rendering data
-
+    
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
 
@@ -32,7 +34,7 @@ struct CellManager {
     GLsync readbackFence = nullptr;  // Sync object for async operations
     bool readbackInProgress = false;
     float readbackCooldown = 0.0f;   // Timer to limit readback frequency
-    static constexpr float READBACK_INTERVAL = 0.5f; // Readback every 0.5 seconds
+    
     // Compute shaders
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
@@ -42,19 +44,19 @@ struct CellManager {
     std::vector<ComputeCell> cpuCells;
     int cell_count{ 0 };
 
-    // Configuration
-    static const int MAX_CELLS = 10000;
-    static const int DEFAULT_CELL_COUNT = 100;
-    float spawnRadius = 15.0f;  // Acts as both spawn area and containment barrier
+    // Configuration (spawn radius can be adjusted at runtime)
+    float spawnRadius = config::DEFAULT_SPAWN_RADIUS;  // Acts as both spawn area and containment barrier
 
     // Constructor and destructor
     CellManager();
     ~CellManager();
+    
     // We declare functions in the struct, but we will define them in the cell_manager.cpp file.
-// This is because when a file is edited, the compiler will also have to recompile all the files that include it.
-// So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
+    // This is because when a file is edited, the compiler will also have to recompile all the files that include it.
+    // So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
+    
     void initializeGPUBuffers();
-    void spawnCells(int count = DEFAULT_CELL_COUNT);
+    void spawnCells(int count = config::DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
     void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius);
     void updateCells(float deltaTime);
@@ -68,6 +70,7 @@ struct CellManager {
     bool isReadbackInProgress() const { return readbackInProgress; }
     bool isReadbackSystemHealthy() const { return readbackBuffer != 0; }
     float getReadbackCooldown() const { return readbackCooldown; }
+    
     // Performance testing function
     void setActiveCellCount(int count) {
         if (count <= cell_count && count >= 0) {
@@ -82,9 +85,11 @@ struct CellManager {
         glm::vec3 dragOffset = glm::vec3(0.0f); // Offset from cell center when dragging starts
         float dragDistance = 10.0f; // Distance from camera to maintain during dragging
     };
-
+    
     SelectedCellInfo selectedCell;
-    bool isDraggingCell = false;    // Selection and interaction functions
+    bool isDraggingCell = false;
+
+    // Selection and interaction functions
     void handleMouseInput(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                          const class Camera& camera, bool isMousePressed, bool isMouseDown, 
                          float scrollDelta = 0.0f);
@@ -94,6 +99,9 @@ struct CellManager {
     
     // Handle the end of dragging (restore physics)
     void endDrag();
+
+    // GPU synchronization for selection (synchronous readback for immediate use)
+    void syncCellPositionsFromGPU();
 
     // Utility functions for mouse interaction
     glm::vec3 calculateMouseRay(const glm::vec2& mousePos, const glm::vec2& screenSize, 
