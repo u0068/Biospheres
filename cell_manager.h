@@ -51,10 +51,10 @@ struct CellManager {
     bool readbackInProgress = false;
     float readbackCooldown = 0.0f;   // Timer to limit readback frequency
     static constexpr float READBACK_INTERVAL = 0.5f; // Readback every 0.5 seconds
-    
-    // Compute shaders
+      // Compute shaders
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
+    Shader* extractShader = nullptr;  // For extracting instance data efficiently
     
     // CPU-side storage for initialization and debugging
     std::vector<ComputeCell> cpuCells;

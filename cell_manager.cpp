@@ -6,14 +6,14 @@
 
 CellManager::CellManager() {
     // Generate sphere mesh
-    sphereMesh.generateSphere(16, 32, 1.0f); // Lower poly count for better performance
+    sphereMesh.generateSphere(12, 16, 1.0f); // Even lower poly count: 12x16 = 192 triangles
     sphereMesh.setupBuffers();
     
     initializeGPUBuffers();
-    
-    // Initialize compute shaders
+      // Initialize compute shaders
     physicsShader = new Shader("shaders/cell_physics.comp");
     updateShader = new Shader("shaders/cell_update.comp");
+    extractShader = new Shader("shaders/extract_instances.comp");
 }
 
 CellManager::~CellManager() {
@@ -43,39 +43,37 @@ void CellManager::initializeGPUBuffers() {
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
     if (cell_count == 0) return;
     
-    // Copy position and radius data from compute buffer to instance buffer
-    glBindBuffer(GL_COPY_READ_BUFFER, cellBuffer);
-    glBindBuffer(GL_COPY_WRITE_BUFFER, instanceBuffer);
+    // Use compute shader to efficiently extract instance data
+    extractShader->use();
+    extractShader->setInt("u_cellCount", cell_count);
     
-    // Copy position and radius data (first vec4 of each ComputeCell)
-    for (int i = 0; i < cell_count; ++i) {
-        GLintptr readOffset = i * sizeof(ComputeCell);  // Full ComputeCell offset
-        GLintptr writeOffset = i * sizeof(glm::vec4);   // Instance data offset
-        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 
-                           readOffset, writeOffset, sizeof(glm::vec4));
-    }
+    // Bind buffers for compute shader
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, instanceBuffer);
     
-    glBindBuffer(GL_COPY_READ_BUFFER, 0);
-    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    // Dispatch extract compute shader
+    GLuint numGroups = (cell_count + 63) / 64; // 64 threads per group
+    extractShader->dispatch(numGroups, 1, 1);
+    
+    // Memory barrier to ensure data is ready for rendering
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     
     // Use the sphere shader
     cellShader.use();
     
-    // Set up camera matrices
+    // Set up camera matrices (only calculate once per frame, not per cell)
     glm::mat4 view = camera.getViewMatrix();
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
                                           resolution.x / resolution.y, 
                                           0.1f, 1000.0f);
-    
-    // Set uniforms
+      // Set uniforms
     cellShader.setMat4("uProjection", projection);
     cellShader.setMat4("uView", view);
     cellShader.setVec3("uCameraPos", camera.getPosition());
     cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
     
-    // Enable depth testing for proper 3D rendering
+    // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
     glEnable(GL_DEPTH_TEST);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
     // Render instanced spheres
     sphereMesh.render(cell_count);
@@ -125,6 +123,10 @@ void CellManager::cleanup() {
     if (instanceBuffer != 0) {
         glDeleteBuffers(1, &instanceBuffer);
         instanceBuffer = 0;
+    }    if (extractShader) {
+        extractShader->destroy();
+        delete extractShader;
+        extractShader = nullptr;
     }
     if (physicsShader) {
         physicsShader->destroy();

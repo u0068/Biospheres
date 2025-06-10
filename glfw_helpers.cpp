@@ -41,9 +41,11 @@ GLFWwindow* createWindow()
 		std::cout << "Failed to create GLFW window :(\n";
 		glfwTerminate();
 		exit(EXIT_FAILURE);
-	}
-	// Introduce the window into the current context
+	}	// Introduce the window into the current context
 	glfwMakeContextCurrent(window);
+
+	// Disable V-Sync for unlimited FPS (or set to 1 to enable V-Sync)
+	glfwSwapInterval(0); // 0 = disabled, 1 = enabled
 
 	// Set the viewport to the size of the window when its resized
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);

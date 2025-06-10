@@ -7,6 +7,7 @@
 #include<glad/glad.h>
 #include<GLFW/glfw3.h>
 #include<glm.hpp>
+#include<algorithm>
 
 #include "cell_manager.h"
 #include "glad_helpers.h"
@@ -40,9 +41,8 @@ int main()
 	ToolState toolState;
 	// Initialise cells
 	CellManager cellManager;
-	
-	// Add multiple cells for testing instanced rendering
-	for (int i = 0; i < 100; i++)
+		// Add multiple cells for testing instanced rendering
+	for (int i = 0; i < 500; i++) // Increased from 100 to 500 for stress testing
 	{
 		// Add a cell with random position, velocity, mass and radius
 		cellManager.addCell(
@@ -59,28 +59,50 @@ int main()
 			static_cast<float>(rand() % 10 + 1),        // Random mass between 1 and 10
 			static_cast<float>(rand() % 3 + 1) * 0.5f   // Random radius between 0.5 and 2.0
 		);
-	}
-
-	// Timing variables
+	}	// Timing variables
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
+	
+	// Performance monitoring variables
+	float lastPerfUpdate = 0.0f;
+	float perfUpdateInterval = 0.25f; // Update every 250ms
+	float displayFPS = 0.0f;
+	float displayFrameTime = 0.0f;
+	int frameCount = 0;
+	float frameTimeAccumulator = 0.0f;
+	
 	// Main while loop
 	while (!glfwWindowShouldClose(window))
-	{
-		// Calculate delta time
+	{		// Calculate delta time
 		float currentFrame = static_cast<float>(glfwGetTime());
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
+		
+		// Update performance monitoring
+		frameCount++;
+		frameTimeAccumulator += deltaTime;
+		
+		// Update performance display every 250ms
+		if (currentFrame - lastPerfUpdate >= perfUpdateInterval) {
+			displayFPS = frameCount / (currentFrame - lastPerfUpdate);
+			displayFrameTime = (frameTimeAccumulator / frameCount) * 1000.0f; // Convert to ms
+			
+			frameCount = 0;
+			frameTimeAccumulator = 0.0f;
+			lastPerfUpdate = currentFrame;
+		}
 		//// First we do some init stuff
 		/// Clear the framebuffer for proper 3D rendering
 		/// Tell OpenGL a new frame is about to begin
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-
 		int width, height;
 		glfwGetFramebufferSize(window, &width, &height);
 		glViewport(0, 0, width, height);
+		
+		// Clear framebuffer once at the start of the frame
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		//// Then we handle input
 		/// I should probably put this stuff in a separate function instead of having it in the main loop
@@ -98,14 +120,44 @@ int main()
 		cellManager.updateCells(deltaTime);
 
 		//// Then we handle rendering
-		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
-		//// Then we handle ImGUI
+		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);		//// Then we handle ImGUI
 		//ui.renderUI();
-		ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-		ImGui::Text("Frame time: %.3f ms", 1000.0f / ImGui::GetIO().Framerate);
+		
+		// Performance Monitor with readable update rate
+		ImGui::Begin("Performance Monitor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+		ImGui::Text("FPS: %.1f", displayFPS);
+		ImGui::Text("Frame Time: %.3f ms", displayFrameTime);
 		ImGui::Text("Cells: %d", cellManager.getCellCount());
-		ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", camera.getPosition().x, camera.getPosition().y, camera.getPosition().z);
-		ImGui::Text("Controls: WASD to move, Q/E to roll, Right-click+drag to look, Space/C for up/down");
+		
+		// Visual performance indicators
+		float targetFPS = 60.0f;
+		ImGui::Text("Performance:");
+		ImGui::SameLine();
+		if (displayFPS >= targetFPS) {
+			ImGui::TextColored(ImVec4(0, 1, 0, 1), "GOOD");
+		} else if (displayFPS >= 30.0f) {
+			ImGui::TextColored(ImVec4(1, 1, 0, 1), "OK");
+		} else {
+			ImGui::TextColored(ImVec4(1, 0, 0, 1), "POOR");
+		}
+		
+		// Technical details
+		const char* renderer = (const char*)glGetString(GL_RENDERER);
+		if (renderer) ImGui::Text("GPU: %s", renderer);
+		ImGui::Text("Total triangles: ~%d", 192 * cellManager.getCellCount());
+		ImGui::End();
+		
+		// Camera Controls
+		ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+		glm::vec3 camPos = camera.getPosition();
+		ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
+		ImGui::Separator();
+		ImGui::Text("Controls:");
+		ImGui::BulletText("WASD - Move");
+		ImGui::BulletText("Q/E - Roll");
+		ImGui::BulletText("Space/C - Up/Down");
+		ImGui::BulletText("Right-click + Drag - Look");
+		ImGui::End();
 
 		ImGui::ShowDemoWindow();
 
