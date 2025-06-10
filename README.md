@@ -150,6 +150,13 @@ This project serves as a learning platform for GPU programming and real-time sim
 - Compute shader optimizations
 - UI improvements
 
+## Naming convention reminder
+Global contants use ALL_UPPER_CASE
+Classes and structs use UpperCamelCase
+Variables, parameters, methods uses lowerCamelCase
+For everything else, its usually camelCase but if you'd rather use something different thats fine just let me know!
+Consistent naming is very important to avoid confusion and typos.
+
 ## License
 
 Educational/Personal use project. See individual library licenses for dependencies.
