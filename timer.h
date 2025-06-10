@@ -21,7 +21,9 @@ public:
 	{
 		auto end_timepoint = std::chrono::high_resolution_clock::now();
 		auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_timepoint - start_timepoint).count();
+		ImGui::Begin("Performance Monitor");
 		ImGui::Text("%s: %.3f ms", name, duration * 0.001f);
+		ImGui::End();
 	}
 
 private:

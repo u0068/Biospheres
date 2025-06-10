@@ -19,6 +19,7 @@
 #include "input.h"
 #include "ui_manager.h"
 #include "camera.h"
+#include "timer.h"
 
 // Simple OpenGL error checking function
 void checkGLError(const char* operation) {
@@ -176,6 +177,7 @@ int main()
 		}
 		//// Then we handle cell simulation
 		try {
+			Timer timer("Cell Physics Update");
 			cellManager.updateCells(deltaTime);
 		} catch (const std::exception& e) {
 			std::cerr << "Exception in cell simulation: " << e.what() << "\n";
@@ -185,6 +187,7 @@ int main()
 
 		//// Then we handle rendering
 		try {
+			Timer timer("Cell Rendering Update");
 			cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
 			checkGLError("renderCells");
 		} catch (const std::exception& e) {
