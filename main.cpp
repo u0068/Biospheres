@@ -56,25 +56,9 @@ int main()
 	UIManager uiManager;
 	// Initialise cells
 	CellManager cellManager;
-		// Add multiple cells for testing instanced rendering
-	for (int i = 0; i < 500; i++) // Increased from 100 to 500 for stress testing
-	{
-		// Add a cell with random position, velocity, mass and radius
-		cellManager.addCell(
-			glm::vec3(
-				(rand() % 100 - 50) * 0.5f, // Random position -25 to 25
-				(rand() % 100 - 50) * 0.5f, 
-				(rand() % 100 - 50) * 0.5f
-			), 
-			glm::vec3(
-				(rand() % 10 - 5) * 0.1f,   // Random velocity
-				(rand() % 10 - 5) * 0.1f, 
-				(rand() % 10 - 5) * 0.1f
-			), 
-			static_cast<float>(rand() % 10 + 1),        // Random mass between 1 and 10
-			static_cast<float>(rand() % 3 + 1) * 0.5f   // Random radius between 0.5 and 2.0
-		);
-	}	// Timing variables
+	cellManager.spawnCells(500); // For testing, spawn 500 cells
+
+	// Timing variables
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
 	

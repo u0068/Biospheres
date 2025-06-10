@@ -2,8 +2,6 @@
 #include "cell_manager.h"
 #include "imgui.h"
 
-// All of this is outdated and needs to be redone for 3D
-
 void UIManager::renderCellInspector(CellManager& cellManager) {
     ImGui::Begin("Cell Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     
