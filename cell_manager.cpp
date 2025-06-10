@@ -2,12 +2,59 @@
 #include "fullscreen_quad.h"
 #include "ui_manager.h"
 #include "camera.h"
+#include <iostream>
+#include <cassert>
 
-void CellManager::renderCells(glm::vec2 resolution, Shader cellShader, Camera& camera)
-{
+CellManager::CellManager() {
+    initializeGPUBuffers();
+    
+    // Initialize compute shaders
+    physicsShader = new Shader("shaders/cell_physics.comp");
+    updateShader = new Shader("shaders/cell_update.comp");
+}
+
+CellManager::~CellManager() {
+    cleanup();
+}
+
+void CellManager::initializeGPUBuffers() {
+    // Create compute buffer for cell data
+    glGenBuffers(1, &cellBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Create render buffer for simplified rendering data
+    glGenBuffers(1, &renderBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, renderBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_CELLS * sizeof(GPUPackedCell), nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Reserve CPU storage
+    cpuCells.reserve(MAX_CELLS);
+}
+
+void CellManager::renderCells(glm::vec2 resolution, Shader cellShader, Camera& camera) {
+    // Copy position and radius data from compute buffer to render buffer
+    // This extracts only the data needed for rendering
+    glBindBuffer(GL_COPY_READ_BUFFER, cellBuffer);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, renderBuffer);
+    
+    // Copy position and radius data (first vec4 of each ComputeCell)
+    for (int i = 0; i < cell_count; ++i) {
+        GLintptr readOffset = i * sizeof(ComputeCell);  // Full ComputeCell offset
+        GLintptr writeOffset = i * sizeof(GPUPackedCell); // Packed cell offset
+        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 
+                           readOffset, writeOffset, sizeof(glm::vec4));
+    }
+    
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    
     // Tell OpenGL which Shader Program we want to use
-    cellShader.use(); // This is just a wrapper for glUseProgram(shaderProgram.ID);    // First we need to set all the uniforms that the shader needs
-	// Reminder that the naming convention for uniforms in glsl is u_camelCase and in C++ is snake_case
+    cellShader.use();
+    
+    // Set uniforms
     cellShader.setInt("u_cellCount", cell_count);
     cellShader.setVec2("u_resolution", resolution);
     
@@ -17,77 +64,111 @@ void CellManager::renderCells(glm::vec2 resolution, Shader cellShader, Camera& c
     cellShader.setVec3("u_cameraRight", camera.getRight());
     cellShader.setVec3("u_cameraUp", camera.getUp());
 
-    // Then we need to pack the cell data into a format suitable for the GPU
-	std::vector<GPUPackedCell> packedCells; // later maybe lets preallocate this vector to avoid reallocations. I will need to set up profiling first to see if it makes a difference
-    for (int i = 0; i < cell_count; ++i) {
-        packedCells.push_back({
-            glm::vec4(positions[i], radii[i]),
-            });
-    }
-
-    // Create or update the shader storage buffer object (SSBO)
-    // This is where we will store the packed cell data and send it to the GPU
-    GLuint cellSSBO;
-    glGenBuffers(1, &cellSSBO);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, packedCells.size() * sizeof(GPUPackedCell), packedCells.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellSSBO); // binding = 0 in shader
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
+    // Bind render buffer for fragment shader
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, renderBuffer);
+    
     renderFullscreenQuad();
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius)
-{
-	// Reminder: the cell data must be added to all the data vectors, otherwise there will be a mismatch
-    positions.push_back(position);
-    velocities.push_back(velocity);
-    accelerations.push_back(glm::vec3(0));
-    masses.push_back(mass);
-    radii.push_back(radius);
-    cell_count += 1; // Increment the cell count
+void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius) {
+    if (cell_count >= MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!" << std::endl;
+        return;
+    }
+    
+    // Create new compute cell
+    ComputeCell newCell;
+    newCell.positionAndRadius = glm::vec4(position, radius);
+    newCell.velocityAndMass = glm::vec4(velocity, mass);
+    newCell.acceleration = glm::vec4(0.0f);
+    
+    // Add to CPU storage
+    cpuCells.push_back(newCell);
+    cell_count++;
+    
+    // Update GPU buffer
+    updateGPUBuffers();
 }
 
-void CellManager::updateCells()
-{
-	// An assert will throw an error if we fucked up the data structure
-    assert("Mismatched cell data vectors!"
-		&& cell_count == positions.size()
-		&& cell_count == velocities.size()
-        && cell_count == accelerations.size()
-        && cell_count == masses.size()
-        && cell_count == radii.size());
-
-    resolveCellCollisions();
-    updateCellPositionsAndVelocities();
+void CellManager::updateCells(float deltaTime) {
+    if (cell_count == 0) return;
+    
+    // Run physics computation on GPU
+    runPhysicsCompute(deltaTime);
+    
+    // Add memory barrier to ensure physics calculations are complete
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Run position/velocity update on GPU
+    runUpdateCompute(deltaTime);
+    
+    // Add memory barrier to ensure all computations are complete
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
-void CellManager::updateCellPositionsAndVelocities()
-{
-    for (int i = 0; i < cell_count; ++i) {
-        // Update the position based on the velocity
-        velocities[i] += accelerations[i]; // Update velocity based on acceleration
-		velocities[i] *= 0.9f; // Apply some damping to the velocity, might make more complex drag calculations later
-        positions[i] += velocities[i]; // Simple Euler integration for now
-		accelerations[i] = glm::vec3(0.0); // Reset acceleration for the next frame, otherwise chaos ensues
+void CellManager::cleanup() {
+    if (cellBuffer != 0) {
+        glDeleteBuffers(1, &cellBuffer);
+        cellBuffer = 0;
+    }
+    if (renderBuffer != 0) {
+        glDeleteBuffers(1, &renderBuffer);
+        renderBuffer = 0;
+    }
+    if (physicsShader) {
+        physicsShader->destroy();
+        delete physicsShader;
+        physicsShader = nullptr;
+    }
+    if (updateShader) {
+        updateShader->destroy();
+        delete updateShader;
+        updateShader = nullptr;
     }
 }
 
-void CellManager::resolveCellCollisions()
-{
-	// Simple collision resolution: if two cells are too close, push them apart
-    for (int i = 0; i < cell_count; ++i) {
-        glm::vec3 force{};
-        for (int j = 0; j < cell_count; ++j) {
-            if (i == j) continue; // Skip self-collision
-            glm::vec3 delta = positions[i] - positions[j];
-            float distance = glm::length(delta);
-            float minDistance = radii[i] + radii[j];
-            if (distance < minDistance) {
-                // Collision detected, resolve it
-                force += delta * (minDistance - distance); // Push force is proportional to the overlap
-            }
-        }
-        accelerations[i] += force / masses[i]; // Apply force to cell i
-    }
+void CellManager::updateGPUBuffers() {
+    // Upload CPU cell data to GPU
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, cell_count * sizeof(ComputeCell), cpuCells.data());
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::runPhysicsCompute(float deltaTime) {
+    physicsShader->use();
+    
+    // Set uniforms
+    physicsShader->setFloat("u_deltaTime", deltaTime);
+    physicsShader->setInt("u_cellCount", cell_count);
+    physicsShader->setFloat("u_damping", 0.98f);
+    
+    // Bind cell buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    
+    // Dispatch compute shader
+    // Use work groups of 64 threads each
+    GLuint numGroups = (cell_count + 63) / 64; // Round up division
+    physicsShader->dispatch(numGroups, 1, 1);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::runUpdateCompute(float deltaTime) {
+    updateShader->use();
+    
+    // Set uniforms
+    updateShader->setFloat("u_deltaTime", deltaTime);
+    updateShader->setInt("u_cellCount", cell_count);
+    updateShader->setFloat("u_damping", 0.98f);
+    
+    // Bind cell buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    
+    // Dispatch compute shader
+    GLuint numGroups = (cell_count + 63) / 64; // Round up division
+    updateShader->dispatch(numGroups, 1, 1);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }

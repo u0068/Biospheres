@@ -3,6 +3,7 @@
 #include "shader_class.h"
 #include "input.h"
 #include "glm/glm.hpp"
+#include <glad/glad.h>
 
 // Forward declaration
 class Camera;
@@ -25,25 +26,49 @@ struct GPUPackedCell {
 	glm::vec4 positionAndRadius;	// 16 bytes			// 0 bytes		// x, y, z, radius
 };
 
+// GPU compute cell structure matching the compute shader
+struct ComputeCell {
+    glm::vec4 positionAndRadius;  // x, y, z, radius
+    glm::vec4 velocityAndMass;    // vx, vy, vz, mass
+    glm::vec4 acceleration;       // ax, ay, az, unused
+};
+
 struct CellManager {
-	// Rather than having a class for each cell, we will have a single CellManager class that manages all cells.
-	// That way we can leverage the power of data oriented design to optimize our rendering and updates.
-	// This is because when the cpu loads data into the cache, it will load a whole cache line at once, which is usually 64 bytes.
-	// So for example when it loads the position of a cell, it will also load the positions of then next few cells as well.
-	// So it won't have to load the positions of each cell one by one, which would be very inefficient.
-    std::vector<glm::vec3> positions;
-    std::vector<glm::vec3> velocities;
-    std::vector<glm::vec3> accelerations;
-    std::vector<float> masses;
-	std::vector<float> radii; // I might make radius depend on the mass later, but for now we will keep it simple
+	// GPU-based cell management using compute shaders
+	// This replaces the CPU-based vectors with GPU buffer objects
+	// The compute shaders handle physics calculations and position updates
+    
+    // GPU buffer objects
+    GLuint cellBuffer = 0;           // SSBO for compute cell data
+    GLuint renderBuffer = 0;         // SSBO for rendering data
+    
+    // Compute shaders
+    Shader* physicsShader = nullptr;
+    Shader* updateShader = nullptr;
+    
+    // CPU-side storage for initialization and debugging
+    std::vector<ComputeCell> cpuCells;
     int cell_count{0};
+    
+    // Maximum number of cells (for buffer allocation)
+    static const int MAX_CELLS = 10000;
+    
+    // Constructor and destructor
+    CellManager();
+    ~CellManager();
+    
 	// We declare functions in the struct, but we will define them in the cell_manager.cpp file.
 	// This is because when a file is edited, the compiler will also have to recompile all the files that include it.
 	// So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
+    void initializeGPUBuffers();
     void renderCells(glm::vec2 resolution, Shader cellShader, class Camera& camera);
     void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius);
-    void updateCells();
-    void updateCellPositionsAndVelocities();
-    void resolveCellCollisions();
+    void updateCells(float deltaTime);
+    void cleanup();
+    
+private:
+    void updateGPUBuffers();
+    void runPhysicsCompute(float deltaTime);
+    void runUpdateCompute(float deltaTime);
 };
 

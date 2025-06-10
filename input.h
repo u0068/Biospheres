@@ -17,4 +17,5 @@ public:
     static glm::vec2 getMousePosition(bool flip_y = true);
     static void update();
     static bool isMouseJustPressed(int button);
+    static GLFWwindow* getWindow();
 };

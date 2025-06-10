@@ -89,6 +89,48 @@ Shader::Shader(const char* vertexFile, const char* fragmentFile)
 
 }
 
+// Constructor for compute shader
+Shader::Shader(const char* computeFile)
+{
+	int success;
+	char infoLog[512];
+
+	// Read computeFile and store the string
+	std::string computeCode = get_file_contents(computeFile);
+	const char* computeSource = computeCode.c_str();
+
+	// Create Compute Shader Object and get its reference
+	GLuint computeShader = glCreateShader(GL_COMPUTE_SHADER);
+	// Attach Compute Shader source to the Compute Shader Object
+	glShaderSource(computeShader, 1, &computeSource, NULL);
+	// Compile the Compute Shader into machine code
+	glCompileShader(computeShader);
+	// Print compile errors if any
+	glGetShaderiv(computeShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(computeShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::COMPUTE::COMPILATION_FAILED\n" << infoLog << "\n";
+	}
+
+	// Create Shader Program Object and get its reference
+	ID = glCreateProgram();
+	// Attach the Compute Shader to the Shader Program
+	glAttachShader(ID, computeShader);
+	// Link the shader program
+	glLinkProgram(ID);
+	// Print linking errors if any
+	glGetProgramiv(ID, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		glGetProgramInfoLog(ID, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::COMPUTE_PROGRAM::LINKING_FAILED\n" << infoLog << "\n";
+	}
+
+	// destroy the now useless Compute Shader object
+	glDeleteShader(computeShader);
+}
+
 // Activates the Shader Program
 void Shader::use()
 {
@@ -101,6 +143,11 @@ void Shader::destroy()
 	glDeleteProgram(ID);
 }
 
+// Dispatch compute shader
+void Shader::dispatch(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z)
+{
+	glDispatchCompute(num_groups_x, num_groups_y, num_groups_z);
+}
 
 // utility uniform functions
 

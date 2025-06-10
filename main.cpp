@@ -92,9 +92,8 @@ int main()
 			camera.processInput(input, deltaTime);
 		}
 
-
 		//// Then we handle cell simulation
-		cellManager.updateCells();
+		cellManager.updateCells(deltaTime);
 
 
 		//// Then we handle rendering

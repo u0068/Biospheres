@@ -45,3 +45,7 @@ void Input::update() {
         currentMouseButtons[button] = glfwGetMouseButton(window, button) == GLFW_PRESS;
     }
 }
+
+GLFWwindow* Input::getWindow() {
+    return window;
+}

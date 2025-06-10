@@ -12,17 +12,17 @@ public:
     // Main input processing
     void processInput(class Input& input, float deltaTime);
     void processMouseMovement(float xOffset, float yOffset);
-    void processMouseScroll(float yOffset);
-
-    // Getters
+    void processMouseScroll(float yOffset);    // Getters
     glm::vec3 getPosition() const { return position; }
     glm::vec3 getFront() const { return front; }
     glm::vec3 getRight() const { return right; }
     glm::vec3 getUp() const { return up; }
-    glm::mat4 getViewMatrix() const;    // Camera settings
+    glm::mat4 getViewMatrix() const;
+
+    // Camera settings
     float moveSpeed = 10.0f;
     float sprintMultiplier = 2.0f;
-    float mouseSensitivity = 0.3f;
+    float mouseSensitivity = 0.2f;
     float zoomSpeed = 200.0f;
     float minDistance = 1.0f;
     float maxDistance = 100.0f;
