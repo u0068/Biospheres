@@ -45,6 +45,18 @@ void CellManager::initializeGPUBuffers() {
 
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
     if (cell_count == 0) return;
+    
+    // Safety check for zero-sized framebuffer (minimized window)
+    if (resolution.x <= 0 || resolution.y <= 0) {
+        return;
+    }
+    
+    // Additional safety check for very small resolutions that might cause issues
+    if (resolution.x < 1 || resolution.y < 1) {
+        return;
+    }
+
+    try {
 
     // Use compute shader to efficiently extract instance data
     extractShader->use();
@@ -62,12 +74,18 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Use the sphere shader
-    cellShader.use();
-
-    // Set up camera matrices (only calculate once per frame, not per cell)
+    cellShader.use();    // Set up camera matrices (only calculate once per frame, not per cell)
     glm::mat4 view = camera.getViewMatrix();
+    
+    // Calculate aspect ratio with safety check
+    float aspectRatio = resolution.x / resolution.y;
+    if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio)) {
+        // Use a default aspect ratio if calculation fails
+        aspectRatio = 16.0f / 9.0f;
+    }
+    
     glm::mat4 projection = glm::perspective(glm::radians(45.0f),
-        resolution.x / resolution.y,
+        aspectRatio,
         0.1f, 1000.0f);
     // Set uniforms
     cellShader.setMat4("uProjection", projection);
@@ -85,13 +103,17 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
         cellShader.setVec3("uSelectedCellPos", glm::vec3(-9999.0f)); // Invalid position
         cellShader.setFloat("uSelectedCellRadius", 0.0f);
     }
-    cellShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
-
-    // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
+    cellShader.setFloat("uTime", static_cast<float>(glfwGetTime()));    // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
     glEnable(GL_DEPTH_TEST);
 
     // Render instanced spheres
     sphereMesh.render(cell_count);
+    
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in renderCells: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Unknown exception in renderCells" << std::endl;
+    }
 }
 
 void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius) {
@@ -241,6 +263,11 @@ void CellManager::spawnCells(int count) {
 void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                   const Camera& camera, bool isMousePressed, bool isMouseDown, 
                                   float scrollDelta) {
+    // Safety check for invalid screen size (minimized window)
+    if (screenSize.x <= 0 || screenSize.y <= 0) {
+        return;
+    }
+    
     // Handle scroll wheel to adjust drag distance when cell is selected
     if (selectedCell.isValid && scrollDelta != 0.0f) {
         float scrollSensitivity = 2.0f;
@@ -378,22 +405,39 @@ void CellManager::endDrag() {
 
 glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                         const Camera& camera) {
+    // Safety check for zero screen size
+    if (screenSize.x <= 0 || screenSize.y <= 0) {
+        return camera.getFront(); // Return camera forward direction as fallback
+    }
+    
     // Convert screen coordinates to normalized device coordinates (-1 to 1)
     // Screen coordinates: (0,0) is top-left, (width,height) is bottom-right
     // NDC coordinates: (-1,-1) is bottom-left, (1,1) is top-right
     float x = (2.0f * mousePos.x) / screenSize.x - 1.0f;
     float y = 1.0f - (2.0f * mousePos.y) / screenSize.y; // Convert from screen Y (top-down) to NDC Y (bottom-up)
+      // Create projection matrix (matching the one used in rendering)
+    float aspectRatio = screenSize.x / screenSize.y;
+    if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio)) {
+        return camera.getFront(); // Return camera forward direction as fallback
+    }
     
-    // Create projection matrix (matching the one used in rendering)
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
-                                          screenSize.x / screenSize.y, 
+                                          aspectRatio, 
                                           0.1f, 1000.0f);
-    
-    // Create view matrix
+      // Create view matrix
     glm::mat4 view = camera.getViewMatrix();
     
-    // Calculate inverse view-projection matrix
-    glm::mat4 inverseVP = glm::inverse(projection * view);
+    // Calculate inverse view-projection matrix with error checking
+    glm::mat4 viewProjection = projection * view;
+    glm::mat4 inverseVP;
+    
+    // Check if the matrix is invertible
+    float determinant = glm::determinant(viewProjection);
+    if (abs(determinant) < 1e-6f) {
+        return camera.getFront(); // Return camera forward direction as fallback
+    }
+    
+    inverseVP = glm::inverse(viewProjection);
     
     // Create normalized device coordinate points for near and far planes
     glm::vec4 rayClipNear = glm::vec4(x, y, -1.0f, 1.0f);
@@ -402,13 +446,28 @@ glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::v
     // Transform to world space
     glm::vec4 rayWorldNear = inverseVP * rayClipNear;
     glm::vec4 rayWorldFar = inverseVP * rayClipFar;
+      // Convert from homogeneous coordinates with safety checks
+    if (abs(rayWorldNear.w) < 1e-6f || abs(rayWorldFar.w) < 1e-6f) {
+        return camera.getFront(); // Return camera forward direction as fallback
+    }
     
-    // Convert from homogeneous coordinates
     rayWorldNear /= rayWorldNear.w;
     rayWorldFar /= rayWorldFar.w;
     
     // Calculate ray direction
-    glm::vec3 rayDirection = glm::normalize(glm::vec3(rayWorldFar) - glm::vec3(rayWorldNear));
+    glm::vec3 rayDirection = glm::vec3(rayWorldFar) - glm::vec3(rayWorldNear);
+    
+    // Check if the direction is valid and normalize
+    if (glm::length(rayDirection) < 1e-6f) {
+        return camera.getFront(); // Return camera forward direction as fallback
+    }
+    
+    rayDirection = glm::normalize(rayDirection);
+    
+    // Final validation
+    if (!std::isfinite(rayDirection.x) || !std::isfinite(rayDirection.y) || !std::isfinite(rayDirection.z)) {
+        return camera.getFront(); // Return camera forward direction as fallback
+    }
     
     return rayDirection;
 }
