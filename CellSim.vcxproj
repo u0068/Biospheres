@@ -208,13 +208,9 @@
   <ItemGroup>
     <None Include="shaders\cell_physics.comp" />
     <None Include="shaders\cell_update.comp" />
-    <None Include="shaders\cells.frag" />
-    <None Include="shaders\default.frag" />
-    <None Include="shaders\default.vert" />
     <None Include="shaders\extract_instances.comp" />
     <None Include="shaders\sphere.frag" />
     <None Include="shaders\sphere.vert" />
-    <None Include="shaders\test.frag" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
