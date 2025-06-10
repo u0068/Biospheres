@@ -30,18 +30,14 @@ void Camera::processInput(Input& input, float deltaTime)
 
     // Handle mouse input for camera rotation
     static bool wasRightMousePressed = false;
-    bool isRightMousePressed = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
-    
-    if (isRightMousePressed && !wasRightMousePressed) {
+    bool isRightMousePressed = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);    if (isRightMousePressed && !wasRightMousePressed) {
         // Start dragging
         isDragging = true;
-        lastMousePos = input.getMousePosition(false); // Don't flip Y for mouse tracking
-        // Hide cursor when starting to drag
-        glfwSetInputMode(input.getWindow(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+        lastMousePos = input.getMousePosition(false); // Don't flip Y for mouse tracking        // Hide cursor when starting to drag
+        glfwSetInputMode(input.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     } else if (!isRightMousePressed && wasRightMousePressed) {
         // Stop dragging
-        isDragging = false;
-        // Show cursor when stopping drag
+        isDragging = false;        // Show cursor when stopping drag
         glfwSetInputMode(input.getWindow(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
     
