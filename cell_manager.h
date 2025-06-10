@@ -11,6 +11,10 @@ class Camera;
 
 // GPU compute cell structure matching the compute shader
 struct ComputeCell {
+	// Reminder: This structure must match the layout in the compute shader
+	// and must be tightly packed to ensure correct memory alignment.
+	// vec3 takes up 12 bytes in C++ but 16 bytes in glsl, so prefer to use vec4 for alignment.
+	// Weird and otherwise inexplicable bugs are usually caused by misalignment.
     glm::vec4 positionAndRadius;  // x, y, z, radius
     glm::vec4 velocityAndMass;    // vx, vy, vz, mass
     glm::vec4 acceleration;       // ax, ay, az, unused
