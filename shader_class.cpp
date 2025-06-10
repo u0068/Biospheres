@@ -2,6 +2,7 @@
 #include<fstream>
 #include<cerrno>
 #include <vec2.hpp>
+#include <gtc/type_ptr.hpp>
 
 // Reads a text file and outputs a string with everything in the text file
 std::string get_file_contents(const char* filename)
@@ -89,6 +90,48 @@ Shader::Shader(const char* vertexFile, const char* fragmentFile)
 
 }
 
+// Constructor for compute shader
+Shader::Shader(const char* computeFile)
+{
+	int success;
+	char infoLog[512];
+
+	// Read computeFile and store the string
+	std::string computeCode = get_file_contents(computeFile);
+	const char* computeSource = computeCode.c_str();
+
+	// Create Compute Shader Object and get its reference
+	GLuint computeShader = glCreateShader(GL_COMPUTE_SHADER);
+	// Attach Compute Shader source to the Compute Shader Object
+	glShaderSource(computeShader, 1, &computeSource, NULL);
+	// Compile the Compute Shader into machine code
+	glCompileShader(computeShader);
+	// Print compile errors if any
+	glGetShaderiv(computeShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(computeShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::COMPUTE::COMPILATION_FAILED\n" << infoLog << "\n";
+	}
+
+	// Create Shader Program Object and get its reference
+	ID = glCreateProgram();
+	// Attach the Compute Shader to the Shader Program
+	glAttachShader(ID, computeShader);
+	// Link the shader program
+	glLinkProgram(ID);
+	// Print linking errors if any
+	glGetProgramiv(ID, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		glGetProgramInfoLog(ID, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::COMPUTE_PROGRAM::LINKING_FAILED\n" << infoLog << "\n";
+	}
+
+	// destroy the now useless Compute Shader object
+	glDeleteShader(computeShader);
+}
+
 // Activates the Shader Program
 void Shader::use()
 {
@@ -101,6 +144,11 @@ void Shader::destroy()
 	glDeleteProgram(ID);
 }
 
+// Dispatch compute shader
+void Shader::dispatch(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z)
+{
+	glDispatchCompute(num_groups_x, num_groups_y, num_groups_z);
+}
 
 // utility uniform functions
 
@@ -134,8 +182,20 @@ void Shader::setVec3(const std::string& name, float x, float y, float z) const
 	glUniform3f(location, x, y ,z);
 }
 
+void Shader::setVec3(const std::string& name, glm::vec3 vector) const
+{
+	int location = glGetUniformLocation(ID, name.c_str());
+	glUniform3f(location, vector.x, vector.y, vector.z);
+}
+
 void Shader::setVec4(const std::string& name, float x, float y, float z, float w) const
 {
 	int location = glGetUniformLocation(ID, name.c_str());
 	glUniform4f(location, x, y, z, w);
+}
+
+void Shader::setMat4(const std::string& name, const glm::mat4& matrix) const
+{
+	int location = glGetUniformLocation(ID, name.c_str());
+	glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 }

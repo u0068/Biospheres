@@ -162,8 +162,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
-    <ClCompile Include="fullscreen_quad.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
@@ -180,11 +180,12 @@
     <ClCompile Include="input.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="shader_class.cpp" />
+    <ClCompile Include="sphere_mesh.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
-    <ClInclude Include="fullscreen_quad.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
     <ClInclude Include="timer.h" />
@@ -203,13 +204,18 @@
     <ClInclude Include="Libraries\include\glad\glad.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="shader_class.h" />
+    <ClInclude Include="sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\cell_physics.comp" />
+    <None Include="shaders\cell_update.comp" />
     <None Include="shaders\cells.frag" />
     <None Include="shaders\default.frag" />
     <None Include="shaders\default.vert" />
+    <None Include="shaders\extract_instances.comp" />
+    <None Include="shaders\sphere.frag" />
+    <None Include="shaders\sphere.vert" />
     <None Include="shaders\test.frag" />
-    <None Include="sphere.vert" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="devlog.txt" />
