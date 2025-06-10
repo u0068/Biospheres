@@ -2,6 +2,7 @@
 #include<fstream>
 #include<cerrno>
 #include <vec2.hpp>
+#include <gtc/type_ptr.hpp>
 
 // Reads a text file and outputs a string with everything in the text file
 std::string get_file_contents(const char* filename)
@@ -191,4 +192,10 @@ void Shader::setVec4(const std::string& name, float x, float y, float z, float w
 {
 	int location = glGetUniformLocation(ID, name.c_str());
 	glUniform4f(location, x, y, z, w);
+}
+
+void Shader::setMat4(const std::string& name, const glm::mat4& matrix) const
+{
+	int location = glGetUniformLocation(ID, name.c_str());
+	glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 }

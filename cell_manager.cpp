@@ -1,11 +1,14 @@
 #include "cell_manager.h"
-#include "fullscreen_quad.h"
-#include "ui_manager.h"
 #include "camera.h"
 #include <iostream>
 #include <cassert>
+#include <gtc/matrix_transform.hpp>
 
 CellManager::CellManager() {
+    // Generate sphere mesh
+    sphereMesh.generateSphere(16, 32, 1.0f); // Lower poly count for better performance
+    sphereMesh.setupBuffers();
+    
     initializeGPUBuffers();
     
     // Initialize compute shaders
@@ -24,26 +27,30 @@ void CellManager::initializeGPUBuffers() {
     glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
-    // Create render buffer for simplified rendering data
-    glGenBuffers(1, &renderBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, renderBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_CELLS * sizeof(GPUPackedCell), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    // Create instance buffer for rendering (contains position + radius)
+    glGenBuffers(1, &instanceBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
+    glBufferData(GL_ARRAY_BUFFER, MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
+    // Setup the sphere mesh to use our instance buffer
+    sphereMesh.setupInstanceBuffer(instanceBuffer);
     
     // Reserve CPU storage
     cpuCells.reserve(MAX_CELLS);
 }
 
-void CellManager::renderCells(glm::vec2 resolution, Shader cellShader, Camera& camera) {
-    // Copy position and radius data from compute buffer to render buffer
-    // This extracts only the data needed for rendering
+void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
+    if (cell_count == 0) return;
+    
+    // Copy position and radius data from compute buffer to instance buffer
     glBindBuffer(GL_COPY_READ_BUFFER, cellBuffer);
-    glBindBuffer(GL_COPY_WRITE_BUFFER, renderBuffer);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, instanceBuffer);
     
     // Copy position and radius data (first vec4 of each ComputeCell)
     for (int i = 0; i < cell_count; ++i) {
         GLintptr readOffset = i * sizeof(ComputeCell);  // Full ComputeCell offset
-        GLintptr writeOffset = i * sizeof(GPUPackedCell); // Packed cell offset
+        GLintptr writeOffset = i * sizeof(glm::vec4);   // Instance data offset
         glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 
                            readOffset, writeOffset, sizeof(glm::vec4));
     }
@@ -51,25 +58,27 @@ void CellManager::renderCells(glm::vec2 resolution, Shader cellShader, Camera& c
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
     
-    // Tell OpenGL which Shader Program we want to use
+    // Use the sphere shader
     cellShader.use();
     
+    // Set up camera matrices
+    glm::mat4 view = camera.getViewMatrix();
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
+                                          resolution.x / resolution.y, 
+                                          0.1f, 1000.0f);
+    
     // Set uniforms
-    cellShader.setInt("u_cellCount", cell_count);
-    cellShader.setVec2("u_resolution", resolution);
+    cellShader.setMat4("uProjection", projection);
+    cellShader.setMat4("uView", view);
+    cellShader.setVec3("uCameraPos", camera.getPosition());
+    cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
     
-    // Set camera uniforms
-    cellShader.setVec3("u_cameraPos", camera.getPosition());
-    cellShader.setVec3("u_cameraFront", camera.getFront());
-    cellShader.setVec3("u_cameraRight", camera.getRight());
-    cellShader.setVec3("u_cameraUp", camera.getUp());
-
-    // Bind render buffer for fragment shader
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, renderBuffer);
+    // Enable depth testing for proper 3D rendering
+    glEnable(GL_DEPTH_TEST);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
-    renderFullscreenQuad();
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    // Render instanced spheres
+    sphereMesh.render(cell_count);
 }
 
 void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius) {
@@ -113,9 +122,9 @@ void CellManager::cleanup() {
         glDeleteBuffers(1, &cellBuffer);
         cellBuffer = 0;
     }
-    if (renderBuffer != 0) {
-        glDeleteBuffers(1, &renderBuffer);
-        renderBuffer = 0;
+    if (instanceBuffer != 0) {
+        glDeleteBuffers(1, &instanceBuffer);
+        instanceBuffer = 0;
     }
     if (physicsShader) {
         physicsShader->destroy();
@@ -127,6 +136,8 @@ void CellManager::cleanup() {
         delete updateShader;
         updateShader = nullptr;
     }
+    
+    sphereMesh.cleanup();
 }
 
 void CellManager::updateGPUBuffers() {
@@ -171,4 +182,32 @@ void CellManager::runUpdateCompute(float deltaTime) {
     updateShader->dispatch(numGroups, 1, 1);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::spawnCells(int count) {
+    for (int i = 0; i < count && cell_count < MAX_CELLS; ++i) {
+        // Random position within spawn radius
+        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
+        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
+        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
+        
+        glm::vec3 position = glm::vec3(
+            radius * sin(angle2) * cos(angle1),
+            radius * cos(angle2),
+            radius * sin(angle2) * sin(angle1)
+        );
+        
+        // Random velocity
+        glm::vec3 velocity = glm::vec3(
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f
+        );
+        
+        // Random mass and radius
+        float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
+        float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
+        
+        addCell(position, velocity, mass, cellRadius);
+    }
 }
