@@ -22,7 +22,7 @@ public:
     glm::mat4 getViewMatrix() const;    // Camera settings
     float moveSpeed = 10.0f;
     float sprintMultiplier = 2.0f;
-    float mouseSensitivity = 0.5f;
+    float mouseSensitivity = 0.3f;
     float zoomSpeed = 200.0f;
     float minDistance = 1.0f;
     float maxDistance = 100.0f;

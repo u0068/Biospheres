@@ -58,15 +58,22 @@ vec3 getNormal(vec3 point) {
 }
 
 vec3 getRayDirection(vec2 uv) {
-    // Calculate ray direction using camera vectors
-    float fov = 1.0;
-    vec2 ndc = (uv / u_resolution.y) * 2.0 - 1.0;
+    // Convert screen coordinates to normalized device coordinates
+    vec2 ndc = (uv / u_resolution) * 2.0 - 1.0;
     
     // Apply aspect ratio correction
-    ndc.x *= u_resolution.x / u_resolution.y;
+    float aspectRatio = u_resolution.x / u_resolution.y;
+    ndc.x *= aspectRatio;
+    
+    // Field of view (in radians) - smaller values = narrower FOV (less distortion)
+    float fovRadians = radians(45.0); // 45 degree FOV
+    float tanHalfFov = tan(fovRadians * 0.5);
+    
+    // Scale by FOV
+    ndc *= tanHalfFov;
     
     // Create ray direction using camera basis vectors
-    vec3 rayDir = normalize(u_cameraFront * fov + u_cameraRight * ndc.x + u_cameraUp * ndc.y);
+    vec3 rayDir = normalize(u_cameraFront + u_cameraRight * ndc.x + u_cameraUp * ndc.y);
     return rayDir;
 }
 
