@@ -72,6 +72,7 @@ void CellManager::updateCellPositionsAndVelocities()
 void CellManager::resolveCellCollisions()
 {
 	// Simple collision resolution: if two cells are too close, push them apart
+	// This is an absolutely atrocious O(n^2) algorithm, but it works for small numbers of cells which is good enough for now
     for (int i = 0; i < cell_count; ++i) {
         glm::vec3 force{};
         for (int j = 0; j < cell_count; ++j) {

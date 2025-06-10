@@ -15,6 +15,7 @@
 #include "config.h"
 #include "fullscreen_quad.h"
 #include "input.h"
+#include "timer.h"
 #include "ui_manager.h"
 
 //// If you're a dev, please help me I have no idea what im doing
@@ -71,8 +72,8 @@ int main()
 		int width, height;
 		glfwGetFramebufferSize(window, &width, &height);
 
-		//// Then we handle input
-		/// I should probably put this stuff in a separate function instead of having it in the main loop
+		// Then we handle input
+		// I should probably put this stuff in a separate function instead of having it in the main loop
 		// Take care of all GLFW events
 		glfwPollEvents();
 		input.update();
@@ -84,14 +85,19 @@ int main()
 		}
 
 
-		//// Then we handle cell simulation
-		cellManager.updateCells();
+		// Then we handle cell simulation
+		{
+			Timer timer("Cell simulation");
+			cellManager.updateCells();
+		}
 
 
 
-		//// Then we handle rendering
-		cellManager.renderCells(glm::vec2(width, height), cellShader);
-
+		// Then we handle rendering
+		{
+			Timer timer("Cell rendering");
+			cellManager.renderCells(glm::vec2(width, height), cellShader);
+		}
 		//// Then we handle ImGUI
 		//ui.renderUI();
 		ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);

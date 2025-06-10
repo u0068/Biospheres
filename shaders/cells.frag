@@ -23,6 +23,8 @@ const int MAX_ITERATIONS = 100;
 const int MAX_DISTANCE = 100;
 const float MIN_DISTANCE = 0.001;
 
+const vec3 LIGHT_DIRECTION = normalize(vec3(1.0, 1.0, 1.0)); // Direction of the light source
+// Later may change this to point light instead
 
 float sphereSDF(vec3 point, vec3 center, float radius) {
     // Signed distance function for a sphere
@@ -74,7 +76,9 @@ void main() {
         dist = sceneSDF(point);
         if (dist < MIN_DISTANCE) { // If the distance is very small, we are close to the surface
             vec3 normal = getNormal(point);
-            fragColor = vec4(normal * 0.5 + 0.5, 1.0); // Color based on normal
+            fragColor = max(0.1, dot(normal, LIGHT_DIRECTION)) * vec4(1.0, 1.0, 1.0, 1.0); // Simple lighting based on the normal and light direction
+            // The dot product gives how "facing" the surface is to the light source
+            //fragColor = vec4(normal * 0.5 + 0.5, 1.0); // Color based on normal
             //fragColor = vec4(1.0, 0.5, 0.5, 1.0);
             return;
         } else if (dist < closestDist) {
@@ -84,5 +88,6 @@ void main() {
         if (t > MAX_DISTANCE) break;
     }
 
-    fragColor = vec4(1/(100*closestDist + 1.)); // Fallback color if no surface is hit. For now, just a gradient based on closest approach to the surface
+    //fragColor = vec4(1/(100*closestDist + 1.)); // Fallback color if no surface is hit. For now, just a gradient based on closest approach to the surface
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0); // Background color if no surface is hit
 }

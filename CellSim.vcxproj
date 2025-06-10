@@ -151,6 +151,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)/glm;imgui;C:\Users\g3nio\Documents\code\cpp\CellSim Prototype 5\headers;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -166,6 +167,7 @@
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
+    <ClCompile Include="timer.cpp" />
     <ClCompile Include="ui_manager.cpp" />
     <ClCompile Include="imgui_helpers.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
@@ -185,6 +187,7 @@
     <ClInclude Include="fullscreen_quad.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
+    <ClInclude Include="timer.h" />
     <ClInclude Include="ui_manager.h" />
     <ClInclude Include="imgui_helpers.h" />
     <ClInclude Include="imgui\imconfig.h" />
