@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <glm.hpp>
+#include "camera.h"
 
 struct CellManager; // Forward declaration to avoid circular dependency
 
@@ -22,11 +23,23 @@ struct ToolState
     float newCellMass = 1.0f;
 };
 
+struct PerformanceMonitor
+{
+    float lastPerfUpdate = 0.0f;
+    float perfUpdateInterval = 0.25f; // Update every 250ms
+    float displayFPS = 0.0f;
+    float displayFrameTime = 0.0f;
+    int frameCount = 0;
+    float frameTimeAccumulator = 0.0f;
+};
+
 class UIManager
 {
 public:
     void renderCellInspector(CellManager& cellManager);
     void renderSelectionInfo(CellManager& cellManager);
+    void renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor);
+    void renderCameraControls(CellManager& cellmanager, Camera& camera);
     
 private:
     void drawToolSelector(ToolState& toolState);

@@ -131,3 +131,58 @@ void UIManager::drawToolSettings(ToolState& toolState, CellManager& cellManager)
         break;
     }
 }
+
+void UIManager::renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor)
+{
+    ImGui::Begin("Performance Monitor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Text("FPS: %.1f", perfMonitor.displayFPS);
+    ImGui::Text("Frame Time: %.3f ms", perfMonitor.displayFrameTime);
+    ImGui::Text("Cells: %d", cellManager.getCellCount());
+
+    // Visual performance indicators
+    float targetFPS = 60.0f;
+    ImGui::Text("Performance:");
+    ImGui::SameLine();
+    if (perfMonitor.displayFPS >= targetFPS) {
+        ImGui::TextColored(ImVec4(0, 1, 0, 1), "GOOD");
+    }
+    else if (perfMonitor.displayFPS >= 30.0f) {
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "OK");
+    }
+    else {
+        ImGui::TextColored(ImVec4(1, 0, 0, 1), "POOR");
+    }
+
+    // Technical details
+    const char* renderer = (const char*)glGetString(GL_RENDERER);
+    if (renderer) ImGui::Text("GPU: %s", renderer);
+    ImGui::Text("Total triangles: ~%d", 192 * cellManager.getCellCount());
+    ImGui::End();
+}
+
+void UIManager::renderCameraControls(CellManager& cellManager, Camera& camera)
+{
+    ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    glm::vec3 camPos = camera.getPosition();
+    ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
+    ImGui::Separator();
+    ImGui::Text("Camera Controls:");
+    ImGui::BulletText("WASD - Move");
+    ImGui::BulletText("Q/E - Roll");
+    ImGui::BulletText("Space/C - Up/Down");
+    ImGui::BulletText("Right-click + Drag - Look");
+    ImGui::Separator();
+    ImGui::Text("Cell Interaction:");
+    ImGui::BulletText("Left-click - Select cell");
+    ImGui::BulletText("Left-click + Drag - Move selected cell");
+    ImGui::BulletText("Scroll Wheel - Adjust drag distance");
+
+    // Show current selection info
+    if (cellManager.hasSelectedCell()) {
+        ImGui::Separator();
+        const auto& selection = cellManager.getSelectedCell();
+        ImGui::Text("Selected: Cell #%d", selection.cellIndex);
+        ImGui::Text("Drag Distance: %.1f", selection.dragDistance);
+    }
+    ImGui::End();
+}

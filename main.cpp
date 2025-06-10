@@ -60,13 +60,8 @@ int main()
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
 	
-	// Performance monitoring variables
-	float lastPerfUpdate = 0.0f;
-	float perfUpdateInterval = 0.25f; // Update every 250ms
-	float displayFPS = 0.0f;
-	float displayFrameTime = 0.0f;
-	int frameCount = 0;
-	float frameTimeAccumulator = 0.0f;
+	// Performance monitoring struct
+	PerformanceMonitor perfMonitor{};
 	
 	// Window state tracking
 	bool wasMinimized = false;
@@ -115,17 +110,17 @@ int main()
 			lastKnownHeight = currentHeight;
 		}
 				// Update performance monitoring
-		frameCount++;
-		frameTimeAccumulator += deltaTime;
+		perfMonitor.frameCount++;
+		perfMonitor.frameTimeAccumulator += deltaTime;
 		
 		// Update performance display every 250ms
-		if (currentFrame - lastPerfUpdate >= perfUpdateInterval) {
-			displayFPS = frameCount / (currentFrame - lastPerfUpdate);
-			displayFrameTime = (frameTimeAccumulator / frameCount) * 1000.0f; // Convert to ms
+		if (currentFrame - perfMonitor.lastPerfUpdate >= perfMonitor.perfUpdateInterval) {
+			perfMonitor.displayFPS = perfMonitor.frameCount / (currentFrame - perfMonitor.lastPerfUpdate);
+			perfMonitor.displayFrameTime = (perfMonitor.frameTimeAccumulator / perfMonitor.frameCount) * 1000.0f; // Convert to ms
 			
-			frameCount = 0;
-			frameTimeAccumulator = 0.0f;
-			lastPerfUpdate = currentFrame;
+			perfMonitor.frameCount = 0;
+			perfMonitor.frameTimeAccumulator = 0.0f;
+			perfMonitor.lastPerfUpdate = currentFrame;
 		}
 		
 		// Use the valid dimensions we stored
@@ -157,7 +152,7 @@ int main()
 			glfwPollEvents();
 			continue;
 		}
-		//// Then we handle input
+		/// Then we handle input
 		/// I should probably put this stuff in a separate function instead of having it in the main loop
 		// Take care of all GLFW events
 		glfwPollEvents();
@@ -202,54 +197,16 @@ int main()
 		uiManager.renderSelectionInfo(cellManager);
 		
 		// Performance Monitor with readable update rate
-		ImGui::Begin("Performance Monitor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-		ImGui::Text("FPS: %.1f", displayFPS);
-		ImGui::Text("Frame Time: %.3f ms", displayFrameTime);
-		ImGui::Text("Cells: %d", cellManager.getCellCount());
+		uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
 		
-		// Visual performance indicators
-		float targetFPS = 60.0f;
-		ImGui::Text("Performance:");
-		ImGui::SameLine();
-		if (displayFPS >= targetFPS) {
-			ImGui::TextColored(ImVec4(0, 1, 0, 1), "GOOD");
-		} else if (displayFPS >= 30.0f) {
-			ImGui::TextColored(ImVec4(1, 1, 0, 1), "OK");
-		} else {
-			ImGui::TextColored(ImVec4(1, 0, 0, 1), "POOR");
-		}
-		
-		// Technical details
-		const char* renderer = (const char*)glGetString(GL_RENDERER);
-		if (renderer) ImGui::Text("GPU: %s", renderer);
-		ImGui::Text("Total triangles: ~%d", 192 * cellManager.getCellCount());
-		ImGui::End();
-				// Camera Controls
-		ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-		glm::vec3 camPos = camera.getPosition();
-		ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
-		ImGui::Separator();
-		ImGui::Text("Camera Controls:");
-		ImGui::BulletText("WASD - Move");
-		ImGui::BulletText("Q/E - Roll");
-		ImGui::BulletText("Space/C - Up/Down");
-		ImGui::BulletText("Right-click + Drag - Look");
-		ImGui::Separator();
-		ImGui::Text("Cell Interaction:");
-		ImGui::BulletText("Left-click - Select cell");
-		ImGui::BulletText("Left-click + Drag - Move selected cell");
-		ImGui::BulletText("Scroll Wheel - Adjust drag distance");
-		
-		// Show current selection info
-		if (cellManager.hasSelectedCell()) {
-			ImGui::Separator();
-			const auto& selection = cellManager.getSelectedCell();
-			ImGui::Text("Selected: Cell #%d", selection.cellIndex);
-			ImGui::Text("Drag Distance: %.1f", selection.dragDistance);
-		}
-		ImGui::End();
+		// Camera Controls
+		uiManager.renderCameraControls(cellManager, camera);
 
-		ImGui::ShowDemoWindow();
+		// Render the demo window if enabled
+		if (config::showDemoWindow) {
+			ImGui::ShowDemoWindow();
+		}
+
 		// Renders the ImGUI elements last, so that they are on top of everything else
 		try {
 			ImGui::Render();
@@ -265,24 +222,34 @@ int main()
 			}
 			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 			checkGLError("ImGui_ImplOpenGL3_RenderDrawData");
+		} catch (const std::exception& e) {
+			std::cerr << "Exception in ImGui: " << e.what() << "\n";
+		} catch (...) {
+			std::cerr << "Unknown exception in ImGui\n";
+		}
 
+		try {
 			// Swap the back buffer with the front buffer, so that the rendered image is displayed on the screen
 			glfwSwapBuffers(window);
 			checkGLError("glfwSwapBuffers");
-		} catch (const std::exception& e) {
-			std::cerr << "Exception in ImGui/buffer swap: " << e.what() << "\n";
+		}
+		catch (const std::exception& e) {
+			std::cerr << "Exception in buffer swap: " << e.what() << "\n";
 			// Try to recover by just swapping buffers
 			try {
 				glfwSwapBuffers(window);
-			} catch (...) {
+			}
+			catch (...) {
 				// If even buffer swap fails, just continue to next frame
 			}
-		} catch (...) {
-			std::cerr << "Unknown exception in ImGui/buffer swap\n";
+		}
+		catch (...) {
+			std::cerr << "Unknown exception in buffer swap\n";
 			// Try to recover by just swapping buffers
 			try {
 				glfwSwapBuffers(window);
-			} catch (...) {
+			}
+			catch (...) {
 				// If even buffer swap fails, just continue to next frame
 			}
 		}

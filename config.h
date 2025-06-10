@@ -21,5 +21,7 @@ namespace config
 	constexpr int DEFAULT_CELL_COUNT{ 10000 };
 	constexpr float DEFAULT_SPAWN_RADIUS{ 15.0f };
 	constexpr float READBACK_INTERVAL{ 0.5f }; // Async readback every 0.5 seconds
+
+	inline bool showDemoWindow = true;
 };
 
