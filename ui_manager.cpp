@@ -5,11 +5,12 @@
 #include <cstring>
 #include <algorithm>
 
-// Helper function to clamp values (C++17 std::clamp replacement)
-template<typename T>
-T clamp(const T& value, const T& min_val, const T& max_val) {
-    return std::max(min_val, std::min(value, max_val));
-}
+// Helper function to clamp values (C++17 std::clamp replacement) // Why do that when were on C++20 and we have std::clamp and glm::clamp?
+//template<typename T>
+//T clamp(const T& value, const T& min_val, const T& max_val) {
+//    //return std::max(min_val, std::min(value, max_val));
+//	return std::clamp(value, min_val, max_val);
+//}
 
 void UIManager::renderCellInspector(CellManager& cellManager) {
     ImGui::Begin("Cell Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
@@ -301,7 +302,6 @@ void UIManager::renderGenomeEditor() {
         GenomeMode newMode;
         newMode.modeName = "New Mode " + std::to_string(g_genomeSystem->getModeCount());
         newMode.modeColor = GenomeUtils::randomColor();
-        newMode.isInitial = false; // New modes are never initial by default
         g_genomeSystem->addMode(newMode);
     }
     
@@ -350,30 +350,11 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             editedMode.modeName = nameBuffer;
             changed = true;
         }
-          // Initial mode checkbox - enforce only one initial mode
-        bool wasInitial = editedMode.isInitial;
-        if (ImGui::Checkbox("Initial Mode", &editedMode.isInitial)) {
-            // If this mode is being set to initial, clear all other initial flags
-            if (editedMode.isInitial && !wasInitial) {
-                // Clear initial flag from all other modes
-                for (size_t i = 0; i < g_genomeSystem->getModeCount(); ++i) {
-                    if (i != modeIndex) {
-                        GenomeMode* otherMode = g_genomeSystem->getMode(static_cast<int>(i));
-                        if (otherMode && otherMode->isInitial) {
-                            GenomeMode updatedOtherMode = *otherMode;
-                            updatedOtherMode.isInitial = false;
-                            g_genomeSystem->updateMode(static_cast<int>(i), updatedOtherMode);
-                        }
-                    }
-                }
-            }
-            // Don't allow unchecking if this is the only mode
-            else if (!editedMode.isInitial && wasInitial && g_genomeSystem->getModeCount() == 1) {
-                editedMode.isInitial = true; // Force it back to true
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "(Must have one initial mode)");
-            }
-            changed = true;
+
+        bool isInitialMode = g_genomeSystem->initialModeIndex == modeIndex;
+        if (ImGui::Checkbox("Is Initial", &isInitialMode))
+        {
+            g_genomeSystem->initialModeIndex = modeIndex;
         }
         
         // Color picker
@@ -388,7 +369,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(80);        if (ImGui::DragFloat("##SplitIntervalInput", &editedMode.splitInterval, 0.1f, 1.0f, 15.0f, "%.1f")) {
-            editedMode.splitInterval = clamp(editedMode.splitInterval, 1.0f, 15.0f);
+            //editedMode.splitInterval = clamp(editedMode.splitInterval, 1.0f, 15.0f);
             changed = true;
         }
         
@@ -402,7 +383,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##SplitYawInput", &editedMode.parentSplitYaw, 1.0f, -180.0f, 180.0f, "%.1f")) {
-                editedMode.parentSplitYaw = clamp(editedMode.parentSplitYaw, -180.0f, 180.0f);
+                //editedMode.parentSplitYaw = clamp(editedMode.parentSplitYaw, -180.0f, 180.0f);
                 changed = true;
             }
             
@@ -411,7 +392,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##SplitPitchInput", &editedMode.parentSplitPitch, 1.0f, -90.0f, 90.0f, "%.1f")) {
-                editedMode.parentSplitPitch = clamp(editedMode.parentSplitPitch, -90.0f, 90.0f);
+                //editedMode.parentSplitPitch = clamp(editedMode.parentSplitPitch, -90.0f, 90.0f);
                 changed = true;
             }
             
@@ -420,7 +401,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##SplitRollInput", &editedMode.parentSplitRoll, 1.0f, -180.0f, 180.0f, "%.1f")) {
-                editedMode.parentSplitRoll = clamp(editedMode.parentSplitRoll, -180.0f, 180.0f);
+                //editedMode.parentSplitRoll = clamp(editedMode.parentSplitRoll, -180.0f, 180.0f);
                 changed = true;
             }
             
@@ -441,7 +422,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##ChildAYawInput", &editedMode.childA_OrientationYaw, 1.0f, -180.0f, 180.0f, "%.1f")) {
-                editedMode.childA_OrientationYaw = clamp(editedMode.childA_OrientationYaw, -180.0f, 180.0f);
+                //editedMode.childA_OrientationYaw = clamp(editedMode.childA_OrientationYaw, -180.0f, 180.0f);
                 changed = true;
             }
             
@@ -451,7 +432,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
             if (ImGui::DragFloat("##ChildAPitchInput", &editedMode.childA_OrientationPitch, 1.0f, -90.0f, 90.0f, "%.1f")) {
-                editedMode.childA_OrientationPitch = clamp(editedMode.childA_OrientationPitch, -90.0f, 90.0f);
+                //editedMode.childA_OrientationPitch = clamp(editedMode.childA_OrientationPitch, -90.0f, 90.0f);
                 changed = true;
             }
             
@@ -461,7 +442,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
             if (ImGui::DragFloat("##ChildARollInput", &editedMode.childA_OrientationRoll, 1.0f, -180.0f, 180.0f, "%.1f")) {
-                editedMode.childA_OrientationRoll = clamp(editedMode.childA_OrientationRoll, -180.0f, 180.0f);
+                //editedMode.childA_OrientationRoll = clamp(editedMode.childA_OrientationRoll, -180.0f, 180.0f);
                 changed = true;
             }
             
@@ -486,7 +467,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##ChildBYawInput", &editedMode.childB_OrientationYaw, 1.0f, -180.0f, 180.0f, "%.1f")) {
-                editedMode.childB_OrientationYaw = clamp(editedMode.childB_OrientationYaw, -180.0f, 180.0f);
+                //editedMode.childB_OrientationYaw = clamp(editedMode.childB_OrientationYaw, -180.0f, 180.0f);
                 changed = true;
             }
             
@@ -496,7 +477,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
             if (ImGui::DragFloat("##ChildBPitchInput", &editedMode.childB_OrientationPitch, 1.0f, -90.0f, 90.0f, "%.1f")) {
-                editedMode.childB_OrientationPitch = clamp(editedMode.childB_OrientationPitch, -90.0f, 90.0f);
+                //editedMode.childB_OrientationPitch = clamp(editedMode.childB_OrientationPitch, -90.0f, 90.0f);
                 changed = true;
             }
             
@@ -506,7 +487,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
             if (ImGui::DragFloat("##ChildBRollInput", &editedMode.childB_OrientationRoll, 1.0f, -180.0f, 180.0f, "%.1f")) {
-                editedMode.childB_OrientationRoll = clamp(editedMode.childB_OrientationRoll, -180.0f, 180.0f);
+                //editedMode.childB_OrientationRoll = clamp(editedMode.childB_OrientationRoll, -180.0f, 180.0f);
                 changed = true;
             }
             
@@ -523,7 +504,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##RestLengthInput", &editedMode.adhesionRestLength, 0.1f, 1.0f, 10.0f, "%.1f")) {
-                editedMode.adhesionRestLength = clamp(editedMode.adhesionRestLength, 1.0f, 10.0f);
+                //editedMode.adhesionRestLength = clamp(editedMode.adhesionRestLength, 1.0f, 10.0f);
                 changed = true;
             }
             
@@ -533,7 +514,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
             if (ImGui::DragFloat("##SpringStiffnessInput", &editedMode.adhesionSpringStiffness, 5.0f, 10.0f, 500.0f, "%.1f")) {
-                editedMode.adhesionSpringStiffness = clamp(editedMode.adhesionSpringStiffness, 10.0f, 500.0f);
+                //editedMode.adhesionSpringStiffness = clamp(editedMode.adhesionSpringStiffness, 10.0f, 500.0f);
                 changed = true;
             }
             
@@ -543,7 +524,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
             if (ImGui::DragFloat("##SpringDampingInput", &editedMode.adhesionSpringDamping, 1.0f, 0.0f, 100.0f, "%.1f")) {
-                editedMode.adhesionSpringDamping = clamp(editedMode.adhesionSpringDamping, 0.0f, 100.0f);
+                //editedMode.adhesionSpringDamping = clamp(editedMode.adhesionSpringDamping, 0.0f, 100.0f);
                 changed = true;
             }
             
@@ -556,7 +537,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(80);
                 if (ImGui::DragFloat("##BreakForceInput", &editedMode.adhesionBreakForce, 50.0f, 100.0f, 5000.0f, "%.1f")) {
-                    editedMode.adhesionBreakForce = clamp(editedMode.adhesionBreakForce, 100.0f, 5000.0f);
+                    //editedMode.adhesionBreakForce = clamp(editedMode.adhesionBreakForce, 100.0f, 5000.0f);
                     changed = true;
                 }
             }
@@ -570,7 +551,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##ConstraintStrengthInput", &editedMode.orientationConstraintStrength, 0.01f, 0.0f, 1.0f, "%.2f")) {
-                editedMode.orientationConstraintStrength = clamp(editedMode.orientationConstraintStrength, 0.0f, 1.0f);
+                //editedMode.orientationConstraintStrength = clamp(editedMode.orientationConstraintStrength, 0.0f, 1.0f);
                 changed = true;
             }
             
@@ -579,7 +560,7 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);            if (ImGui::DragFloat("##MaxAngleDeviationInput", &editedMode.maxAllowedAngleDeviation, 1.0f, 0.0f, 180.0f, "%.1f")) {
-                editedMode.maxAllowedAngleDeviation = clamp(editedMode.maxAllowedAngleDeviation, 0.0f, 180.0f);
+                //editedMode.maxAllowedAngleDeviation = clamp(editedMode.maxAllowedAngleDeviation, 0.0f, 180.0f);
                 changed = true;
             }
             
@@ -589,7 +570,6 @@ void UIManager::drawGenomeModeEditor(int modeIndex) {
         ImGui::Separator();
         if (g_genomeSystem->getModeCount() > 1) {
             // Check if this is the initial mode
-            bool isInitialMode = editedMode.isInitial;
             if (isInitialMode) {
                 // If this is the initial mode, warn the user
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));

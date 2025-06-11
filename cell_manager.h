@@ -60,7 +60,7 @@ struct CellManager {
     // We declare functions in the struct, but we will define them in the cell_manager.cpp file.
     // This is because when a file is edited, the compiler will also have to recompile all the files that include it.
     // So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
-      void initializeGPUBuffers();
+	void initializeGPUBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
     void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius, int modeIndex = -1);

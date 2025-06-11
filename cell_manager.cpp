@@ -66,12 +66,7 @@ void CellManager::initializeGPUBuffers() {
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
     if (cell_count == 0) return;
     
-    // Safety check for zero-sized framebuffer (minimized window)
-    if (resolution.x <= 0 || resolution.y <= 0) {
-        return;
-    }
-    
-    // Additional safety check for very small resolutions that might cause issues
+	// Safety check for very small resolutions, including minimising window.
     if (resolution.x < 1 || resolution.y < 1) {
         return;
     }
@@ -133,36 +128,17 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     sphereMesh.render(cell_count);
     
     } catch (const std::exception& e) {
-        std::cerr << "Exception in renderCells: " << e.what() << std::endl;
+        std::cerr << "Exception in renderCells: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "Unknown exception in renderCells" << std::endl;
+        std::cerr << "Unknown exception in renderCells\n";
     }
 }
 
 void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius, int modeIndex) {
-    if (cell_count >= config::MAX_CELLS) {
-        std::cout << "Warning: Maximum cell count reached!" << std::endl;
-        return;
-    }
+	// Add cell to CPU storage first
+    addCellToStorage(position, velocity, mass, radius, modeIndex);
 
-    // Default to initial mode if not specified or invalid
-    if (modeIndex < 0 && g_genomeSystem) {
-        modeIndex = g_genomeSystem->getInitialModeIndex();
-    }
-    if (modeIndex < 0) modeIndex = 0; // Fallback
-
-    // Create new compute cell
-    ComputeCell newCell;
-    newCell.positionAndRadius = glm::vec4(position, radius);
-    newCell.velocityAndMass = glm::vec4(velocity, mass);
-    newCell.acceleration = glm::vec4(0.0f);
-    newCell.genomeData = glm::ivec4(modeIndex, 0, 0, 0); // modeIndex, splitTimer=0, adhesionCount=0, flags=0
-
-    // Add to CPU storage
-    cpuCells.push_back(newCell);
-    cell_count++;
-
-    // Update GPU buffer
+    // Update GPU buffer using the CPU data
     updateGPUBuffers();
 }
 
@@ -702,12 +678,15 @@ void CellManager::processCellDivisions() {
     for (const auto& divisionPair : cellsToDiv) {
         divideCellAtIndex(divisionPair.first, divisionPair.second);
     }
+
+    // Now update GPU buffer with all changes at once (new children + removed parent for each cell that divided)
+	//updateGPUBuffers(); // Why does this not work here?
 }
 
 void CellManager::divideCellAtIndex(int parentIndex, const ComputeCell& currentParentData) {
     if (parentIndex < 0 || parentIndex >= cell_count) return;
     if (cell_count >= config::MAX_CELLS - 1) {
-        std::cout << "Cannot divide: Maximum cell count would be exceeded" << std::endl;
+        std::cout << "Cannot divide: Maximum cell count would be exceeded\n";
         return;
     }
     
@@ -722,7 +701,7 @@ void CellManager::divideCellAtIndex(int parentIndex, const ComputeCell& currentP
     }
     
     if (!mode) {
-        std::cout << "Cannot divide: Invalid genome mode" << std::endl;
+        std::cout << "Cannot divide: Invalid genome mode\n";
         return;
     }
     
@@ -743,7 +722,7 @@ void CellManager::divideCellAtIndex(int parentIndex, const ComputeCell& currentP
     
     // Debug: Print parent position to verify we're using current GPU data
     std::cout << "Dividing cell " << parentIndex << " at position: (" 
-              << parentPos.x << ", " << parentPos.y << ", " << parentPos.z << ")" << std::endl;
+              << parentPos.x << ", " << parentPos.y << ", " << parentPos.z << ")\n";
     
     glm::vec3 childA_Pos = parentPos + splitDirection * separationDistance;
     glm::vec3 childB_Pos = parentPos - splitDirection * separationDistance;
@@ -774,7 +753,7 @@ void CellManager::divideCellAtIndex(int parentIndex, const ComputeCell& currentP
     glm::vec3 totalMomentumBefore = parent.velocityAndMass.w * parentVelocity;
     glm::vec3 totalMomentumAfter = childMass * childA_Velocity + childMass * childB_Velocity;
     std::cout << "Division momentum - Before: (" << totalMomentumBefore.x << ", " << totalMomentumBefore.y << ", " << totalMomentumBefore.z 
-              << ") After: (" << totalMomentumAfter.x << ", " << totalMomentumAfter.y << ", " << totalMomentumAfter.z << ")" << std::endl;
+              << ") After: (" << totalMomentumAfter.x << ", " << totalMomentumAfter.y << ", " << totalMomentumAfter.z << ")\n";
     
     // Remove the parent cell completely
     // Check if the selected cell is the parent being removed
@@ -791,11 +770,11 @@ void CellManager::divideCellAtIndex(int parentIndex, const ComputeCell& currentP
     // Now update GPU buffer with all changes at once (new children + removed parent)
     updateGPUBuffers();
     
-    std::cout << "Cell " << parentIndex << " divided and parent removed! New cell count: " << cell_count << std::endl;
+    std::cout << "Cell " << parentIndex << " divided and parent removed! New cell count: " << cell_count << "\n";
 }
 
 void CellManager::resetSimulation(int initialCellCount) {
-    std::cout << "Resetting simulation..." << std::endl;
+    std::cout << "Resetting simulation...\n";
     
     // Clear any current selection
     clearSelection();
@@ -810,5 +789,5 @@ void CellManager::resetSimulation(int initialCellCount) {
     // Spawn initial cells
     spawnCells(initialCellCount);
     
-    std::cout << "Simulation reset with " << initialCellCount << " cells." << std::endl;
+    std::cout << "Simulation reset with " << initialCellCount << " cells.\n";
 }

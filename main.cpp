@@ -7,7 +7,6 @@
 #include<glad/glad.h>
 #include<GLFW/glfw3.h>
 #include<glm.hpp>
-#include<algorithm>
 #include<thread>
 #include<chrono>
 
@@ -23,11 +22,13 @@
 #include "genome_system.h"
 
 // Define the config variable
+// I don't really understand why I can't define it in the header file
 namespace config {
 	bool showDemoWindow = true;
 }
 
 // Simple OpenGL error checking function
+// I have NEVER had this function actually catch an error.
 void checkGLError(const char* operation) {
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
@@ -61,7 +62,7 @@ int main()
 		g_genomeSystem = std::make_unique<GenomeSystem>();
 	}
 	
-	// Initialise the UI manager // We dont have any ui to manage yet
+	// Initialise the UI manager
 	ToolState toolState;
 	UIManager uiManager;	// Initialise cells
 	CellManager cellManager;
@@ -82,7 +83,7 @@ int main()
 	
 	// Main while loop
 	while (!glfwWindowShouldClose(window))
-	{		// Calculate delta time
+	{	// Calculate delta time
 		float currentFrame = static_cast<float>(glfwGetTime());
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
@@ -120,7 +121,7 @@ int main()
 			lastKnownWidth = currentWidth;
 			lastKnownHeight = currentHeight;
 		}
-				// Update performance monitoring
+		// Update performance monitoring
 		perfMonitor.frameCount++;
 		perfMonitor.frameTimeAccumulator += deltaTime;
 		
@@ -142,7 +143,8 @@ int main()
 		if (width <= 0 || height <= 0) {
 			glfwPollEvents();
 			continue;
-		}		//// First we do some init stuff
+		}
+		//// First we do some init stuff
 		/// Clear the framebuffer for proper 3D rendering
 		/// Tell OpenGL a new frame is about to begin
 		ImGui_ImplOpenGL3_NewFrame();
@@ -181,7 +183,7 @@ int main()
 			cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera, 
 			                           isLeftMousePressed, isLeftMouseDown, scrollDelta);
 		}
-		//// Then we handle cell simulation
+		// Then we handle cell simulation
 		try {
 			TimerGPU timer("Cell Physics Update");
 			cellManager.updateCells(deltaTime);
@@ -191,7 +193,7 @@ int main()
 			std::cerr << "Unknown exception in cell simulation\n";
 		}
 
-		//// Then we handle rendering
+		// Then we handle rendering
 		try {
 			TimerGPU timer("Cell Rendering Update");
 			cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
@@ -200,8 +202,8 @@ int main()
 			std::cerr << "Exception in cell rendering: " << e.what() << "\n";
 		} catch (...) {
 			std::cerr << "Unknown exception in cell rendering\n";
-		}//// Then we handle ImGUI
-		//ui.renderUI();
+		}
+		// Then we handle ImGUI
 		// Cell Inspector and Selection UI
 		uiManager.renderCellInspector(cellManager);
 		uiManager.renderSelectionInfo(cellManager);
@@ -218,7 +220,7 @@ int main()
 		// Camera Controls
 		uiManager.renderCameraControls(cellManager, camera);
 
-		// Render the demo window if enabled
+		// Render the imgui demo window if enabled
 		if (config::showDemoWindow) {
 			ImGui::ShowDemoWindow();
 		}

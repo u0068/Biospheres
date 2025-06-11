@@ -9,12 +9,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// Helper function to clamp values (C++17 std::clamp replacement)
-template<typename T>
-T clamp(const T& value, const T& min_val, const T& max_val) {
-    return std::max(min_val, std::min(value, max_val));
-}
-
 // Global genome system instance
 std::unique_ptr<GenomeSystem> g_genomeSystem;
 
@@ -39,28 +33,28 @@ bool GenomeMode::isValid() const {
 }
 
 void GenomeMode::clampValues() {
-    splitInterval = clamp(splitInterval, 1.0f, 15.0f);
-    parentSplitYaw = clamp(parentSplitYaw, -180.0f, 180.0f);
-    parentSplitPitch = clamp(parentSplitPitch, -90.0f, 90.0f);
-    parentSplitRoll = clamp(parentSplitRoll, -180.0f, 180.0f);
-    childA_OrientationYaw = clamp(childA_OrientationYaw, -180.0f, 180.0f);
-    childA_OrientationPitch = clamp(childA_OrientationPitch, -90.0f, 90.0f);
-    childA_OrientationRoll = clamp(childA_OrientationRoll, -180.0f, 180.0f);
-    childB_OrientationYaw = clamp(childB_OrientationYaw, -180.0f, 180.0f);
-    childB_OrientationPitch = clamp(childB_OrientationPitch, -90.0f, 90.0f);
-    childB_OrientationRoll = clamp(childB_OrientationRoll, -180.0f, 180.0f);
-    adhesionRestLength = clamp(adhesionRestLength, 1.0f, 10.0f);
-    adhesionSpringStiffness = clamp(adhesionSpringStiffness, 10.0f, 500.0f);
-    adhesionSpringDamping = clamp(adhesionSpringDamping, 0.0f, 100.0f);
-    orientationConstraintStrength = clamp(orientationConstraintStrength, 0.0f, 1.0f);
-    maxAllowedAngleDeviation = clamp(maxAllowedAngleDeviation, 0.0f, 180.0f);
-    adhesionBreakForce = clamp(adhesionBreakForce, 100.0f, 5000.0f);
+    splitInterval = std::clamp(splitInterval, 1.0f, 15.0f);
+    parentSplitYaw = std::clamp(parentSplitYaw, -180.0f, 180.0f);
+    parentSplitPitch = std::clamp(parentSplitPitch, -90.0f, 90.0f);
+    parentSplitRoll = std::clamp(parentSplitRoll, -180.0f, 180.0f);
+    childA_OrientationYaw = std::clamp(childA_OrientationYaw, -180.0f, 180.0f);
+    childA_OrientationPitch = std::clamp(childA_OrientationPitch, -90.0f, 90.0f);
+    childA_OrientationRoll = std::clamp(childA_OrientationRoll, -180.0f, 180.0f);
+    childB_OrientationYaw = std::clamp(childB_OrientationYaw, -180.0f, 180.0f);
+    childB_OrientationPitch = std::clamp(childB_OrientationPitch, -90.0f, 90.0f);
+    childB_OrientationRoll = std::clamp(childB_OrientationRoll, -180.0f, 180.0f);
+    adhesionRestLength = std::clamp(adhesionRestLength, 1.0f, 10.0f);
+    adhesionSpringStiffness = std::clamp(adhesionSpringStiffness, 10.0f, 500.0f);
+    adhesionSpringDamping = std::clamp(adhesionSpringDamping, 0.0f, 100.0f);
+    orientationConstraintStrength = std::clamp(orientationConstraintStrength, 0.0f, 1.0f);
+    maxAllowedAngleDeviation = std::clamp(maxAllowedAngleDeviation, 0.0f, 180.0f);
+    adhesionBreakForce = std::clamp(adhesionBreakForce, 100.0f, 5000.0f);
     
-    // Clamp color components
-    modeColor.r = clamp(modeColor.r, 0.0f, 1.0f);
-    modeColor.g = clamp(modeColor.g, 0.0f, 1.0f);
-    modeColor.b = clamp(modeColor.b, 0.0f, 1.0f);
-    modeColor.a = clamp(modeColor.a, 0.0f, 1.0f);
+    // std::clamp color components
+    modeColor.r = std::clamp(modeColor.r, 0.0f, 1.0f);
+    modeColor.g = std::clamp(modeColor.g, 0.0f, 1.0f);
+    modeColor.b = std::clamp(modeColor.b, 0.0f, 1.0f);
+    modeColor.a = std::clamp(modeColor.a, 0.0f, 1.0f);
 }
 
 // GPUGenomeMode implementation
@@ -97,7 +91,7 @@ GPUGenomeMode GPUGenomeMode::fromGenomeMode(const GenomeMode& mode) {
     
     // Pack boolean flags
     gpuMode.flags = 0;
-    gpuMode.setFlag(FLAG_IS_INITIAL, mode.isInitial);
+    gpuMode.setFlag(FLAG_IS_INITIAL, false); // Deal with this properly later
     gpuMode.setFlag(FLAG_PARENT_MAKE_ADHESION, mode.parentMakeAdhesion);
     gpuMode.setFlag(FLAG_CHILD_A_KEEP_ADHESION, mode.childA_KeepAdhesion);
     gpuMode.setFlag(FLAG_CHILD_B_KEEP_ADHESION, mode.childB_KeepAdhesion);
@@ -114,35 +108,19 @@ GenomeSystem::GenomeSystem() {
 
 void GenomeSystem::addMode(const GenomeMode& mode) {
     GenomeMode newMode = mode;
-    newMode.clampValues();
-    
-    // Ensure only one initial mode exists
-    if (newMode.isInitial) {
-        // Clear initial flag from all existing modes
-        for (auto& existingMode : modes) {
-            existingMode.isInitial = false;
-        }
-    }
+	//newMode.std::clampValues(); // This isn't needed because the default mode is already std::clamped
     
     modes.push_back(newMode);
     refreshModeIndices();
-    enforceSingleInitialMode(); // Ensure we always have exactly one initial mode
     updateGPUData();
     triggerGenomeChanged();
 }
 
 void GenomeSystem::removeMode(int index) {
     validateModeIndex(index);
-    
-    // Don't allow removing the initial mode if it's the last one, or if it would leave us with no initial mode
-    bool isInitialMode = modes[index].isInitial;
-    if (isInitialMode && modes.size() == 1) {
-        throw std::runtime_error("Cannot remove the last remaining mode");
-    }
-    
     modes.erase(modes.begin() + index);
+	initialModeIndex -= (initialModeIndex > index) ? 1 : 0; // Adjust initial mode index if necessary
     refreshModeIndices();
-    enforceSingleInitialMode(); // Ensure we still have exactly one initial mode
     updateGPUData();
     triggerGenomeChanged();
 }
@@ -153,19 +131,8 @@ void GenomeSystem::updateMode(int index, const GenomeMode& mode) {
     GenomeMode updatedMode = mode;
     updatedMode.clampValues();
     updatedMode.index = index;
-    
-    // Ensure only one initial mode exists
-    if (updatedMode.isInitial) {
-        // Clear initial flag from all other modes
-        for (size_t i = 0; i < modes.size(); ++i) {
-            if (i != index) {
-                modes[i].isInitial = false;
-            }
-        }
-    }
-    
+
     modes[index] = updatedMode;
-    enforceSingleInitialMode(); // Ensure we always have exactly one initial mode
     updateGPUMode(index);
     triggerGenomeChanged();
 }
@@ -193,8 +160,7 @@ void GenomeSystem::clearModes() {
 void GenomeSystem::loadDefaultModes() {
     clearModes();    // Create only one default initial mode with all zero values
     GenomeMode defaultMode;
-    defaultMode.modeName = "Initial Mode";
-    defaultMode.isInitial = true;
+    defaultMode.modeName = "Default Mode";
     defaultMode.modeColor = Color(1.0f, 1.0f, 1.0f, 1.0f); // White with full alpha
     defaultMode.splitInterval = 5.0f; // Default split timer is 5 seconds
     defaultMode.parentSplitYaw = 0.0f;
@@ -231,58 +197,8 @@ void GenomeSystem::refreshModeIndices() {
     }
 }
 
-void GenomeSystem::enforceSingleInitialMode() {
-    bool foundInitial = false;
-    for (auto& mode : modes) {
-        if (mode.isInitial) {
-            if (!foundInitial) {
-                foundInitial = true;
-            } else {
-                mode.isInitial = false;
-            }
-        }
-    }
-    
-    // If no initial mode found and we have modes, set the first one as initial
-    if (!foundInitial && !modes.empty()) {
-        modes[0].isInitial = true;
-    }
-}
-
-void GenomeSystem::validateForSimulation() {
-    std::vector<int> initialModes = getInitialModes();
-    
-    if (initialModes.empty() && !modes.empty()) {
-        modes[0].isInitial = true;
-        // Log warning in a simple way (could be expanded with proper logging)
-    } else if (initialModes.size() > 1) {
-        std::string modeList;
-        for (size_t i = 0; i < initialModes.size(); ++i) {
-            if (i > 0) modeList += ", ";
-            modeList += "'" + modes[initialModes[i]].modeName + "'";
-        }
-        throw std::runtime_error("Multiple initial modes detected: " + modeList + 
-                                ". Only one mode can be marked as initial during simulation.");
-    }
-}
-
-std::vector<int> GenomeSystem::getInitialModes() const {
-    std::vector<int> initialModes;
-    for (size_t i = 0; i < modes.size(); ++i) {
-        if (modes[i].isInitial) {
-            initialModes.push_back(static_cast<int>(i));
-        }
-    }
-    return initialModes;
-}
-
 int GenomeSystem::getInitialModeIndex() const {
-    for (size_t i = 0; i < modes.size(); ++i) {
-        if (modes[i].isInitial) {
-            return static_cast<int>(i);
-        }
-    }
-    return modes.empty() ? -1 : 0;
+    return this->initialModeIndex;
 }
 
 void GenomeSystem::updateGPUData() {
@@ -396,7 +312,7 @@ namespace GenomeUtils {
         );
     }
       Color lerpColor(const Color& a, const Color& b, float t) {
-        t = clamp(t, 0.0f, 1.0f);
+        t = std::clamp(t, 0.0f, 1.0f);
         return Color(
             a.r + (b.r - a.r) * t,
             a.g + (b.g - a.g) * t,

@@ -44,7 +44,6 @@ struct GenomeMode {
     int index = 0;
     std::string modeName = "Mode 0";
     float splitInterval = 5.0f;          // Time between cell divisions (1-15 seconds)
-    bool isInitial = false;              // Whether this is the starting mode
     bool parentMakeAdhesion = false;     // Whether parent creates adhesion bonds
     Color modeColor = Color(1.0f, 1.0f, 1.0f); // Cell color for this mode
       // Parent split settings
@@ -150,6 +149,7 @@ public:
     ~GenomeSystem() = default;
     
     // Mode management
+    int initialModeIndex; // Index of initial mode
     void addMode(const GenomeMode& mode);
     void removeMode(int index);
     void updateMode(int index, const GenomeMode& mode);
@@ -162,9 +162,7 @@ public:
     
     // Validation and maintenance
     void refreshModeIndices();
-    void enforceSingleInitialMode();
     void validateForSimulation();
-    std::vector<int> getInitialModes() const;
     
     // Getters
     size_t getModeCount() const { return modes.size(); }
