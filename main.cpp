@@ -202,9 +202,12 @@ int main()
 			std::cerr << "Unknown exception in cell rendering\n";
 		}//// Then we handle ImGUI
 		//ui.renderUI();
-				// Cell Inspector and Selection UI
+		// Cell Inspector and Selection UI
 		uiManager.renderCellInspector(cellManager);
 		uiManager.renderSelectionInfo(cellManager);
+		
+		// Simulation Controls
+		uiManager.renderSimulationControls(cellManager);
 		
 		// Genome Editor UI
 		uiManager.renderGenomeEditor();

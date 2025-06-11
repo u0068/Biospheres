@@ -156,6 +156,50 @@ void UIManager::renderSelectionInfo(CellManager& cellManager) {
     }
 }
 
+void UIManager::renderSimulationControls(CellManager& cellManager) {
+    ImGui::Begin("Simulation Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    
+    // Current simulation status
+    ImGui::Text("Cells: %d", cellManager.getCellCount());
+    
+    // Reset simulation section
+    ImGui::Separator();
+    ImGui::Text("Simulation Control:");
+    
+    // Reset with default count (1 cell)
+    if (ImGui::Button("Reset Simulation")) {
+        cellManager.resetSimulation(1);
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("Clears all cells and starts fresh with 1 cell at the origin.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    
+    // Reset with custom count
+    static int resetCellCount = 5;
+    ImGui::SliderInt("Reset Count", &resetCellCount, 1, 20);
+    
+    if (ImGui::Button("Reset with Custom Count")) {
+        cellManager.resetSimulation(resetCellCount);
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("Clears all cells and spawns the specified number of cells randomly distributed.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    
+    ImGui::End();
+}
+
 void UIManager::drawToolSelector(ToolState& toolState) {
     const char* tools[] = { "None", "Add", "Edit", "Move (UNIMPLEMENTED)" };
     int current = static_cast<int>(toolState.activeTool);

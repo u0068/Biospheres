@@ -129,11 +129,15 @@ struct CellManager {
     void updateReadbackSystem(float deltaTime);
     void requestAsyncReadback();
     bool checkAsyncReadback(ComputeCell* outputData, int maxCells);
-    void cleanupReadbackSystem();
-
-    // Cell division system
+    void cleanupReadbackSystem();    // Cell division system
     void processCellDivisions();
-    void divideCellAtIndex(int parentIndex);
+    void divideCellAtIndex(int parentIndex, const ComputeCell& currentParentData);
+    
+    // Simulation control
+    void resetSimulation(int initialCellCount = DEFAULT_CELL_COUNT);
+    
+    // Internal cell addition without immediate GPU sync (used during division)
+    void addCellToStorage(glm::vec3 position, glm::vec3 velocity, float mass, float radius, int modeIndex = -1);
 private:
     void updateGPUBuffers();
     void runPhysicsCompute(float deltaTime);

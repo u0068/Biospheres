@@ -92,21 +92,16 @@ void main() {
         
         vec3 delta = myPos - otherPos;
         float distance = length(delta);
-        float minDistance = myRadius + otherRadius;
-          if (distance < minDistance && distance > 0.001) {
+        float minDistance = myRadius + otherRadius;        if (distance < minDistance && distance > 0.001) {
             // Collision detected - apply repulsion force
             vec3 direction = normalize(delta);
             float overlap = minDistance - distance;
             
             // Use genome mode's adhesion settings for force calculation
             float forceStrength = mode.adhesionSpringStiffness;
-            totalForce += direction * overlap * forceStrength * 0.1; // Scale down for stability
-        }
-    }
+            totalForce += direction * overlap * forceStrength * 0.5; // Increased force strength for better separation
+        }    }
     
-    // Apply genome-based damping
-    float genomeDamping = u_damping * (1.0 + mode.adhesionSpringDamping * 0.01);
-    
-    // Store acceleration (F = ma, so a = F/m) with genome-modified damping
-    cells[index].acceleration.xyz = totalForce / myMass * genomeDamping;
+    // Store acceleration (F = ma, so a = F/m)
+    cells[index].acceleration.xyz = totalForce / myMass;
 }

@@ -41,6 +41,7 @@ public:
     void renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor);
     void renderCameraControls(CellManager& cellmanager, Camera& camera);
     void renderGenomeEditor(); // New function for genome editing
+    void renderSimulationControls(CellManager& cellManager); // New function for simulation controls
     
 private:
     void drawToolSelector(ToolState& toolState);

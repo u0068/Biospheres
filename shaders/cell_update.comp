@@ -57,13 +57,7 @@ void main() {
     // Check bounds
     if (index >= u_cellCount) {
         return;
-    }
-      // Skip position updates for dragged cell - position is set directly by dragging
-    if (int(index) == u_draggedCellIndex) {
-        return;
-    }
-    
-    // Get genome mode for this cell
+    }      // Get genome mode for this cell
     int modeIndex = cells[index].genomeData.x;
     if (modeIndex < 0 || modeIndex >= u_genomeModeCount) {
         modeIndex = 0; // Fallback to first mode
@@ -72,7 +66,7 @@ void main() {
     
     GPUGenomeMode mode = genomeModes[modeIndex];
     
-    // Update split timer
+    // Update split timer (even for dragged cells)
     int splitTimer = cells[index].genomeData.y;
     splitTimer += int(u_deltaTime * 1000.0); // Convert to milliseconds
       // Check for cell division
@@ -84,6 +78,11 @@ void main() {
     }
     
     cells[index].genomeData.y = splitTimer;
+    
+    // Skip physics updates for dragged cell - position is set directly by dragging
+    if (int(index) == u_draggedCellIndex) {
+        return;
+    }
     
     // Update velocity based on acceleration
     cells[index].velocityAndMass.xyz += cells[index].acceleration.xyz * u_deltaTime;

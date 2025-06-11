@@ -166,6 +166,30 @@ void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, fl
     updateGPUBuffers();
 }
 
+void CellManager::addCellToStorage(glm::vec3 position, glm::vec3 velocity, float mass, float radius, int modeIndex) {
+    if (cell_count >= config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!" << std::endl;
+        return;
+    }
+
+    // Default to initial mode if not specified or invalid
+    if (modeIndex < 0 && g_genomeSystem) {
+        modeIndex = g_genomeSystem->getInitialModeIndex();
+    }
+    if (modeIndex < 0) modeIndex = 0; // Fallback
+
+    // Create new compute cell
+    ComputeCell newCell;
+    newCell.positionAndRadius = glm::vec4(position, radius);
+    newCell.velocityAndMass = glm::vec4(velocity, mass);
+    newCell.acceleration = glm::vec4(0.0f);
+    newCell.genomeData = glm::ivec4(modeIndex, 0, 0, 0); // modeIndex, splitTimer=0, adhesionCount=0, flags=0
+
+    // Add to CPU storage only (no immediate GPU sync)
+    cpuCells.push_back(newCell);
+    cell_count++;
+}
+
 void CellManager::updateCells(float deltaTime) {
     if (cell_count == 0) return; 
 
@@ -224,12 +248,10 @@ void CellManager::updateGPUBuffers() {
 }
 
 void CellManager::runPhysicsCompute(float deltaTime) {
-    physicsShader->use();
-
-    // Set uniforms
+    physicsShader->use();    // Set uniforms
     physicsShader->setFloat("u_deltaTime", deltaTime);
     physicsShader->setInt("u_cellCount", cell_count);
-    physicsShader->setFloat("u_damping", 0.98f);
+    physicsShader->setFloat("u_damping", 0.995f); // Reduced damping for better separation
     
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -252,12 +274,10 @@ void CellManager::runPhysicsCompute(float deltaTime) {
 }
 
 void CellManager::runUpdateCompute(float deltaTime) {
-    updateShader->use();
-
-    // Set uniforms
+    updateShader->use();    // Set uniforms
     updateShader->setFloat("u_deltaTime", deltaTime);
     updateShader->setInt("u_cellCount", cell_count);
-    updateShader->setFloat("u_damping", 0.98f);
+    updateShader->setFloat("u_damping", 0.995f); // Reduced damping for better separation
     
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -305,11 +325,9 @@ void CellManager::spawnCells(int count) {
                 (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
                 (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f
             );
-        }
-
-        // Consistent mass and radius for predictable behavior
+        }        // Consistent mass and radius for predictable behavior
         float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
-        float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
+        float cellRadius = 1.0f; // Consistent radius of 1.0 for all cells
 
         // Use initial genome mode for spawned cells
         int initialModeIndex = g_genomeSystem ? g_genomeSystem->getInitialModeIndex() : 0;
@@ -452,17 +470,24 @@ void CellManager::clearSelection() {
 
 void CellManager::endDrag() {
     if (isDraggingCell && selectedCell.isValid) {
-        // Reset velocity to zero when ending drag to prevent sudden jumps
-        cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
-        cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
-        cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
-        
-        // Update the GPU buffer with the final state
+        // Only update velocity to zero, don't overwrite entire cell data
+        // This preserves the split timer that has been incrementing on GPU
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
-                       selectedCell.cellIndex * sizeof(ComputeCell), 
-                       sizeof(ComputeCell), 
-                       &cpuCells[selectedCell.cellIndex]);
+        
+        // Get current GPU data to preserve split timer and other state
+        ComputeCell* cellData = static_cast<ComputeCell*>(glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE));
+        if (cellData) {
+            // Only reset velocity, preserve everything else (especially split timer)
+            cellData[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
+            cellData[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
+            cellData[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
+            
+            // Update CPU storage with current GPU state
+            cpuCells[selectedCell.cellIndex] = cellData[selectedCell.cellIndex];
+            
+            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        }
+        
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
     
@@ -657,14 +682,14 @@ void CellManager::processCellDivisions() {
         std::cerr << "Failed to map GPU buffer for division processing" << std::endl;
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         return;
-    }
-      // Check each cell for division flags and process them
-    std::vector<int> cellsToDiv;;
+    }    // Check each cell for division flags and process them
+    std::vector<std::pair<int, ComputeCell>> cellsToDiv;
 
     for (int i = 0; i < cell_count; ++i) {
         // Check if the division flag (bit 0) is set
         if ((gpuData[i].genomeData.w & 1) != 0) {
-            cellsToDiv.push_back(i);
+            // Store both the index and the current GPU data
+            cellsToDiv.push_back({i, gpuData[i]});
             // Clear the division flag
             gpuData[i].genomeData.w &= ~1;
         }
@@ -673,20 +698,21 @@ void CellManager::processCellDivisions() {
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
-    // Process divisions (create new cells)
-    for (int parentIndex : cellsToDiv) {
-        divideCellAtIndex(parentIndex);
+    // Process divisions (create new cells) using current GPU positions
+    for (const auto& divisionPair : cellsToDiv) {
+        divideCellAtIndex(divisionPair.first, divisionPair.second);
     }
 }
 
-void CellManager::divideCellAtIndex(int parentIndex) {
+void CellManager::divideCellAtIndex(int parentIndex, const ComputeCell& currentParentData) {
     if (parentIndex < 0 || parentIndex >= cell_count) return;
     if (cell_count >= config::MAX_CELLS - 1) {
         std::cout << "Cannot divide: Maximum cell count would be exceeded" << std::endl;
         return;
     }
     
-    const ComputeCell& parent = cpuCells[parentIndex];
+    // Use the current GPU data instead of outdated CPU data
+    const ComputeCell& parent = currentParentData;
     
     // Get the genome mode for this cell
     int modeIndex = parent.genomeData.x;
@@ -710,29 +736,45 @@ void CellManager::divideCellAtIndex(int parentIndex) {
         cos(pitch) * cos(yaw),
         sin(pitch),
         cos(pitch) * sin(yaw)
-    );
-    
-    // Calculate positions for child cells
-    float separationDistance = parent.positionAndRadius.w * 1.2f; // Slightly more than radius
+    );    // Calculate positions for child cells with initial overlap
+    // Position children symmetrically around the parent's center
+    float separationDistance = 0.25f; // Half separation distance for each child from center
     glm::vec3 parentPos = glm::vec3(parent.positionAndRadius);
+    
+    // Debug: Print parent position to verify we're using current GPU data
+    std::cout << "Dividing cell " << parentIndex << " at position: (" 
+              << parentPos.x << ", " << parentPos.y << ", " << parentPos.z << ")" << std::endl;
     
     glm::vec3 childA_Pos = parentPos + splitDirection * separationDistance;
     glm::vec3 childB_Pos = parentPos - splitDirection * separationDistance;
-    
-    // Calculate child properties
+      // Calculate child properties
     float childMass = parent.velocityAndMass.w * 0.5f; // Split mass
-    float childRadius = parent.positionAndRadius.w * 0.8f; // Slightly smaller radius
-    
-    // Determine child modes
+    float childRadius = 1.0f; // Consistent radius of 1.0 for all cells
+      // Determine child modes
     int childA_Mode = (mode->childAModeIndex >= 0) ? mode->childAModeIndex : modeIndex;
-    int childB_Mode = (mode->childBModeIndex >= 0) ? mode->childBModeIndex : modeIndex;
-      // Create child A
-    glm::vec3 childA_Velocity = glm::vec3(parent.velocityAndMass) + splitDirection * 2.0f;
-    addCell(childA_Pos, childA_Velocity, childMass, childRadius, childA_Mode);
+    int childB_Mode = (mode->childBModeIndex >= 0) ? mode->childBModeIndex : modeIndex;    // Calculate separation velocity with proper momentum conservation
+    // Total momentum before = parent.mass * parent.velocity
+    // Total momentum after = childA.mass * childA.velocity + childB.mass * childB.velocity
+    // Since both children have equal mass (0.5 * parent.mass), their velocities should be:
+    // childA.velocity = parent.velocity + separation.velocity
+    // childB.velocity = parent.velocity - separation.velocity
+    // This ensures: childA.mass * (parent.velocity + sep) + childB.mass * (parent.velocity - sep) = parent.mass * parent.velocity
     
-    // Create child B  
-    glm::vec3 childB_Velocity = glm::vec3(parent.velocityAndMass) - splitDirection * 2.0f;
-    addCell(childB_Pos, childB_Velocity, childMass, childRadius, childB_Mode);
+    float separationSpeed = 5.0f + (parent.velocityAndMass.w * 0.8f); // Increased base speed and mass factor
+    glm::vec3 parentVelocity = glm::vec3(parent.velocityAndMass);
+    glm::vec3 separationVelocity = splitDirection * separationSpeed;    // Create child A with positive separation velocity
+    glm::vec3 childA_Velocity = parentVelocity + separationVelocity;
+    addCellToStorage(childA_Pos, childA_Velocity, childMass, childRadius, childA_Mode);
+    
+    // Create child B with negative separation velocity (equal and opposite force)
+    glm::vec3 childB_Velocity = parentVelocity - separationVelocity;
+    addCellToStorage(childB_Pos, childB_Velocity, childMass, childRadius, childB_Mode);
+    
+    // Debug: Print momentum conservation verification
+    glm::vec3 totalMomentumBefore = parent.velocityAndMass.w * parentVelocity;
+    glm::vec3 totalMomentumAfter = childMass * childA_Velocity + childMass * childB_Velocity;
+    std::cout << "Division momentum - Before: (" << totalMomentumBefore.x << ", " << totalMomentumBefore.y << ", " << totalMomentumBefore.z 
+              << ") After: (" << totalMomentumAfter.x << ", " << totalMomentumAfter.y << ", " << totalMomentumAfter.z << ")" << std::endl;
     
     // Remove the parent cell completely
     // Check if the selected cell is the parent being removed
@@ -742,13 +784,31 @@ void CellManager::divideCellAtIndex(int parentIndex) {
         // If selected cell index is after the parent, adjust it since indices will shift
         selectedCell.cellIndex--;
     }
-    
-    // Remove parent from CPU storage
+      // Remove parent from CPU storage
     cpuCells.erase(cpuCells.begin() + parentIndex);
     cell_count--;
     
-    // Update GPU buffer with new cell data
+    // Now update GPU buffer with all changes at once (new children + removed parent)
     updateGPUBuffers();
     
     std::cout << "Cell " << parentIndex << " divided and parent removed! New cell count: " << cell_count << std::endl;
+}
+
+void CellManager::resetSimulation(int initialCellCount) {
+    std::cout << "Resetting simulation..." << std::endl;
+    
+    // Clear any current selection
+    clearSelection();
+    
+    // Clear CPU storage
+    cpuCells.clear();
+    cell_count = 0;
+    
+    // Clear GPU buffers by resetting them to empty state
+    updateGPUBuffers();
+    
+    // Spawn initial cells
+    spawnCells(initialCellCount);
+    
+    std::cout << "Simulation reset with " << initialCellCount << " cells." << std::endl;
 }

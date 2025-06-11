@@ -33,7 +33,10 @@ void initGLFW()
 
 GLFWwindow* createWindow()
 {
-	// Create a GLFWwindow object
+	// Set window hint to start maximized
+	glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+	
+	// Create a GLFWwindow object in windowed mode (will be maximized)
 	GLFWwindow* window = glfwCreateWindow(config::INITIAL_WINDOW_WIDTH, config::INITIAL_WINDOW_HEIGHT, config::APPLICATION_NAME, NULL, NULL);
 	// Error check if the window fails to create
 	if (window == NULL)
