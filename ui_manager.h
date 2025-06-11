@@ -40,8 +40,10 @@ public:
     void renderSelectionInfo(CellManager& cellManager);
     void renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor);
     void renderCameraControls(CellManager& cellmanager, Camera& camera);
+    void renderGenomeEditor(); // New function for genome editing
     
 private:
     void drawToolSelector(ToolState& toolState);
     void drawToolSettings(ToolState& toolState, CellManager& cellManager);
+    void drawGenomeModeEditor(int modeIndex); // Helper for editing individual modes
 };

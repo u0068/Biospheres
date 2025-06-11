@@ -20,6 +20,12 @@
 #include "ui_manager.h"
 #include "camera.h"
 #include "timer.h"
+#include "genome_system.h"
+
+// Define the config variable
+namespace config {
+	bool showDemoWindow = true;
+}
 
 // Simple OpenGL error checking function
 void checkGLError(const char* operation) {
@@ -47,14 +53,19 @@ int main()
 
 	const ImGuiIO& io = initImGui(window); // This also initialises ImGui io
 	Input input;
-	input.init(window);
-	// Initialise the camera
+	input.init(window);	// Initialise the camera
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f)); // Start further back to see the cell
+	
+	// Initialize the genome system first
+	if (!g_genomeSystem) {
+		g_genomeSystem = std::make_unique<GenomeSystem>();
+	}
+	
 	// Initialise the UI manager // We dont have any ui to manage yet
 	ToolState toolState;
 	UIManager uiManager;	// Initialise cells
 	CellManager cellManager;
-	cellManager.spawnCells(); // Use default cell count from config
+	cellManager.spawnCells(1); // Spawn only one initial cell
 
 	// Timing variables
 	float deltaTime = 0.0f;
@@ -191,10 +202,12 @@ int main()
 			std::cerr << "Unknown exception in cell rendering\n";
 		}//// Then we handle ImGUI
 		//ui.renderUI();
-		
-		// Cell Inspector and Selection UI
+				// Cell Inspector and Selection UI
 		uiManager.renderCellInspector(cellManager);
 		uiManager.renderSelectionInfo(cellManager);
+		
+		// Genome Editor UI
+		uiManager.renderGenomeEditor();
 		
 		// Performance Monitor with readable update rate
 		uiManager.renderPerformanceMonitor(cellManager, perfMonitor);

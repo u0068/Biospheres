@@ -160,9 +160,9 @@
       <AdditionalDependencies>glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="camera.cpp" />
+  <ItemGroup>    <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
+    <ClCompile Include="genome_system.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
@@ -180,11 +180,11 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="shader_class.cpp" />
     <ClCompile Include="sphere_mesh.cpp" />
-  </ItemGroup>
-  <ItemGroup>
+  </ItemGroup>  <ItemGroup>
     <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="genome_system.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
     <ClInclude Include="timer.h" />

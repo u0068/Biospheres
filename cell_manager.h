@@ -8,6 +8,7 @@
 #include "config.h"
 #include "sphere_mesh.h"
 #include "config.h"
+#include "genome_system.h"
 
 // Forward declaration
 class Camera;
@@ -17,16 +18,17 @@ struct ComputeCell {
     glm::vec4 positionAndRadius;  // x, y, z, radius
     glm::vec4 velocityAndMass;    // vx, vy, vz, mass
     glm::vec4 acceleration;       // ax, ay, az, unused
+    glm::ivec4 genomeData;        // modeIndex, splitTimer, adhesionCount, flags
 };
 
 struct CellManager {
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates
-    
-    // GPU buffer objects
+      // GPU buffer objects
     GLuint cellBuffer = 0;           // SSBO for compute cell data
     GLuint instanceBuffer = 0;       // VBO for instance rendering data
+    GLuint genomeModeBuffer = 0;     // SSBO for genome mode data
     
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
@@ -58,13 +60,16 @@ struct CellManager {
     // We declare functions in the struct, but we will define them in the cell_manager.cpp file.
     // This is because when a file is edited, the compiler will also have to recompile all the files that include it.
     // So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
-    
-    void initializeGPUBuffers();
+      void initializeGPUBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
-    void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius);
+    void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius, int modeIndex = -1);
     void updateCells(float deltaTime);
     void cleanup();
+    
+    // Genome system integration
+    void updateGenomeModeBuffer();
+    void onGenomeChanged(); // Callback for genome system changes
 
     // Getter functions for debug information
     int getCellCount() const { return cell_count; }
@@ -126,6 +131,9 @@ struct CellManager {
     bool checkAsyncReadback(ComputeCell* outputData, int maxCells);
     void cleanupReadbackSystem();
 
+    // Cell division system
+    void processCellDivisions();
+    void divideCellAtIndex(int parentIndex);
 private:
     void updateGPUBuffers();
     void runPhysicsCompute(float deltaTime);

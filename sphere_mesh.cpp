@@ -95,9 +95,15 @@ void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
     glBindBuffer(GL_ARRAY_BUFFER, instanceDataBuffer);
     
     // Instance position and radius (location = 2) - vec4
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(glm::vec4), (void*)0);
+    // Data layout: [pos+radius][color][pos+radius][color]...
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec4), (void*)0);
     glEnableVertexAttribArray(2);
     glVertexAttribDivisor(2, 1); // This attribute advances once per instance
+    
+    // Instance color (location = 3) - vec4
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec4), (void*)sizeof(glm::vec4));
+    glEnableVertexAttribArray(3);
+    glVertexAttribDivisor(3, 1); // This attribute advances once per instance
     
     glBindVertexArray(0);
 }

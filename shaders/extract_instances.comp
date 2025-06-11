@@ -2,26 +2,79 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Input: Full cell data from physics simulation
-layout(std430, binding = 0) buffer CellBuffer {
-    // Cell structure: positionAndRadius, velocityAndMass, acceleration
-    vec4 cellData[];
+// Cell data structure for compute shader
+struct ComputeCell {
+    vec4 positionAndRadius;  // x, y, z, radius
+    vec4 velocityAndMass;    // vx, vy, vz, mass
+    vec4 acceleration;       // ax, ay, az, unused
+    ivec4 genomeData;        // modeIndex, splitTimer, adhesionCount, flags
 };
 
-// Output: Compact instance data for rendering
-layout(std430, binding = 1) buffer InstanceBuffer {
-    vec4 instanceData[]; // Only position and radius
+// GPU-optimized genome mode data structure
+struct GPUGenomeMode {
+    uint colorPacked;                    // Packed RGBA color
+    float splitInterval;                 // Time between divisions
+    float parentSplitYaw;                // Parent split direction yaw
+    float parentSplitPitch;              // Parent split direction pitch
+    float childA_OrientationYaw;         // Child A orientation yaw
+    float childA_OrientationPitch;       // Child A orientation pitch
+    float childB_OrientationYaw;         // Child B orientation yaw
+    float childB_OrientationPitch;       // Child B orientation pitch
+    float adhesionRestLength;            // Natural spring length
+    float adhesionSpringStiffness;       // Spring stiffness
+    float adhesionSpringDamping;         // Damping coefficient
+    float adhesionBreakForce;            // Force threshold for breaking
+    float orientationConstraintStrength; // Constraint strength
+    float maxAllowedAngleDeviation;      // Max angle deviation
+    int childAModeIndex;                 // Child A mode index
+    int childBModeIndex;                 // Child B mode index
+    uint flags;                          // Packed boolean flags
+};
+
+// Input: Full cell data from physics simulation
+layout(std430, binding = 0) buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+// Genome mode data
+layout(std430, binding = 1) buffer GenomeModeBuffer {
+    GPUGenomeMode genomeModes[];
+};
+
+// Output: Instance data for rendering (interleaved position+radius and color)
+layout(std430, binding = 2) buffer InstanceBuffer {
+    vec4 instanceData[]; // Interleaved: [pos+radius, color, pos+radius, color, ...]
 };
 
 uniform int u_cellCount;
+uniform int u_genomeModeCount;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= u_cellCount) return;
+    if (index >= u_cellCount) return;    // Get genome mode index and extract color
+    int modeIndex = cells[index].genomeData.x;
+    if (modeIndex < 0 || modeIndex >= u_genomeModeCount) {
+        modeIndex = 0; // Fallback to first mode
+    }
     
-    // Extract position and radius (first vec4) from full cell data
-    // Each cell has 3 vec4s: [posAndRadius, velAndMass, acceleration]
-    // We only need the first one for rendering
-    instanceData[index] = cellData[index * 3];
+    // Use the actual color from the genome mode
+    vec4 color;
+    if (modeIndex >= 0 && modeIndex < u_genomeModeCount) {
+        // Unpack the color from the genome mode
+        uint packedColor = genomeModes[modeIndex].colorPacked;
+        color = vec4(
+            float((packedColor >> 24) & 0xFF) / 255.0,  // Red
+            float((packedColor >> 16) & 0xFF) / 255.0,  // Green
+            float((packedColor >> 8) & 0xFF) / 255.0,   // Blue
+            float(packedColor & 0xFF) / 255.0           // Alpha
+        );
+    } else {
+        color = vec4(1.0, 0.5, 0.0, 1.0); // Orange fallback
+    }
+    
+    // Write interleaved data: position+radius, then color
+    uint baseIndex = index * 2;
+    instanceData[baseIndex] = cells[index].positionAndRadius;     // Position and radius
+    instanceData[baseIndex + 1] = color;                         // Color
 }

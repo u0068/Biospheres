@@ -3,6 +3,7 @@
 layout(location = 0) in vec3 aPosition;     // Sphere mesh vertex position
 layout(location = 1) in vec3 aNormal;       // Sphere mesh vertex normal
 layout(location = 2) in vec4 aInstanceData; // Instance data: xyz = position, w = radius
+layout(location = 3) in vec4 aInstanceColor; // Instance color: rgba
 
 uniform mat4 uProjection;
 uniform mat4 uView;
@@ -13,6 +14,7 @@ out vec3 vNormal;
 out vec3 vCameraPos;
 out float vRadius;
 out vec3 vInstanceCenter;
+out vec4 vColor;
 
 void main() {
     // Scale the sphere vertex by the instance radius and translate by instance position
@@ -24,6 +26,7 @@ void main() {
     vCameraPos = uCameraPos;
     vRadius = aInstanceData.w;
     vInstanceCenter = aInstanceData.xyz;
+    vColor = aInstanceColor;
     
     gl_Position = uProjection * uView * vec4(worldPos, 1.0);
 }

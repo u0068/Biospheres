@@ -17,11 +17,10 @@ namespace config
 	constexpr const char* APPLICATION_NAME{ "Biospheres 2" };
 	
 	// Cell simulation configuration
-	constexpr int MAX_CELLS{ 50000 };
-	constexpr int DEFAULT_CELL_COUNT{ 10000 };
+	constexpr int MAX_CELLS{ 20000 };	constexpr int DEFAULT_CELL_COUNT{ 10000 };
 	constexpr float DEFAULT_SPAWN_RADIUS{ 15.0f };
 	constexpr float READBACK_INTERVAL{ 0.5f }; // Async readback every 0.5 seconds
 
-	inline bool showDemoWindow = true;
+	extern bool showDemoWindow; // Declare as extern, define in a .cpp file
 };
 

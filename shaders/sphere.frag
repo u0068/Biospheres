@@ -5,6 +5,7 @@ in vec3 vNormal;
 in vec3 vCameraPos;
 in float vRadius;
 in vec3 vInstanceCenter;
+in vec4 vColor;
 
 out vec4 fragColor;
 
@@ -31,9 +32,8 @@ void main() {
     vec3 viewDir = normalize(vCameraPos - vWorldPos);
     vec3 reflectDir = reflect(-lightDir, normal);
     float specular = pow(max(0.0, dot(viewDir, reflectDir)), 32.0) * 0.3;
-    
-    // Base color is white by default
-    vec3 baseColor = vec3(0.9, 0.9, 0.9); // Slightly off-white for better lighting visibility
+      // Base color comes from genome mode
+    vec3 baseColor = vColor.rgb;
     
     // Highlight selected cell
     if (isSelected) {

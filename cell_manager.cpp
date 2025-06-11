@@ -1,6 +1,7 @@
 #include "cell_manager.h"
 #include "camera.h"
 #include "config.h"
+#include "genome_system.h"
 #include <iostream>
 #include <cassert>
 #include <cfloat>
@@ -9,6 +10,11 @@
 #include <gtc/matrix_transform.hpp>
 
 CellManager::CellManager() {
+    // Initialize genome system first
+    if (!g_genomeSystem) {
+        g_genomeSystem = std::make_unique<GenomeSystem>();
+    }
+    
     // Generate sphere mesh
     sphereMesh.generateSphere(12, 16, 1.0f); // Even lower poly count: 12x16 = 192 triangles
     sphereMesh.setupBuffers();
@@ -18,6 +24,11 @@ CellManager::CellManager() {
     physicsShader = new Shader("shaders/cell_physics.comp");
     updateShader = new Shader("shaders/cell_update.comp");
     extractShader = new Shader("shaders/extract_instances.comp");
+    
+    // Register for genome changes
+    g_genomeSystem->addChangeCallback([this]() {
+        this->onGenomeChanged();
+    });
 }
 
 CellManager::~CellManager() {
@@ -31,17 +42,25 @@ void CellManager::initializeGPUBuffers() {
     glBufferData(GL_SHADER_STORAGE_BUFFER, config::MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    // Create instance buffer for rendering (contains position + radius)
+    // Create genome mode buffer
+    glGenBuffers(1, &genomeModeBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, genomeModeBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 64 * sizeof(GPUGenomeMode), nullptr, GL_DYNAMIC_DRAW); // Support up to 64 modes
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);    // Create instance buffer for rendering (contains position + radius + color)
+    // This needs to be an SSBO since the compute shader writes to it
     glGenBuffers(1, &instanceBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
-    glBufferData(GL_ARRAY_BUFFER, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, instanceBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, config::MAX_CELLS * 2 * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW); // Position+Radius and Color
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     // Setup the sphere mesh to use our instance buffer
     sphereMesh.setupInstanceBuffer(instanceBuffer);
 
     // Reserve CPU storage
     cpuCells.reserve(config::MAX_CELLS);
+    
+    // Initialize genome mode buffer with current data
+    updateGenomeModeBuffer();
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
@@ -57,15 +76,18 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
         return;
     }
 
-    try {
-
-    // Use compute shader to efficiently extract instance data
+    try {    // Use compute shader to efficiently extract instance data
     extractShader->use();
     extractShader->setInt("u_cellCount", cell_count);
+    
+    // Pass genome mode count
+    int genomeModeCount = g_genomeSystem ? static_cast<int>(g_genomeSystem->getModeCount()) : 1;
+    extractShader->setInt("u_genomeModeCount", genomeModeCount);
 
     // Bind buffers for compute shader
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, instanceBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, genomeModeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, instanceBuffer);
 
     // Dispatch extract compute shader
     GLuint numGroups = (cell_count + 63) / 64; // 64 threads per group
@@ -117,17 +139,24 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     }
 }
 
-void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius) {
+void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius, int modeIndex) {
     if (cell_count >= config::MAX_CELLS) {
         std::cout << "Warning: Maximum cell count reached!" << std::endl;
         return;
     }
+
+    // Default to initial mode if not specified or invalid
+    if (modeIndex < 0 && g_genomeSystem) {
+        modeIndex = g_genomeSystem->getInitialModeIndex();
+    }
+    if (modeIndex < 0) modeIndex = 0; // Fallback
 
     // Create new compute cell
     ComputeCell newCell;
     newCell.positionAndRadius = glm::vec4(position, radius);
     newCell.velocityAndMass = glm::vec4(velocity, mass);
     newCell.acceleration = glm::vec4(0.0f);
+    newCell.genomeData = glm::ivec4(modeIndex, 0, 0, 0); // modeIndex, splitTimer=0, adhesionCount=0, flags=0
 
     // Add to CPU storage
     cpuCells.push_back(newCell);
@@ -151,6 +180,9 @@ void CellManager::updateCells(float deltaTime) {
 
     // Add memory barrier to ensure all computations are complete
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Process any cell divisions that were flagged by the GPU
+    processCellDivisions();
 }
 
 void CellManager::cleanup() {
@@ -161,7 +193,11 @@ void CellManager::cleanup() {
     if (instanceBuffer != 0) {
         glDeleteBuffers(1, &instanceBuffer);
         instanceBuffer = 0;
-    }    if (extractShader) {
+    }
+    if (genomeModeBuffer != 0) {
+        glDeleteBuffers(1, &genomeModeBuffer);
+        genomeModeBuffer = 0;
+    }if (extractShader) {
         extractShader->destroy();
         delete extractShader;
         extractShader = nullptr;
@@ -198,9 +234,14 @@ void CellManager::runPhysicsCompute(float deltaTime) {
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     physicsShader->setInt("u_draggedCellIndex", draggedIndex);
+    
+    // Pass genome mode count
+    int genomeModeCount = g_genomeSystem ? static_cast<int>(g_genomeSystem->getModeCount()) : 1;
+    physicsShader->setInt("u_genomeModeCount", genomeModeCount);
 
-    // Bind cell buffer
+    // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, genomeModeBuffer);
 
     // Dispatch compute shader
     // Use work groups of 64 threads each
@@ -221,9 +262,14 @@ void CellManager::runUpdateCompute(float deltaTime) {
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     updateShader->setInt("u_draggedCellIndex", draggedIndex);
+    
+    // Pass genome mode count
+    int genomeModeCount = g_genomeSystem ? static_cast<int>(g_genomeSystem->getModeCount()) : 1;
+    updateShader->setInt("u_genomeModeCount", genomeModeCount);
 
-    // Bind cell buffer
+    // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, genomeModeBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (cell_count + 63) / 64; // Round up division
@@ -234,29 +280,40 @@ void CellManager::runUpdateCompute(float deltaTime) {
 
 void CellManager::spawnCells(int count) {
     for (int i = 0; i < count && cell_count < config::MAX_CELLS; ++i) {
-        // Random position within spawn radius
-        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
-        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
-        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
+        glm::vec3 position;
+        glm::vec3 velocity;
+        
+        if (count == 1) {
+            // For single cell, spawn at origin with no initial velocity
+            position = glm::vec3(0.0f, 0.0f, 0.0f);
+            velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+        } else {
+            // For multiple cells, use random distribution
+            float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
+            float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
+            float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
 
-        glm::vec3 position = glm::vec3(
-            radius * sin(angle2) * cos(angle1),
-            radius * cos(angle2),
-            radius * sin(angle2) * sin(angle1)
-        );
+            position = glm::vec3(
+                radius * sin(angle2) * cos(angle1),
+                radius * cos(angle2),
+                radius * sin(angle2) * sin(angle1)
+            );
 
-        // Random velocity
-        glm::vec3 velocity = glm::vec3(
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f
-        );
+            // Random velocity
+            velocity = glm::vec3(
+                (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+                (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+                (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f
+            );
+        }
 
-        // Random mass and radius
+        // Consistent mass and radius for predictable behavior
         float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
         float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
 
-        addCell(position, velocity, mass, cellRadius);
+        // Use initial genome mode for spawned cells
+        int initialModeIndex = g_genomeSystem ? g_genomeSystem->getInitialModeIndex() : 0;
+        addCell(position, velocity, mass, cellRadius, initialModeIndex);
     }
 }
 
@@ -565,4 +622,133 @@ void CellManager::updateCellData(int index, const ComputeCell& newData) {
                        &cpuCells[index]);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
+}
+
+// Genome system integration methods
+void CellManager::updateGenomeModeBuffer() {
+    if (!g_genomeSystem) return;
+    
+    const auto& gpuModes = g_genomeSystem->getGPUModes();
+    if (gpuModes.empty()) return;
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, genomeModeBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 
+                   gpuModes.size() * sizeof(GPUGenomeMode), 
+                   gpuModes.data());
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::onGenomeChanged() {
+    // Update the GPU buffer when genome data changes
+    updateGenomeModeBuffer();
+    
+    // Optionally update existing cells if needed
+    // For now, cells will use their current mode index and pick up
+    // the new genome data on their next computation cycle
+}
+
+// Cell division system implementation
+void CellManager::processCellDivisions() {
+    // First, sync the current GPU data to check for division flags
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    ComputeCell* gpuData = static_cast<ComputeCell*>(glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE));
+    
+    if (!gpuData) {
+        std::cerr << "Failed to map GPU buffer for division processing" << std::endl;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        return;
+    }
+      // Check each cell for division flags and process them
+    std::vector<int> cellsToDiv;;
+
+    for (int i = 0; i < cell_count; ++i) {
+        // Check if the division flag (bit 0) is set
+        if ((gpuData[i].genomeData.w & 1) != 0) {
+            cellsToDiv.push_back(i);
+            // Clear the division flag
+            gpuData[i].genomeData.w &= ~1;
+        }
+    }
+    
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Process divisions (create new cells)
+    for (int parentIndex : cellsToDiv) {
+        divideCellAtIndex(parentIndex);
+    }
+}
+
+void CellManager::divideCellAtIndex(int parentIndex) {
+    if (parentIndex < 0 || parentIndex >= cell_count) return;
+    if (cell_count >= config::MAX_CELLS - 1) {
+        std::cout << "Cannot divide: Maximum cell count would be exceeded" << std::endl;
+        return;
+    }
+    
+    const ComputeCell& parent = cpuCells[parentIndex];
+    
+    // Get the genome mode for this cell
+    int modeIndex = parent.genomeData.x;
+    const GenomeMode* mode = nullptr;
+    if (g_genomeSystem && modeIndex >= 0 && modeIndex < static_cast<int>(g_genomeSystem->getModeCount())) {
+        mode = g_genomeSystem->getMode(modeIndex);
+    }
+    
+    if (!mode) {
+        std::cout << "Cannot divide: Invalid genome mode" << std::endl;
+        return;
+    }
+    
+    // Calculate division direction using parent split angles
+    float yaw = glm::radians(mode->parentSplitYaw);
+    float pitch = glm::radians(mode->parentSplitPitch);
+    float roll = glm::radians(mode->parentSplitRoll);
+    
+    // Create direction vector from spherical coordinates
+    glm::vec3 splitDirection = glm::vec3(
+        cos(pitch) * cos(yaw),
+        sin(pitch),
+        cos(pitch) * sin(yaw)
+    );
+    
+    // Calculate positions for child cells
+    float separationDistance = parent.positionAndRadius.w * 1.2f; // Slightly more than radius
+    glm::vec3 parentPos = glm::vec3(parent.positionAndRadius);
+    
+    glm::vec3 childA_Pos = parentPos + splitDirection * separationDistance;
+    glm::vec3 childB_Pos = parentPos - splitDirection * separationDistance;
+    
+    // Calculate child properties
+    float childMass = parent.velocityAndMass.w * 0.5f; // Split mass
+    float childRadius = parent.positionAndRadius.w * 0.8f; // Slightly smaller radius
+    
+    // Determine child modes
+    int childA_Mode = (mode->childAModeIndex >= 0) ? mode->childAModeIndex : modeIndex;
+    int childB_Mode = (mode->childBModeIndex >= 0) ? mode->childBModeIndex : modeIndex;
+      // Create child A
+    glm::vec3 childA_Velocity = glm::vec3(parent.velocityAndMass) + splitDirection * 2.0f;
+    addCell(childA_Pos, childA_Velocity, childMass, childRadius, childA_Mode);
+    
+    // Create child B  
+    glm::vec3 childB_Velocity = glm::vec3(parent.velocityAndMass) - splitDirection * 2.0f;
+    addCell(childB_Pos, childB_Velocity, childMass, childRadius, childB_Mode);
+    
+    // Remove the parent cell completely
+    // Check if the selected cell is the parent being removed
+    if (selectedCell.isValid && selectedCell.cellIndex == parentIndex) {
+        clearSelection(); // Clear selection since the cell is being removed
+    } else if (selectedCell.isValid && selectedCell.cellIndex > parentIndex) {
+        // If selected cell index is after the parent, adjust it since indices will shift
+        selectedCell.cellIndex--;
+    }
+    
+    // Remove parent from CPU storage
+    cpuCells.erase(cpuCells.begin() + parentIndex);
+    cell_count--;
+    
+    // Update GPU buffer with new cell data
+    updateGPUBuffers();
+    
+    std::cout << "Cell " << parentIndex << " divided and parent removed! New cell count: " << cell_count << std::endl;
 }

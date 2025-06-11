@@ -8,6 +8,31 @@ struct ComputeCell {
     vec4 positionAndRadius;  // x, y, z, radius
     vec4 velocityAndMass;    // vx, vy, vz, mass
     vec4 acceleration;       // ax, ay, az, unused
+    ivec4 genomeData;        // modeIndex, splitTimer, adhesionCount, flags
+};
+
+// GPU-optimized genome mode data structure
+struct GPUGenomeMode {
+    uint colorPacked;                    // Packed RGBA color
+    float splitInterval;                 // Time between divisions
+    float parentSplitYaw;                // Parent split direction yaw
+    float parentSplitPitch;              // Parent split direction pitch
+    float parentSplitRoll;               // Parent split direction roll
+    float childA_OrientationYaw;         // Child A orientation yaw
+    float childA_OrientationPitch;       // Child A orientation pitch
+    float childA_OrientationRoll;        // Child A orientation roll
+    float childB_OrientationYaw;         // Child B orientation yaw
+    float childB_OrientationPitch;       // Child B orientation pitch
+    float childB_OrientationRoll;        // Child B orientation roll
+    float adhesionRestLength;            // Natural spring length
+    float adhesionSpringStiffness;       // Spring stiffness
+    float adhesionSpringDamping;         // Damping coefficient
+    float adhesionBreakForce;            // Force threshold for breaking
+    float orientationConstraintStrength; // Constraint strength
+    float maxAllowedAngleDeviation;      // Max angle deviation
+    int childAModeIndex;                 // Child A mode index
+    int childBModeIndex;                 // Child B mode index
+    uint flags;                          // Packed boolean flags
 };
 
 // Shader storage buffer objects
@@ -15,11 +40,16 @@ layout(std430, binding = 0) restrict buffer CellBuffer {
     ComputeCell cells[];
 };
 
+layout(std430, binding = 1) restrict buffer GenomeModeBuffer {
+    GPUGenomeMode genomeModes[];
+};
+
 // Uniforms
 uniform float u_deltaTime;
 uniform int u_cellCount;
 uniform float u_damping;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+uniform int u_genomeModeCount;  // Number of genome modes available
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -28,14 +58,22 @@ void main() {
     if (index >= u_cellCount) {
         return;
     }
-    
-    // Skip physics for dragged cell - it will be positioned directly
+      // Skip physics for dragged cell - it will be positioned directly
     if (int(index) == u_draggedCellIndex) {
         // Clear velocity and acceleration for dragged cell
         cells[index].velocityAndMass.xyz = vec3(0.0);
         cells[index].acceleration = vec4(0.0);
         return;
     }
+    
+    // Get genome mode for this cell
+    int modeIndex = cells[index].genomeData.x;
+    if (modeIndex < 0 || modeIndex >= u_genomeModeCount) {
+        modeIndex = 0; // Fallback to first mode
+        cells[index].genomeData.x = 0;
+    }
+    
+    GPUGenomeMode mode = genomeModes[modeIndex];
     
     // Reset acceleration
     cells[index].acceleration = vec4(0.0);
@@ -55,15 +93,20 @@ void main() {
         vec3 delta = myPos - otherPos;
         float distance = length(delta);
         float minDistance = myRadius + otherRadius;
-        
-        if (distance < minDistance && distance > 0.001) {
+          if (distance < minDistance && distance > 0.001) {
             // Collision detected - apply repulsion force
             vec3 direction = normalize(delta);
             float overlap = minDistance - distance;
-            totalForce += direction * overlap * 100.0; // Force strength
+            
+            // Use genome mode's adhesion settings for force calculation
+            float forceStrength = mode.adhesionSpringStiffness;
+            totalForce += direction * overlap * forceStrength * 0.1; // Scale down for stability
         }
     }
     
-    // Store acceleration (F = ma, so a = F/m)
-    cells[index].acceleration.xyz = totalForce / myMass;
+    // Apply genome-based damping
+    float genomeDamping = u_damping * (1.0 + mode.adhesionSpringDamping * 0.01);
+    
+    // Store acceleration (F = ma, so a = F/m) with genome-modified damping
+    cells[index].acceleration.xyz = totalForce / myMass * genomeDamping;
 }
