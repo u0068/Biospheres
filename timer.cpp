@@ -29,7 +29,7 @@ void TimerGPU::Stop()
 
 	if (useConsole)
 	{
-		std::cout << name << " GPU Time: " << timeElapsed * 0.001f << " ms\n";
+		std::cout << name << " GPU Time: " << timeElapsed * 1e-6f << " ms\n";
 	}
 	else
 	{

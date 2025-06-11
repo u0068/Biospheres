@@ -25,8 +25,9 @@ struct CellManager {
     // The compute shaders handle physics calculations and position updates
     
     // GPU buffer objects
-    GLuint cellBuffer = 0;           // SSBO for compute cell data
-    GLuint instanceBuffer = 0;       // VBO for instance rendering data
+    GLuint cellBuffer = 0;          // SSBO for compute cell data
+	GLuint cellCommandBuffer = 0;       // SSBO for commands (e.g., spawning cells)
+    GLuint instanceBuffer = 0;      // VBO for instance rendering data
     
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
@@ -41,11 +42,14 @@ struct CellManager {
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
     Shader* extractShader = nullptr;  // For extracting instance data efficiently
+	Shader* applyCellAdditionShader = nullptr; // Shader for applying cell additions
 
     // CPU-side storage for initialization and debugging
     std::vector<ComputeCell> cpuCells;
     std::vector<ComputeCell> cpuCellsToAdd;
-    int cellCount{ 0 };
+	int cellCount{ 0 }; // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
+	int commandCount{ 0 }; // Number of commands in the command buffer
+	int pendingCellCount{ 0 }; // Number of cells pending addition
 
     // Configuration
     static constexpr int MAX_CELLS = config::MAX_CELLS;
@@ -63,10 +67,9 @@ struct CellManager {
     void initializeGPUBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
-    void addCellToBuffer(const ComputeCell& newCell);
-    void addCellToStorage(const ComputeCell& newCell);
-    void addStoredCellsToBuffer();
-    void addCellBatchToBuffer(const std::vector<ComputeCell>& batch);
+    void queueCellsForAddition(const std::vector<ComputeCell>& batch);
+    void applyCellCommands();
+    void addCell(ComputeCell& cell);
     void updateCells(float deltaTime);
     void cleanup();
 

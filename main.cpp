@@ -54,7 +54,7 @@ int main()
 	ToolState toolState;
 	UIManager uiManager;	// Initialise cells
 	CellManager cellManager;
-	cellManager.spawnCells(49999); // Use default cell count from config
+	cellManager.spawnCells(50000); // Use default cell count from config
 
 	// Timing variables
 	float deltaTime = 0.0f;
@@ -71,7 +71,7 @@ int main()
 	
 	// Main while loop
 	while (!glfwWindowShouldClose(window))
-	{		// Calculate delta time
+	{	// Calculate delta time
 		float currentFrame = static_cast<float>(glfwGetTime());
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;

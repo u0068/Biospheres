@@ -12,12 +12,13 @@ namespace config
 	constexpr int INITIAL_WINDOW_WIDTH{ 800 };
 	constexpr int INITIAL_WINDOW_HEIGHT{ 600 };
 	constexpr int OPENGL_VERSION_MAJOR{ 4 };
-	constexpr int OPENGL_VERSION_MINOR{ 3 };
-	constexpr const char* GLSL_VERSION{"#version 430"};
+	constexpr int OPENGL_VERSION_MINOR{ 6 };
+	constexpr const char* GLSL_VERSION{"#version 460"};
 	constexpr const char* APPLICATION_NAME{ "Biospheres 2" };
 	
 	// Cell simulation configuration
 	constexpr int MAX_CELLS{ 50000 };
+	constexpr int MAX_COMMANDS{ 50000 };
 	constexpr int DEFAULT_CELL_COUNT{ 10000 };
 	constexpr float DEFAULT_SPAWN_RADIUS{ 15.0f };
 	constexpr float READBACK_INTERVAL{ 0.5f }; // Async readback every 0.5 seconds
