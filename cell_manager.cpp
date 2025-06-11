@@ -7,6 +7,7 @@
 #include <cmath>
 #include <GLFW/glfw3.h>
 #include <gtc/matrix_transform.hpp>
+#include "timer.h"
 
 CellManager::CellManager() {
     // Generate sphere mesh
@@ -45,7 +46,7 @@ void CellManager::initializeGPUBuffers() {
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
-    if (cell_count == 0) return;
+    if (cellCount == 0) return;
     
     // Safety check for zero-sized framebuffer (minimized window)
     if (resolution.x <= 0 || resolution.y <= 0) {
@@ -61,14 +62,14 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
 
     // Use compute shader to efficiently extract instance data
     extractShader->use();
-    extractShader->setInt("u_cellCount", cell_count);
+    extractShader->setInt("u_cellCount", cellCount);
 
     // Bind buffers for compute shader
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, instanceBuffer);
 
     // Dispatch extract compute shader
-    GLuint numGroups = (cell_count + 63) / 64; // 64 threads per group
+    GLuint numGroups = (cellCount + 63) / 64; // 64 threads per group
     extractShader->dispatch(numGroups, 1, 1);
 
     // Memory barrier to ensure data is ready for rendering
@@ -108,37 +109,93 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     glEnable(GL_DEPTH_TEST);
 
     // Render instanced spheres
-    sphereMesh.render(cell_count);
+    sphereMesh.render(cellCount);
     
     } catch (const std::exception& e) {
-        std::cerr << "Exception in renderCells: " << e.what() << std::endl;
+        std::cerr << "Exception in renderCells: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "Unknown exception in renderCells" << std::endl;
+        std::cerr << "Unknown exception in renderCells\n";
     }
 }
 
-void CellManager::addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius) {
-    if (cell_count >= config::MAX_CELLS) {
-        std::cout << "Warning: Maximum cell count reached!" << std::endl;
+void CellManager::addCellToBuffer(const ComputeCell& newCell) {
+    if (cellCount + 1 >= config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
         return;
     }
 
-    // Create new compute cell
-    ComputeCell newCell;
-    newCell.positionAndRadius = glm::vec4(position, radius);
-    newCell.velocityAndMass = glm::vec4(velocity, mass);
-    newCell.acceleration = glm::vec4(0.0f);
+    // Update only the specific cell in the GPU buffer
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+        cellCount * sizeof(ComputeCell),
+        sizeof(ComputeCell),
+        &newCell);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    // Add to CPU storage
-    cpuCells.push_back(newCell);
-    cell_count++;
+    cellCount++;
+}
 
-    // Update GPU buffer
-    updateGPUBuffers();
+void CellManager::addCellBatchToBuffer(const std::vector<ComputeCell>& batch) {
+    if (cellCount + batch.size() >= config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
+        return;
+    }
+
+    // Update only the specific part of the GPU buffer
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+        cellCount * sizeof(ComputeCell),
+        batch.size() * sizeof(ComputeCell),
+        batch.data());
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    cellCount += batch.size();
+}
+
+void CellManager::addCellToStorage(const ComputeCell& newCell) {
+    if (cellCount + 1 >= config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
+        return;
+    }
+
+    // Add to CPU storage only (no immediate GPU sync)
+    cpuCellsToAdd.push_back(newCell);
+    //cellCount++;
+}
+
+void CellManager::addStoredCellsToBuffer() {
+    addCellBatchToBuffer(cpuCellsToAdd);
+	cpuCellsToAdd.clear(); // Clear after adding to GPU buffer
+}
+
+ComputeCell CellManager::getCellData(int index) const {
+    if (index >= 0 && index < cellCount) {
+        return cpuCells[index];
+    }
+    return ComputeCell{}; // Return empty cell if index is invalid
+}
+
+void CellManager::updateCellData(int index, const ComputeCell& newData) {
+    if (index >= 0 && index < cellCount) {
+        cpuCells[index] = newData;
+
+        // Update selected cell cache if this is the selected cell
+        if (selectedCell.isValid && selectedCell.cellIndex == index) {
+            selectedCell.cellData = newData;
+        }
+
+        // Update only the specific cell in the GPU buffer
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+            index * sizeof(ComputeCell),
+            sizeof(ComputeCell),
+            &cpuCells[index]);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
 }
 
 void CellManager::updateCells(float deltaTime) {
-    if (cell_count == 0) return; 
+    if (cellCount == 0) return; 
 
     // Run physics computation on GPU
     runPhysicsCompute(deltaTime);
@@ -180,19 +237,12 @@ void CellManager::cleanup() {
     sphereMesh.cleanup();
 }
 
-void CellManager::updateGPUBuffers() {
-    // Upload CPU cell data to GPU
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, cell_count * sizeof(ComputeCell), cpuCells.data());
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
 void CellManager::runPhysicsCompute(float deltaTime) {
     physicsShader->use();
 
     // Set uniforms
     physicsShader->setFloat("u_deltaTime", deltaTime);
-    physicsShader->setInt("u_cellCount", cell_count);
+    physicsShader->setInt("u_cellCount", cellCount);
     physicsShader->setFloat("u_damping", 0.98f);
     
     // Pass dragged cell index to skip its physics
@@ -204,7 +254,7 @@ void CellManager::runPhysicsCompute(float deltaTime) {
 
     // Dispatch compute shader
     // Use work groups of 64 threads each
-    GLuint numGroups = (cell_count + 63) / 64; // Round up division
+    GLuint numGroups = (cellCount + 63) / 64; // Round up division
     physicsShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -215,7 +265,7 @@ void CellManager::runUpdateCompute(float deltaTime) {
 
     // Set uniforms
     updateShader->setFloat("u_deltaTime", deltaTime);
-    updateShader->setInt("u_cellCount", cell_count);
+    updateShader->setInt("u_cellCount", cellCount);
     updateShader->setFloat("u_damping", 0.98f);
     
     // Pass dragged cell index to skip its position updates
@@ -226,14 +276,16 @@ void CellManager::runUpdateCompute(float deltaTime) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
 
     // Dispatch compute shader
-    GLuint numGroups = (cell_count + 63) / 64; // Round up division
+    GLuint numGroups = (cellCount + 63) / 64; // Round up division
     updateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::spawnCells(int count) {
-    for (int i = 0; i < count && cell_count < config::MAX_CELLS; ++i) {
+    TimerCPU timer1("Spawning Cells", true);
+    TimerGPU timer2("Spawning Cells", true);
+    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i) {
         // Random position within spawn radius
         float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
         float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
@@ -256,11 +308,18 @@ void CellManager::spawnCells(int count) {
         float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
         float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
 
-        addCell(position, velocity, mass, cellRadius);
-    }
-}
+		ComputeCell newCell;
+		newCell.positionAndRadius = glm::vec4(position, cellRadius);
+		newCell.velocityAndMass = glm::vec4(velocity, mass);
+		newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
 
-// Cell selection and interaction implementation
+        addCellToStorage(newCell);
+    }
+	// Add all stored cells to GPU buffer
+    addStoredCellsToBuffer();
+	std::cout << "Spawned " << count << " cells, total count: " << cellCount << "\n";
+}
+// Cell selection and interaction implementation // todo: REWRITE FOR GPU ONLY
 void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                   const Camera& camera, bool isMousePressed, bool isMouseDown, 
                                   float scrollDelta) {
@@ -289,7 +348,7 @@ void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& s
         glm::vec3 rayOrigin = camera.getPosition();
         glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
           // Debug: Print mouse coordinates and ray info (reduced logging)
-        std::cout << "Mouse click at (" << mousePos.x << ", " << mousePos.y << ")" << std::endl;
+        std::cout << "Mouse click at (" << mousePos.x << ", " << mousePos.y << ")\n";
         
         int selectedIndex = selectCellAtPosition(rayOrigin, rayDirection);
         if (selectedIndex >= 0) {
@@ -308,7 +367,7 @@ void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& s
             isDraggingCell = true;
             
             // Debug output
-            std::cout << "Selected cell " << selectedIndex << " at distance " << selectedCell.dragDistance << std::endl;
+            std::cout << "Selected cell " << selectedIndex << " at distance " << selectedCell.dragDistance << "\n";
         } else {
             clearSelection();
         }
@@ -327,15 +386,16 @@ void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& s
     }
 }
 
+// todo: REWRITE FOR GPU ONLY
 int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
     float closestDistance = FLT_MAX;
     int closestCellIndex = -1;
     int intersectionCount = 0;
     
     // Debug output for raycasting
-    std::cout << "Testing " << cell_count << " cells for intersection..." << std::endl;
+    std::cout << "Testing " << cellCount << " cells for intersection..." << std::endl;
     
-    for (int i = 0; i < cell_count; i++) {
+    for (int i = 0; i < cellCount; i++) {
         glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndRadius);
         float cellRadius = cpuCells[i].positionAndRadius.w;
         
@@ -362,6 +422,7 @@ int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec
     return closestCellIndex;
 }
 
+// todo: REWRITE FOR GPU ONLY
 void CellManager::dragSelectedCell(const glm::vec3& newWorldPosition) {
     if (!selectedCell.isValid) return;
     
@@ -413,7 +474,7 @@ void CellManager::endDrag() {
 }
 
 void CellManager::syncCellPositionsFromGPU() {
-    if (cell_count == 0) return;
+    if (cellCount == 0) return;
     
     // Bind the cell buffer and read current positions back to CPU
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
@@ -423,14 +484,14 @@ void CellManager::syncCellPositionsFromGPU() {
     
     if (gpuData) {
         // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
-        for (int i = 0; i < cell_count; i++) {
+        for (int i = 0; i < cellCount; i++) {
             // Only sync position and radius, preserve velocity and mass from CPU
             cpuCells[i].positionAndRadius = gpuData[i].positionAndRadius;
         }
         
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         
-        std::cout << "Synced " << cell_count << " cell positions from GPU" << std::endl;
+        std::cout << "Synced " << cellCount << " cell positions from GPU" << std::endl;
     } else {
         std::cerr << "Failed to map GPU buffer for readback" << std::endl;
     }
@@ -438,6 +499,7 @@ void CellManager::syncCellPositionsFromGPU() {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
+// todo: REWRITE FOR GPU ONLY
 glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                         const Camera& camera) {
     // Safety check for zero screen size
@@ -510,6 +572,7 @@ glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::v
     return rayDirection;
 }
 
+// todo: REWRITE FOR GPU ONLY
 bool CellManager::raySphereIntersection(const glm::vec3& rayOrigin, const glm::vec3& rayDirection,
                                        const glm::vec3& sphereCenter, float sphereRadius, float& distance) {
     glm::vec3 oc = rayOrigin - sphereCenter;
@@ -539,30 +602,4 @@ bool CellManager::raySphereIntersection(const glm::vec3& rayOrigin, const glm::v
     }
     
     return false; // Both intersections are behind the ray origin or too close
-}
-
-ComputeCell CellManager::getCellData(int index) const {
-    if (index >= 0 && index < cell_count) {
-        return cpuCells[index];
-    }
-    return ComputeCell{}; // Return empty cell if index is invalid
-}
-
-void CellManager::updateCellData(int index, const ComputeCell& newData) {
-    if (index >= 0 && index < cell_count) {
-        cpuCells[index] = newData;
-        
-        // Update selected cell cache if this is the selected cell
-        if (selectedCell.isValid && selectedCell.cellIndex == index) {
-            selectedCell.cellData = newData;
-        }
-        
-        // Update only the specific cell in the GPU buffer (like dragSelectedCell does)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
-                       index * sizeof(ComputeCell), 
-                       sizeof(ComputeCell), 
-                       &cpuCells[index]);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    }
 }

@@ -44,7 +44,8 @@ struct CellManager {
 
     // CPU-side storage for initialization and debugging
     std::vector<ComputeCell> cpuCells;
-    int cell_count{ 0 };
+    std::vector<ComputeCell> cpuCellsToAdd;
+    int cellCount{ 0 };
 
     // Configuration
     static constexpr int MAX_CELLS = config::MAX_CELLS;
@@ -62,12 +63,15 @@ struct CellManager {
     void initializeGPUBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
-    void addCell(glm::vec3 position, glm::vec3 velocity, float mass, float radius);
+    void addCellToBuffer(const ComputeCell& newCell);
+    void addCellToStorage(const ComputeCell& newCell);
+    void addStoredCellsToBuffer();
+    void addCellBatchToBuffer(const std::vector<ComputeCell>& batch);
     void updateCells(float deltaTime);
     void cleanup();
 
     // Getter functions for debug information
-    int getCellCount() const { return cell_count; }
+    int getCellCount() const { return cellCount; }
     float getSpawnRadius() const { return spawnRadius; }
 
     // GPU pipeline status getters
@@ -77,7 +81,7 @@ struct CellManager {
     
     // Performance testing function
     void setActiveCellCount(int count) {
-        if (count <= cell_count && count >= 0) {
+        if (count <= cellCount && count >= 0) {
             // This allows reducing active cells for performance testing
             // without changing the actual cell count or buffer data
         }

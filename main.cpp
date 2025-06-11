@@ -54,7 +54,7 @@ int main()
 	ToolState toolState;
 	UIManager uiManager;	// Initialise cells
 	CellManager cellManager;
-	cellManager.spawnCells(); // Use default cell count from config
+	cellManager.spawnCells(49999); // Use default cell count from config
 
 	// Timing variables
 	float deltaTime = 0.0f;
@@ -167,8 +167,8 @@ int main()
 			bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
 			float scrollDelta = input.getScrollDelta();
 			
-			cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera, 
-			                           isLeftMousePressed, isLeftMouseDown, scrollDelta);
+			//cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera, 
+			//                           isLeftMousePressed, isLeftMouseDown, scrollDelta);
 		}
 		//// Then we handle cell simulation
 		try {
