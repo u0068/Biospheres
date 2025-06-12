@@ -1,0 +1,24 @@
+{
+    "cmake.configureOnOpen": true,
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.generator": "Visual Studio 17 2022",
+    "cmake.platform": "x64",
+    "cmake.defaultVariants": {
+        "buildType": {
+            "default": "debug",
+            "description": "The build type"
+        }
+    },
+    "files.associations": {
+        "*.h": "cpp",
+        "*.cpp": "cpp",
+        "*.vert": "glsl",
+        "*.frag": "glsl",
+        "*.comp": "glsl"
+    },
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.intelliSenseMode": "windows-msvc-x64",
+    "C_Cpp.default.cppStandard": "c++17",
+    "editor.formatOnSave": true,
+    "cmake.showSystemKits": false
+}
