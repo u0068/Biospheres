@@ -36,6 +36,7 @@ void glfwErrorCallback(int error, const char* description) {
 
 int main()
 {
+{
 	// Set up error callback before initializing GLFW
 	glfwSetErrorCallback(glfwErrorCallback);
 	initGLFW();
@@ -59,35 +60,36 @@ int main()
 	// Timing variables
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
-	
+
 	// Performance monitoring struct
 	PerformanceMonitor perfMonitor{};
-	
+
 	// Window state tracking
 	bool wasMinimized = false;
 	bool isCurrentlyMinimized = false;
 	int lastKnownWidth = 0;
 	int lastKnownHeight = 0;
-	
+
 	// Main while loop
 	while (!glfwWindowShouldClose(window))
 	{	// Calculate delta time
 		float currentFrame = static_cast<float>(glfwGetTime());
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
-		
+
 		// Check window state first - before any OpenGL operations
 		int currentWidth, currentHeight;
 		glfwGetFramebufferSize(window, &currentWidth, &currentHeight);
 		bool isMinimized = (currentWidth == 0 || currentHeight == 0) || glfwGetWindowAttrib(window, GLFW_ICONIFIED);
-		
+
 		// Handle minimize/restore transitions
 		if (isMinimized && !wasMinimized) {
 			// Just became minimized
 			std::cout << "Window minimized, suspending rendering\n";
 			wasMinimized = true;
 			isCurrentlyMinimized = true;
-		} else if (!isMinimized && wasMinimized) {
+		}
+		else if (!isMinimized && wasMinimized) {
 			// Just restored from minimize
 			std::cout << "Window restored, resuming rendering\n";
 			wasMinimized = false;
@@ -95,7 +97,7 @@ int main()
 			// Give the driver a moment to stabilize
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		
+
 		// If minimized, do minimal processing and skip to next frame
 		if (isCurrentlyMinimized || isMinimized) {
 			glfwPollEvents();
@@ -103,30 +105,30 @@ int main()
 			std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60fps limit when minimized
 			continue;
 		}
-		
+
 		// Store valid dimensions
 		if (currentWidth > 0 && currentHeight > 0) {
 			lastKnownWidth = currentWidth;
 			lastKnownHeight = currentHeight;
 		}
-				// Update performance monitoring
+		// Update performance monitoring
 		perfMonitor.frameCount++;
 		perfMonitor.frameTimeAccumulator += deltaTime;
-		
+
 		// Update performance display every 250ms
 		if (currentFrame - perfMonitor.lastPerfUpdate >= perfMonitor.perfUpdateInterval) {
 			perfMonitor.displayFPS = perfMonitor.frameCount / (currentFrame - perfMonitor.lastPerfUpdate);
 			perfMonitor.displayFrameTime = (perfMonitor.frameTimeAccumulator / perfMonitor.frameCount) * 1000.0f; // Convert to ms
-			
+
 			perfMonitor.frameCount = 0;
 			perfMonitor.frameTimeAccumulator = 0.0f;
 			perfMonitor.lastPerfUpdate = currentFrame;
 		}
-		
+
 		// Use the valid dimensions we stored
 		int width = lastKnownWidth;
 		int height = lastKnownHeight;
-		
+
 		// Final safety check - if we still don't have valid dimensions, skip this frame
 		if (width <= 0 || height <= 0) {
 			glfwPollEvents();
@@ -137,16 +139,17 @@ int main()
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-		
+
 		// Set viewport with our validated dimensions
 		try {
 			glViewport(0, 0, width, height);
 			checkGLError("glViewport");
-			
+
 			// Clear framebuffer once at the start of the frame
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			checkGLError("glClear");
-		} catch (...) {
+		}
+		catch (...) {
 			// If OpenGL operations fail, skip this frame
 			std::cerr << "OpenGL viewport/clear failed, skipping frame\n";
 			glfwPollEvents();
@@ -160,24 +163,29 @@ int main()
 
 		if (!ImGui::GetIO().WantCaptureMouse)
 		{
+			TimerCPU cpuTimer("Input Processing"); // Start CPU timer for input processing
+			TimerGPU gpuTimer("Input Processing"); // Start GPU timer for input processing
 			// Handle camera input
 			camera.processInput(input, deltaTime);			// Handle cell selection and dragging
 			glm::vec2 mousePos = input.getMousePosition(false); // Get raw screen coordinates
 			bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
 			bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
 			float scrollDelta = input.getScrollDelta();
-			
-			//cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera, 
-			//                           isLeftMousePressed, isLeftMouseDown, scrollDelta);
+
+			cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
+				isLeftMousePressed, isLeftMouseDown, scrollDelta);
 		}
 		//// Then we handle cell simulation
 		try {
 			// Update cell simulation with the delta time
 			// GPU timer was moved inside the function because it has multiple elements that need individual timing
 			cellManager.updateCells(deltaTime);
-		} catch (const std::exception& e) {
+			checkGLError("updateCells");
+		}
+		catch (const std::exception& e) {
 			std::cerr << "Exception in cell simulation: " << e.what() << "\n";
-		} catch (...) {
+		}
+		catch (...) {
 			std::cerr << "Unknown exception in cell simulation\n";
 		}
 
@@ -186,20 +194,22 @@ int main()
 			TimerGPU timer("Cell Rendering Update");
 			cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
 			checkGLError("renderCells");
-		} catch (const std::exception& e) {
+		}
+		catch (const std::exception& e) {
 			std::cerr << "Exception in cell rendering: " << e.what() << "\n";
-		} catch (...) {
+		}
+		catch (...) {
 			std::cerr << "Unknown exception in cell rendering\n";
 		}//// Then we handle ImGUI
 		//ui.renderUI();
-		
+
 		// Cell Inspector and Selection UI
 		uiManager.renderCellInspector(cellManager);
 		uiManager.renderSelectionInfo(cellManager);
-		
+
 		// Performance Monitor with readable update rate
 		uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
-		
+
 		// Camera Controls
 		uiManager.renderCameraControls(cellManager, camera);
 
@@ -223,9 +233,11 @@ int main()
 			}
 			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 			checkGLError("ImGui_ImplOpenGL3_RenderDrawData");
-		} catch (const std::exception& e) {
+		}
+		catch (const std::exception& e) {
 			std::cerr << "Exception in ImGui: " << e.what() << "\n";
-		} catch (...) {
+		}
+		catch (...) {
 			std::cerr << "Unknown exception in ImGui\n";
 		}
 
@@ -255,7 +267,7 @@ int main()
 			}
 		}
 	}
-
+	}
 	// destroy and terminate everything before ending the ID
 	shutdownImGui();
 	glfwDestroyWindow(window);

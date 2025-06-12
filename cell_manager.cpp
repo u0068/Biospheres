@@ -122,7 +122,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
 void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = cells.size();
 
-	std::cout << "Adding " << newCellCount << " cells to GPU buffer\n";
+	std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount + newCellCount << "\n";
 
 	if (cellCount + newCellCount > config::MAX_CELLS) {
         std::cout << "Warning: Maximum cell count reached!\n";
@@ -154,6 +154,7 @@ void CellManager::addCellToStagingBuffer(const ComputeCell& newCell) {
 
     // Add to CPU storage only (no immediate GPU sync)
     cellStagingBuffer.push_back(newCell);
+    cpuCells.push_back(newCell);
     pendingCellCount++;
 }
 
