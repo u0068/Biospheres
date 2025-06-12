@@ -141,7 +141,7 @@ void Shader::use()
 // Deletes the Shader Program
 void Shader::destroy()
 {
-	glDeleteProgram(ID);
+	if (ID) glDeleteProgram(ID);
 }
 
 // Dispatch compute shader

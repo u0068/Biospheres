@@ -5,7 +5,6 @@
 #include<iostream>
 #include <glm.hpp>
 
-
 std::string get_file_contents(const char* filename);
 
 class Shader
@@ -17,6 +16,7 @@ public:
 	Shader(const char* vertexFile, const char* fragmentFile);
 	// Constructor for compute shader
 	Shader(const char* computeFile);
+	//~Shader() { destroy(); }
 	
 	// Activates the Shader Program
 	void use();

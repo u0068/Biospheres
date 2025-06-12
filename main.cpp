@@ -31,17 +31,17 @@ void checkGLError(const char* operation) {
 
 // GLFW error callback
 void glfwErrorCallback(int error, const char* description) {
-    std::cerr << "GLFW Error " << error << ": " << description << "\n";
+	std::cerr << "GLFW Error " << error << ": " << description << "\n";
 }
 
 int main()
 {
 	// Set up error callback before initializing GLFW
 	glfwSetErrorCallback(glfwErrorCallback);
-	
 	initGLFW();
 	GLFWwindow* window = createWindow();
 	initGLAD(window);
+	setupGLFWDebugFlags();
 	// Load the sphere shader for instanced rendering
 	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 

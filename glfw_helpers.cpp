@@ -5,22 +5,17 @@
 
 #include "config.h"
 
+
 void initGLFW()
 {
-	//// Request debug context // It seems to not be necessary for now, glDebugOutput is sufficient
-	//glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
-
-    //int flags; glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
-    //if (flags & GL_CONTEXT_FLAG_DEBUG_BIT)
-    //{
-    //    glEnable(GL_DEBUG_OUTPUT);
-    //    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    //    glDebugMessageCallback(glDebugOutput, nullptr);
-    //    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
-    //}
-
 	// Initialize GLFW
 	glfwInit();
+
+#ifndef NDEBUG // If we are in debug mode, we want to enable the debug context
+    // Request debug context
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+
+#endif
 
 	// Tell GLFW what version of OpenGL we are using 
 	// In this case we are using OpenGL 4.3
@@ -28,7 +23,20 @@ void initGLFW()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, config::OPENGL_VERSION_MINOR);
 	// Tell GLFW we are using the CORE profile
 	// So that means we only have the modern functions
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+}
+
+void setupGLFWDebugFlags() {
+#ifndef NDEBUG
+    int flags; glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
+    if (flags & GL_CONTEXT_FLAG_DEBUG_BIT)
+    {
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(glDebugOutput, nullptr);
+        glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+    }
+#endif
 }
 
 GLFWwindow* createWindow()
@@ -103,4 +111,9 @@ void APIENTRY glDebugOutput(GLenum source,
     case GL_DEBUG_SEVERITY_NOTIFICATION: std::cout << "Severity: notification"; break;
     } std::cout << "\n";
     std::cout << "\n";
+}
+
+void deleteAllGLResources()
+{
+
 }
