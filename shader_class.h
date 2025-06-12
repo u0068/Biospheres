@@ -3,7 +3,7 @@
 #include<glad/glad.h>
 #include<string>
 #include<iostream>
-#include <glm.hpp>
+#include <glm/glm.hpp>
 
 std::string get_file_contents(const char* filename);
 

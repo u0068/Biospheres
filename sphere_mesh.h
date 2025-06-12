@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 #include <glad/glad.h>
-#include <glm.hpp>
+#include <glm/glm.hpp>
 
 class SphereMesh {
 public:

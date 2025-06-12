@@ -1,8 +1,5 @@
 #include <glad/glad.h>
 #include "glfw_helpers.h"
-
-#include <vec2.hpp>
-
 #include "config.h"
 
 
@@ -111,9 +108,4 @@ void APIENTRY glDebugOutput(GLenum source,
     case GL_DEBUG_SEVERITY_NOTIFICATION: std::cout << "Severity: notification"; break;
     } std::cout << "\n";
     std::cout << "\n";
-}
-
-void deleteAllGLResources()
-{
-
 }

@@ -1,8 +1,8 @@
 #include "shader_class.h"
 #include<fstream>
 #include<cerrno>
-#include <vec2.hpp>
-#include <gtc/type_ptr.hpp>
+#include <glm/vec2.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 // Reads a text file and outputs a string with everything in the text file
 std::string get_file_contents(const char* filename)

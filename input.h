@@ -1,5 +1,5 @@
 #pragma once
-#include <vec2.hpp>
+#include <glm/vec2.hpp>
 #include <GLFW/glfw3.h>
 
 static bool is_dragging; // This will be used to check if the mouse is being dragged for panning the camera

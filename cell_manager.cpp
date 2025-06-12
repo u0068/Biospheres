@@ -6,7 +6,7 @@
 #include <cfloat>
 #include <cmath>
 #include <GLFW/glfw3.h>
-#include <gtc/matrix_transform.hpp>
+#include <glm/glm.hpp>
 #include "timer.h"
 
 CellManager::CellManager() {

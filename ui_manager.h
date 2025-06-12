@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include <glm.hpp>
+#include <glm/glm.hpp>
 #include "camera.h"
 
 struct CellManager; // Forward declaration to avoid circular dependency

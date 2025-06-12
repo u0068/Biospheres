@@ -1,10 +1,10 @@
 #pragma once
 #include <vector>
-#include "shader_class.h"
-#include "input.h"
-#include "glm.hpp"
+#include <glm/glm.hpp>
 #include <glad/glad.h>
 
+#include "shader_class.h"
+#include "input.h"
 #include "config.h"
 #include "sphere_mesh.h"
 #include "config.h"
