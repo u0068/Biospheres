@@ -19,7 +19,6 @@ CellManager::CellManager() {
     physicsShader = new Shader("shaders/cell_physics.comp");
     updateShader = new Shader("shaders/cell_update.comp");
     extractShader = new Shader("shaders/extract_instances.comp");
-    applyCellAdditionShader = new Shader("shaders/apply_cell_additions.comp");
 }
 
 CellManager::~CellManager() {
@@ -31,12 +30,6 @@ void CellManager::initializeGPUBuffers() {
     glGenBuffers(1, &cellBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, config::MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-
-    glGenBuffers(1, &cellCommandBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellCommandBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, config::MAX_COMMANDS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     // Create instance buffer for rendering (contains position + radius)
@@ -125,40 +118,50 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     }
 }
 
-void CellManager::queueCellsForAddition(const std::vector<ComputeCell>& batch) {
-    // Upload to command buffer
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellCommandBuffer);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
-        pendingCellCount * sizeof(ComputeCell),
-        batch.size() * sizeof(ComputeCell),
-        batch.data());
+
+void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { // Prefer to not use this directly, use addCellToStagingBuffer instead
+    int newCellCount = cells.size();
+
+	std::cout << "Adding " << newCellCount << " cells to GPU buffer\n";
+
+	if (cellCount + newCellCount > config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
+        return;
+    }
+
+	TimerGPU gpuTimer("Adding Cells to GPU Buffer", true);
+
+    // Update only the specific part of the GPU buffer
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+		cellCount * sizeof(ComputeCell),
+		newCellCount * sizeof(ComputeCell),
+		cells.data());
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    pendingCellCount += batch.size(); // for the compute shader
+    cellCount += newCellCount;
 }
 
-void CellManager::addCell(ComputeCell& cell)
-{
-	queueCellsForAddition({ cell });
+void CellManager::addCellToGPUBuffer(const ComputeCell& newCell) { // Prefer to not use this directly, use addCellToStagingBuffer instead
+    addCellsToGPUBuffer({ newCell });
 }
 
-void CellManager::applyCellCommands()
-{
-    // Bind both buffers
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cellCommandBuffer);
+void CellManager::addCellToStagingBuffer(const ComputeCell& newCell) {
+    if (cellCount + 1 > config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
+        return;
+    }
 
-    // Use a program with the compute shader
-    applyCellAdditionShader->use();
-	applyCellAdditionShader->setInt("u_existingCellCount", cellCount);
-	applyCellAdditionShader->setInt("u_newCellCount", pendingCellCount);
+    // Add to CPU storage only (no immediate GPU sync)
+    cellStagingBuffer.push_back(newCell);
+    pendingCellCount++;
+}
 
-    int groupCount = (pendingCellCount + 63) / 64;
-    glDispatchCompute(groupCount, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // ensure write visibility
+void CellManager::addStagedCellsToGPUBuffer() {
+    addCellsToGPUBuffer(cellStagingBuffer);
+    cellStagingBuffer.clear(); // Clear after adding to GPU buffer
+	pendingCellCount = 0; // Reset pending count
 
-    cellCount += pendingCellCount;
-    pendingCellCount = 0;
 }
 
 
@@ -189,7 +192,14 @@ void CellManager::updateCellData(int index, const ComputeCell& newData) {
 }
 
 void CellManager::updateCells(float deltaTime) {
-    if (cellCount == 0) return; 
+    if (pendingCellCount > 0)
+    {
+        addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
+    }
+
+    TimerGPU timer("Cell Physics Update");
+
+    if (cellCount == 0) return;
 
     // Run physics computation on GPU
     runPhysicsCompute(deltaTime);
@@ -277,10 +287,7 @@ void CellManager::runUpdateCompute(float deltaTime) {
 }
 
 void CellManager::spawnCells(int count) {
-    TimerCPU timer1("Spawning Cells", true);
-    TimerGPU timer2("Spawning Cells", true);
-
-	std::vector<ComputeCell> newCells;
+    TimerCPU cpuTimer("Spawning Cells", true);
 
     for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i) {
         // Random position within spawn radius
@@ -310,14 +317,8 @@ void CellManager::spawnCells(int count) {
 		newCell.velocityAndMass = glm::vec4(velocity, mass);
 		newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
 
-        newCells.push_back(newCell);
-		//addCell(newCell);
+        addCellToStagingBuffer(newCell);
     }
-	// Add all stored cells to GPU buffer
-    queueCellsForAddition(newCells);
-    applyCellCommands();
-    
-	std::cout << "Spawned " << count << " cells, total count: " << cellCount << "\n";
 }
 // Cell selection and interaction implementation // todo: REWRITE FOR GPU ONLY
 void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& screenSize, 

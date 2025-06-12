@@ -36,7 +36,8 @@ class TimerGPU
 {
 public:
 	// TimerGPU is designed to measure GPU performance using OpenGL queries.
-	// IMPORTANT: The timer itself adds about 0.7 ms overhead, so that should also be considered when measuring performance.
+	// IMPORTANT: You cannot use multiple TimerGPU instances simultaneously in the same thread.
+	// IMPORTANT 2: The timer itself adds a small amount of overhead, so that should also be considered when measuring performance.
 	TimerGPU(const char* name, const bool useConsole = false) : name(name), useConsole(useConsole)
 	{
 		glGenQueries(1, &query);

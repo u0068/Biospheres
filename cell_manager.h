@@ -26,9 +26,8 @@ struct CellManager {
     
     // GPU buffer objects
     GLuint cellBuffer = 0;          // SSBO for compute cell data
-	GLuint cellCommandBuffer = 0;       // SSBO for commands (e.g., spawning cells)
     GLuint instanceBuffer = 0;      // VBO for instance rendering data
-    
+
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
 
@@ -42,13 +41,11 @@ struct CellManager {
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
     Shader* extractShader = nullptr;  // For extracting instance data efficiently
-	Shader* applyCellAdditionShader = nullptr; // Shader for applying cell additions
 
     // CPU-side storage for initialization and debugging
-    std::vector<ComputeCell> cpuCells;
-    std::vector<ComputeCell> cpuCellsToAdd;
+	std::vector<ComputeCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
+    std::vector<ComputeCell> cellStagingBuffer;
 	int cellCount{ 0 }; // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
-	int commandCount{ 0 }; // Number of commands in the command buffer
 	int pendingCellCount{ 0 }; // Number of cells pending addition
 
     // Configuration
@@ -67,9 +64,11 @@ struct CellManager {
     void initializeGPUBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
-    void queueCellsForAddition(const std::vector<ComputeCell>& batch);
-    void applyCellCommands();
-    void addCell(ComputeCell& cell);
+    void addCellsToGPUBuffer(const std::vector<ComputeCell>& cells);
+    void addCellToGPUBuffer(const ComputeCell& newCell);
+    void addCellToStagingBuffer(const ComputeCell& newCell);
+    void addCell(const ComputeCell& newCell) { addCellToStagingBuffer(newCell); }
+    void addStagedCellsToGPUBuffer();
     void updateCells(float deltaTime);
     void cleanup();
 
@@ -124,7 +123,7 @@ struct CellManager {
     bool hasSelectedCell() const { return selectedCell.isValid; }
     const SelectedCellInfo& getSelectedCell() const { return selectedCell; }
     ComputeCell getCellData(int index) const;
-    void updateCellData(int index, const ComputeCell& newData);
+	void updateCellData(int index, const ComputeCell& newData); // Needs refactoring
 
     // Asynchronous readback functions for performance monitoring
     void initializeReadbackSystem();
@@ -134,7 +133,6 @@ struct CellManager {
     void cleanupReadbackSystem();
 
 private:
-    void updateGPUBuffers();
     void runPhysicsCompute(float deltaTime);
     void runUpdateCompute(float deltaTime);
 };

@@ -172,7 +172,8 @@ int main()
 		}
 		//// Then we handle cell simulation
 		try {
-			TimerGPU timer("Cell Physics Update");
+			// Update cell simulation with the delta time
+			// GPU timer was moved inside the function because it has multiple elements that need individual timing
 			cellManager.updateCells(deltaTime);
 		} catch (const std::exception& e) {
 			std::cerr << "Exception in cell simulation: " << e.what() << "\n";
