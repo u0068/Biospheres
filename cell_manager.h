@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
+#include "buffer_manager.h"
 #include "shader_class.h"
 #include "input.h"
 #include "config.h"
@@ -25,8 +26,17 @@ struct CellManager {
     // The compute shaders handle physics calculations and position updates
     
     // GPU buffer objects
-    GLuint cellBuffer = 0;          // SSBO for compute cell data
-    GLuint instanceBuffer = 0;      // VBO for instance rendering data
+    static constexpr int BUFFER_COUNT = 5; // IMPORTANT: Remember to update this when adding or removing buffers!!!
+    GLuint buffers[BUFFER_COUNT];
+    GLuint positionBuffer = 0;
+    GLuint velocityBuffer = 0;
+    GLuint accelerationBuffer = 0;
+    GLuint massBuffer = 0;
+    GLuint radiusBuffer = 0;
+
+    // GPU buffer groups
+    BufferGroup allBuffers;
+    BufferGroup physicsUpdateBuffers;
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;

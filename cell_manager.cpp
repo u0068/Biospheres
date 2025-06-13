@@ -27,15 +27,42 @@ CellManager::~CellManager() {
 
 void CellManager::initializeGPUBuffers() {
     // Create compute buffer for cell data
-    glCreateBuffers(1, &cellBuffer);
-    glNamedBufferData(cellBuffer, config::MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
+    //glCreateBuffers(BUFFER_COUNT, buffers);
 
-    // Create instance buffer for rendering (contains position + radius)
-    glCreateBuffers(1, &instanceBuffer);
-    glNamedBufferData(instanceBuffer, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
+    //positionBuffer = buffers[0];
+    //velocityBuffer = buffers[1];
+    //accelerationBuffer = buffers[2];
+    //massBuffer = buffers[3];
+    //radiusBuffer = buffers[4];
 
-    // Setup the sphere mesh to use our instance buffer
-    sphereMesh.setupInstanceBuffer(instanceBuffer);
+    //// Reminder: vec3 is the same size as vec4 on the GPU
+    //glNamedBufferData(positionBuffer, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
+    //glNamedBufferData(velocityBuffer, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
+    //glNamedBufferData(accelerationBuffer, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
+    //glNamedBufferData(massBuffer, config::MAX_CELLS * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    //glNamedBufferData(radiusBuffer, config::MAX_CELLS * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+    // Create all the buffers that the cell manager is going to use
+	allBuffers.init(
+        {
+            positionBuffer,
+            velocityBuffer,
+            accelerationBuffer,
+            massBuffer,
+            radiusBuffer
+        },
+		{
+            sizeof(glm::vec4),
+            sizeof(glm::vec4),
+            sizeof(glm::vec4),
+            sizeof(float),
+            sizeof(float)
+        },
+        config::MAX_CELLS
+    );
+
+    // Setup the sphere mesh, which needs to know the positions and radii
+    sphereMesh.setupInstanceBuffer(positionBuffer, radiusBuffer);
 
     // Reserve CPU storage
     cpuCells.reserve(config::MAX_CELLS);
@@ -207,14 +234,8 @@ void CellManager::updateCells(float deltaTime) {
 }
 
 void CellManager::cleanup() {
-    if (cellBuffer != 0) {
-        glDeleteBuffers(1, &cellBuffer);
-        cellBuffer = 0;
-    }
-    if (instanceBuffer != 0) {
-        glDeleteBuffers(1, &instanceBuffer);
-        instanceBuffer = 0;
-    }    if (extractShader) {
+
+	if (extractShader) {
         extractShader->destroy();
         delete extractShader;
         extractShader = nullptr;
@@ -433,7 +454,7 @@ void CellManager::dragSelectedCell(const glm::vec3& newWorldPosition) {
     selectedCell.cellData = cpuCells[selectedCell.cellIndex];
     
     // Update GPU buffer immediately to ensure compute shaders see the new position
-    glNamedBufferSubData(cellBuffer,
+    glBufferSubData(cellBuffer,
                    selectedCell.cellIndex * sizeof(ComputeCell), 
                    sizeof(ComputeCell), 
                    &cpuCells[selectedCell.cellIndex]);

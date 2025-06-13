@@ -125,6 +125,7 @@ int main()
 			perfMonitor.lastPerfUpdate = currentFrame;
 		}
 
+
 		// Use the valid dimensions we stored
 		int width = lastKnownWidth;
 		int height = lastKnownHeight;
@@ -212,6 +213,9 @@ int main()
 
 		// Camera Controls
 		uiManager.renderCameraControls(cellManager, camera);
+
+		// Render Genome Editor
+		uiManager.renderGenomeEditor(cellManager);
 
 		// Render the demo window if enabled
 		if (config::showDemoWindow) {

@@ -40,6 +40,8 @@ public:
     void renderSelectionInfo(CellManager& cellManager);
     void renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor);
     void renderCameraControls(CellManager& cellmanager, Camera& camera);
+    void renderGenomeEditor(CellManager& cellManager);
+
     
 private:
     void drawToolSelector(ToolState& toolState);

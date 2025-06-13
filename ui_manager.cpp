@@ -2,6 +2,19 @@
 #include "cell_manager.h"
 #include "imgui.h"
 
+void UIManager::renderGenomeEditor(CellManager& cellManager)
+{
+    ImGui::Begin("Genome Editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::Text("Genome Editor");
+    ImGui::Separator();
+
+    ImGui::Text("TEST");
+    ImGui::Text("TEST");
+
+    ImGui::End();
+}
+
 void UIManager::renderCellInspector(CellManager& cellManager) {
     ImGui::Begin("Cell Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     

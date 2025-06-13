@@ -162,6 +162,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="buffer_manager.cpp" />
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
     <ClCompile Include="glad.c" />
@@ -183,6 +184,7 @@
     <ClCompile Include="sphere_mesh.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="buffer_manager.h" />
     <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
