@@ -63,43 +63,40 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
 }
 
 void SphereMesh::setupBuffers() {
-    // Generate and bind VAO
-    glGenVertexArrays(1, &VAO);
-    glBindVertexArray(VAO);
-    
-    // Generate and setup VBO for vertices
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
-    
-    // Position attribute (location = 0)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
-    glEnableVertexAttribArray(0);
-    
-    // Normal attribute (location = 1)
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(1);
-    
-    // Generate and setup EBO
-    glGenBuffers(1, &EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-    
-    glBindVertexArray(0);
+    glCreateVertexArrays(1, &VAO); // DSA way of creating VAO
+
+    // Create and populate VBO with DSA
+    glCreateBuffers(1, &VBO);
+    glNamedBufferData(VBO, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+
+    // Link VBO to VAO slot 0
+    glVertexArrayVertexBuffer(VAO, 0, VBO, 0, sizeof(Vertex));
+
+    // Set attribute 0 (position) from slot 0
+    glEnableVertexArrayAttrib(VAO, 0);
+    glVertexArrayAttribFormat(VAO, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
+    glVertexArrayAttribBinding(VAO, 0, 0);
+
+    // Set attribute 1 (normal) from slot 0
+    glEnableVertexArrayAttrib(VAO, 1);
+    glVertexArrayAttribFormat(VAO, 1, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal));
+    glVertexArrayAttribBinding(VAO, 1, 0);
+
+    // Create and populate EBO (element/index buffer)
+    glCreateBuffers(1, &EBO);
+    glNamedBufferData(EBO, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+    glVertexArrayElementBuffer(VAO, EBO); // Attach index buffer to VAO
 }
 
 void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
-    glBindVertexArray(VAO);
-    
-    // Bind the instance data buffer as an additional vertex buffer
-    glBindBuffer(GL_ARRAY_BUFFER, instanceDataBuffer);
-    
-    // Instance position and radius (location = 2) - vec4
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(glm::vec4), (void*)0);
-    glEnableVertexAttribArray(2);
-    glVertexAttribDivisor(2, 1); // This attribute advances once per instance
-    
-    glBindVertexArray(0);
+    // Associate instance buffer with slot 1
+    glVertexArrayVertexBuffer(VAO, 1, instanceDataBuffer, 0, sizeof(glm::vec4));
+
+    // Set instance attribute at location = 2
+    glEnableVertexArrayAttrib(VAO, 2);
+    glVertexArrayAttribFormat(VAO, 2, 4, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(VAO, 2, 1); // Comes from binding index 1
+    glVertexArrayBindingDivisor(VAO, 1, 1); // Instanced
 }
 
 void SphereMesh::render(int instanceCount) const {

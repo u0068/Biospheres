@@ -27,16 +27,12 @@ CellManager::~CellManager() {
 
 void CellManager::initializeGPUBuffers() {
     // Create compute buffer for cell data
-    glGenBuffers(1, &cellBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, config::MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glCreateBuffers(1, &cellBuffer);
+    glNamedBufferData(cellBuffer, config::MAX_CELLS * sizeof(ComputeCell), nullptr, GL_DYNAMIC_DRAW);
 
     // Create instance buffer for rendering (contains position + radius)
-    glGenBuffers(1, &instanceBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
-    glBufferData(GL_ARRAY_BUFFER, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glCreateBuffers(1, &instanceBuffer);
+    glNamedBufferData(instanceBuffer, config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
 
     // Setup the sphere mesh to use our instance buffer
     sphereMesh.setupInstanceBuffer(instanceBuffer);
@@ -132,12 +128,10 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { /
 	TimerGPU gpuTimer("Adding Cells to GPU Buffer", true);
 
     // Update only the specific part of the GPU buffer
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+    glNamedBufferSubData(cellBuffer,
 		cellCount * sizeof(ComputeCell),
 		newCellCount * sizeof(ComputeCell),
 		cells.data());
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     cellCount += newCellCount;
 }
@@ -165,7 +159,6 @@ void CellManager::addStagedCellsToGPUBuffer() {
 
 }
 
-
 ComputeCell CellManager::getCellData(int index) const {
     if (index >= 0 && index < cellCount) {
         return cpuCells[index];
@@ -183,12 +176,10 @@ void CellManager::updateCellData(int index, const ComputeCell& newData) {
         }
 
         // Update only the specific cell in the GPU buffer
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+        glNamedBufferSubData(cellBuffer,
             index * sizeof(ComputeCell),
             sizeof(ComputeCell),
             &cpuCells[index]);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 }
 
@@ -442,12 +433,10 @@ void CellManager::dragSelectedCell(const glm::vec3& newWorldPosition) {
     selectedCell.cellData = cpuCells[selectedCell.cellIndex];
     
     // Update GPU buffer immediately to ensure compute shaders see the new position
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
+    glNamedBufferSubData(cellBuffer,
                    selectedCell.cellIndex * sizeof(ComputeCell), 
                    sizeof(ComputeCell), 
                    &cpuCells[selectedCell.cellIndex]);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::clearSelection() {
@@ -464,25 +453,21 @@ void CellManager::endDrag() {
         cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
         
         // Update the GPU buffer with the final state
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 
+        glNamedBufferSubData(cellBuffer,
                        selectedCell.cellIndex * sizeof(ComputeCell), 
                        sizeof(ComputeCell), 
                        &cpuCells[selectedCell.cellIndex]);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
     
     isDraggingCell = false;
 }
 
-void CellManager::syncCellPositionsFromGPU() {
+void CellManager::syncCellPositionsFromGPU() { // This will fail if the CPU buffer has the wrong size, which will happen once cell division is implemented so i will have to rewrite this
     if (cellCount == 0) return;
     
-    // Bind the cell buffer and read current positions back to CPU
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellBuffer);
     
     // Use glMapBuffer for efficient GPU->CPU data transfer
-    ComputeCell* gpuData = static_cast<ComputeCell*>(glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY));
+    ComputeCell* gpuData = static_cast<ComputeCell*>(glMapNamedBuffer(cellBuffer, GL_READ_ONLY));
     
     if (gpuData) {
         // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
@@ -491,14 +476,12 @@ void CellManager::syncCellPositionsFromGPU() {
             cpuCells[i].positionAndRadius = gpuData[i].positionAndRadius;
         }
         
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        glUnmapNamedBuffer(cellBuffer);
         
         std::cout << "Synced " << cellCount << " cell positions from GPU" << std::endl;
     } else {
         std::cerr << "Failed to map GPU buffer for readback" << std::endl;
     }
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 // todo: REWRITE FOR GPU ONLY
