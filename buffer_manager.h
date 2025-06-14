@@ -1,41 +1,67 @@
 #pragma once
+#include <cassert>
 #include <vector>
 #include "glad/glad.h"
 
-class BufferGroup
+struct BufferGroup
 {
 public:
-	void init(std::vector<GLuint> buffers, const std::vector<int>& dataTypeSizes, int bufferLength)
+	int BUFFER_COUNT;
+	int bufferLength;
+	std::vector<std::reference_wrapper<GLuint>> buffers;
+	std::vector<int> dataTypeSizes;
+	bool createAndDestroy;
+
+	BufferGroup() = default;
+	~BufferGroup()
+	{
+		if (createAndDestroy)
+		{
+			cleanup();
+		}
+	}
+
+	void init(std::vector<std::reference_wrapper<GLuint>> buffers, const std::vector<int>& dataTypeSizes, int bufferLength, bool createAndDestroy = false)
 	{
 		this->BUFFER_COUNT = static_cast<int>(dataTypeSizes.size());
 		this->bufferLength = bufferLength;
 		this->buffers = buffers;
 		this->dataTypeSizes = dataTypeSizes;
+		this->createAndDestroy = createAndDestroy;
+
+		if (createAndDestroy)
+		{
+			create();
+		}
 	}
 
 	void create()
 	{
-		glCreateBuffers(BUFFER_COUNT, buffers.data());
-		for (int i{ 0 }; i < BUFFER_COUNT; i++)
+		std::vector<GLuint> bufferIds(BUFFER_COUNT);
+		glCreateBuffers(BUFFER_COUNT, bufferIds.data());
+		for (int i = 0; i < BUFFER_COUNT; ++i)
 		{
+			buffers[i].get() = bufferIds[i]; // update original GLuint variables
 			glNamedBufferData(
-				buffers[i],
+				bufferIds[i],
 				bufferLength * dataTypeSizes[i],
 				nullptr,
 				GL_DYNAMIC_DRAW);
 		}
 	}
 
-	void bindBase(int index)
+	void bindBase(const std::vector<int>& indices)
 	{
+		assert(indices.size() == BUFFER_COUNT);
 		for (int i{ 0 }; i < BUFFER_COUNT; i++)
 		{
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, index, buffers[i]);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, indices[i], buffers[i]);
 		}
 	}
 
 	void update(int index, int length, const std::vector<void*>& data)
 	{
+		assert(data.size() == BUFFER_COUNT);
 		for (int i = 0; i < BUFFER_COUNT; ++i)
 		{
 			glNamedBufferSubData(
@@ -49,12 +75,8 @@ public:
 
 	void cleanup()
 	{
-		glDeleteBuffers(BUFFER_COUNT, buffers.data());
+		std::vector<GLuint> bufferIds(BUFFER_COUNT);
+		glDeleteBuffers(BUFFER_COUNT, bufferIds.data());
 	}
 
-private:
-	int BUFFER_COUNT;
-	int bufferLength;
-	std::vector<GLuint> buffers;
-	std::vector<int> dataTypeSizes;
 };

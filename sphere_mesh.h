@@ -2,6 +2,7 @@
 #include <vector>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
+#include "buffer_manager.h"
 
 class SphereMesh {
 public:
@@ -23,7 +24,7 @@ public:
     
     void generateSphere(int latitudeSegments = 32, int longitudeSegments = 32, float radius = 1.0f);
     void setupBuffers();
-    void setupInstanceBuffer(GLuint instanceDataBuffer);
+    void setupInstanceBuffer(BufferGroup instanceDataBuffers);
     void render(int instanceCount) const;
     void cleanup();
     

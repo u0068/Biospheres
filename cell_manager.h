@@ -14,7 +14,7 @@
 class Camera;
 
 // GPU compute cell structure matching the compute shader
-struct ComputeCell {
+struct CPUCell {
     glm::vec4 positionAndRadius;  // x, y, z, radius
     glm::vec4 velocityAndMass;    // vx, vy, vz, mass
     glm::vec4 acceleration;       // ax, ay, az, unused
@@ -26,8 +26,8 @@ struct CellManager {
     // The compute shaders handle physics calculations and position updates
     
     // GPU buffer objects
-    static constexpr int BUFFER_COUNT = 5; // IMPORTANT: Remember to update this when adding or removing buffers!!!
-    GLuint buffers[BUFFER_COUNT];
+    //static constexpr int BUFFER_COUNT = 5; // IMPORTANT: Remember to update this when adding or removing buffers!!!
+    //GLuint buffers[BUFFER_COUNT];
     GLuint positionBuffer = 0;
     GLuint velocityBuffer = 0;
     GLuint accelerationBuffer = 0;
@@ -36,7 +36,9 @@ struct CellManager {
 
     // GPU buffer groups
     BufferGroup allBuffers;
-    BufferGroup physicsUpdateBuffers;
+    BufferGroup instanceBuffers;
+    BufferGroup physicsBuffers;
+    BufferGroup updateBuffers;
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
@@ -53,8 +55,8 @@ struct CellManager {
     Shader* extractShader = nullptr;  // For extracting instance data efficiently
 
     // CPU-side storage for initialization and debugging
-	std::vector<ComputeCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
-    std::vector<ComputeCell> cellStagingBuffer;
+	std::vector<CPUCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
+    std::vector<CPUCell> cellStagingBuffer;
 	int cellCount{ 0 }; // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
 	int pendingCellCount{ 0 }; // Number of cells pending addition
 
@@ -72,12 +74,13 @@ struct CellManager {
     // So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
     
     void initializeGPUBuffers();
+    void bindAllBuffers();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
-    void addCellsToGPUBuffer(const std::vector<ComputeCell>& cells);
-    void addCellToGPUBuffer(const ComputeCell& newCell);
-    void addCellToStagingBuffer(const ComputeCell& newCell);
-    void addCell(const ComputeCell& newCell) { addCellToStagingBuffer(newCell); }
+    void addCellsToGPUBuffer(const std::vector<CPUCell>& cells);
+    void addCellToGPUBuffer(const CPUCell& newCell);
+    void addCellToStagingBuffer(const CPUCell& newCell);
+    void addCell(const CPUCell& newCell) { addCellToStagingBuffer(newCell); }
     void addStagedCellsToGPUBuffer();
     void updateCells(float deltaTime);
     void cleanup();
@@ -100,7 +103,7 @@ struct CellManager {
     }    // Cell selection and interaction system
     struct SelectedCellInfo {
         int cellIndex = -1;
-        ComputeCell cellData;
+        CPUCell cellData;
         bool isValid = false;
         glm::vec3 dragOffset = glm::vec3(0.0f); // Offset from cell center when dragging starts
         float dragDistance = 10.0f; // Distance from camera to maintain during dragging
@@ -132,14 +135,14 @@ struct CellManager {
     // Getters for selection system
     bool hasSelectedCell() const { return selectedCell.isValid; }
     const SelectedCellInfo& getSelectedCell() const { return selectedCell; }
-    ComputeCell getCellData(int index) const;
-	void updateCellData(int index, const ComputeCell& newData); // Needs refactoring
+    CPUCell getCellData(int index) const;
+	void updateCellData(int index, const CPUCell& newData); // Needs refactoring
 
     // Asynchronous readback functions for performance monitoring
     void initializeReadbackSystem();
     void updateReadbackSystem(float deltaTime);
     void requestAsyncReadback();
-    bool checkAsyncReadback(ComputeCell* outputData, int maxCells);
+    bool checkAsyncReadback(CPUCell* outputData, int maxCells);
     void cleanupReadbackSystem();
 
 private:

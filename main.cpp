@@ -43,6 +43,7 @@ int main()
 	GLFWwindow* window = createWindow();
 	initGLAD(window);
 	setupGLFWDebugFlags();
+	assert(glad_glDrawElementsInstanced != NULL);
 	// Load the sphere shader for instanced rendering
 	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 
@@ -177,6 +178,11 @@ int main()
 				isLeftMousePressed, isLeftMouseDown, scrollDelta);
 		}
 		//// Then we handle cell simulation
+		cellManager.bindAllBuffers();
+		if (cellManager.pendingCellCount > 0)
+		{
+			cellManager.addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
+		}
 		try {
 			// Update cell simulation with the delta time
 			// GPU timer was moved inside the function because it has multiple elements that need individual timing

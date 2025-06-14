@@ -40,7 +40,7 @@ void UIManager::renderCellInspector(CellManager& cellManager) {
         ImGui::Text("Edit Properties:");
         
         bool changed = false;
-        ComputeCell editedCell = selectedCell.cellData;
+        CPUCell editedCell = selectedCell.cellData;
         
         // Position editing
         float pos[3] = { position.x, position.y, position.z };

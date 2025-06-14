@@ -59,7 +59,7 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
     indexCount = static_cast<int>(indices.size());
     
     std::cout << "Generated sphere with " << vertices.size() << " vertices and " 
-              << indices.size() << " indices" << std::endl;
+              << indices.size() << " indices\n";
 }
 
 void SphereMesh::setupBuffers() {
@@ -88,22 +88,33 @@ void SphereMesh::setupBuffers() {
     glVertexArrayElementBuffer(VAO, EBO); // Attach index buffer to VAO
 }
 
-void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
-    // Associate instance buffer with slot 1
-    glVertexArrayVertexBuffer(VAO, 1, instanceDataBuffer, 0, sizeof(glm::vec4));
+void SphereMesh::setupInstanceBuffer(BufferGroup instanceDataBuffers) {
+    int attribLocation = 2; // Start at attribute location 2
+    for (int i = 0; i < instanceDataBuffers.BUFFER_COUNT; ++i)
+    {
+        GLuint buffer = instanceDataBuffers.buffers[i];
+        int bindingIndex = 1 + i; // Avoid slot 0, used by mesh VBO
+        int typeSize = instanceDataBuffers.dataTypeSizes[i];
+    	int numComponents = typeSize / sizeof(float);
+        assert(numComponents >= 1 && numComponents <= 4); // Required by OpenGL
 
-    // Set instance attribute at location = 2
-    glEnableVertexArrayAttrib(VAO, 2);
-    glVertexArrayAttribFormat(VAO, 2, 4, GL_FLOAT, GL_FALSE, 0);
-    glVertexArrayAttribBinding(VAO, 2, 1); // Comes from binding index 1
-    glVertexArrayBindingDivisor(VAO, 1, 1); // Instanced
+        // Assume all are vec4 for now (adjust later if needed)
+        glVertexArrayVertexBuffer(VAO, bindingIndex, buffer, 0, typeSize);
+
+        glEnableVertexArrayAttrib(VAO, attribLocation);
+        glVertexArrayAttribFormat(VAO, attribLocation, numComponents, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribBinding(VAO, attribLocation, bindingIndex);
+        glVertexArrayBindingDivisor(VAO, bindingIndex, 1); // Mark as per-instance
+
+        ++attribLocation;
+    }
 }
 
 void SphereMesh::render(int instanceCount) const {
-    if (VAO == 0 || indexCount == 0) {
-        std::cerr << "SphereMesh not properly initialized!" << std::endl;
-        return;
-    }
+    assert(VAO != 0);
+    assert(indexCount > 0);
+    assert(glIsVertexArray(VAO));
+    assert(glIsBuffer(EBO));
     
     glBindVertexArray(VAO);
     glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0, instanceCount);
