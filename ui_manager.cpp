@@ -286,11 +286,9 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %d", cellCount);
     ImGui::Text("Triangles: ~%d", 192 * cellCount);
-    ImGui::Text("Vertices: ~%d", 96 * cellCount); // Assuming sphere has ~96 vertices
-
-    // Memory estimate
-    float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
-    ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
+    ImGui::Text("Vertices: ~%d", 96 * cellCount);                                                     // Assuming sphere has ~96 vertices    // Memory estimate for SoA layout
+    float memoryMB = (cellCount * (sizeof(glm::vec3) * 3 + sizeof(float) * 2)) / (1024.0f * 1024.0f); // 3 vec3s + 2 floats per cell
+    ImGui::Text("Cell Data Memory (SoA): %.2f MB", memoryMB);
 
     // === Performance Warnings ===
     ImGui::Spacing();
