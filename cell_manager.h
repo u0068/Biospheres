@@ -13,6 +13,40 @@
 // Forward declaration
 class Camera;
 
+// Spatial partitioning configuration
+struct SpatialGrid
+{
+    static constexpr int GRID_SIZE = 64;           // 64x64x64 grid
+    static constexpr float WORLD_SIZE = 200.0f;    // World extends from -100 to +100 in each axis
+    static constexpr float CELL_SIZE = WORLD_SIZE / GRID_SIZE; // Size of each grid cell
+    static constexpr int MAX_CELLS_PER_GRID = 32; // Maximum cells per grid cell
+    static constexpr int TOTAL_GRID_CELLS = GRID_SIZE * GRID_SIZE * GRID_SIZE;
+    static constexpr int MAX_GRID_ENTRIES = TOTAL_GRID_CELLS * MAX_CELLS_PER_GRID;
+    
+    // Helper functions for grid calculations
+    static glm::ivec3 worldToGrid(const glm::vec3& worldPos)
+    {
+        glm::vec3 normalizedPos = (worldPos + WORLD_SIZE * 0.5f) / WORLD_SIZE;
+        glm::ivec3 gridPos = glm::ivec3(normalizedPos * float(GRID_SIZE));
+        return glm::clamp(gridPos, glm::ivec3(0), glm::ivec3(GRID_SIZE - 1));
+    }
+    
+    static int gridToIndex(const glm::ivec3& gridPos)
+    {
+        return gridPos.x + gridPos.y * GRID_SIZE + gridPos.z * GRID_SIZE * GRID_SIZE;
+    }
+    
+    static glm::ivec3 indexToGrid(int index)
+    {
+        glm::ivec3 gridPos;
+        gridPos.z = index / (GRID_SIZE * GRID_SIZE);
+        index %= (GRID_SIZE * GRID_SIZE);
+        gridPos.y = index / GRID_SIZE;
+        gridPos.x = index % GRID_SIZE;
+        return gridPos;
+    }
+};
+
 // GPU compute cell structure matching the compute shader (AoS - for backward compatibility)
 struct ComputeCell
 {
@@ -159,7 +193,20 @@ struct CellManager
     Shader *physicsShader = nullptr;
     Shader *updateShader = nullptr;
     Shader *extractShader = nullptr;            // For extracting instance data efficiently
-                                                // CPU-side storage using pure SoA (eliminates AoS conversions)
+    
+    // Spatial partitioning compute shaders
+    Shader *gridBuildShader = nullptr;          // Build spatial grid
+    Shader *gridPhysicsShader = nullptr;        // Physics using spatial grid
+    
+    // Spatial partitioning GPU buffers
+    GLuint gridCountsBuffer = 0;                // Count of cells in each grid cell
+    GLuint gridOffsetsBuffer = 0;               // Starting offset for each grid cell in the grid data
+    GLuint gridDataBuffer = 0;                  // Cell indices sorted by grid position
+    GLuint cellGridPosBuffer = 0;               // Grid position for each cell
+    
+    bool useSpatialPartitioning = true;         // Toggle for performance comparison
+    
+    // CPU-side storage using pure SoA (eliminates AoS conversions)
     CellDataSoA cellDataSoA;                    // Primary SoA storage (for debug/analysis)
     CellDataSoA stagingDataSoA;                 // SoA staging buffer for batch operations
     std::vector<ComputeCell> cellStagingBuffer; // Legacy AoS staging (for compatibility)
@@ -301,6 +348,13 @@ struct CellManager
 
     // Direct SoA GPU upload (most efficient)
     void uploadSoADataDirectly(const CellDataSoA &data);
+    
+    // Spatial partitioning methods
+    void initializeSpatialGrid();
+    void updateSpatialGrid();
+    void cleanupSpatialGrid();
+    void toggleSpatialPartitioning() { useSpatialPartitioning = !useSpatialPartitioning; }
+    bool isSpatialPartitioningEnabled() const { return useSpatialPartitioning; }
 
     // Performance comparison utilities
     void spawnCellsLegacy(int count); // Old AoS method for comparison

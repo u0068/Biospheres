@@ -21,11 +21,15 @@ CellManager::CellManager()
     physicsShader = new Shader("shaders/cell_physics.comp");
     updateShader = new Shader("shaders/cell_update.comp");
     extractShader = new Shader("shaders/extract_instances.comp");
+    
+    // Initialize spatial partitioning
+    initializeSpatialGrid();
 }
 
 CellManager::~CellManager()
 {
     cleanup();
+    cleanupSpatialGrid();
 }
 
 void CellManager::initializeGPUBuffers()
@@ -297,9 +301,7 @@ void CellManager::addStagedCellsToGPUBuffer()
     {
         uploadSoADataDirectly(stagingDataSoA);
         stagingDataSoA.clear();
-    }
-
-    // Handle legacy AoS staging buffer for backward compatibility
+    }    // Handle legacy AoS staging buffer for backward compatibility
     if (!cellStagingBuffer.empty())
     {
         addCellsToGPUBuffer(cellStagingBuffer);
@@ -452,6 +454,14 @@ void CellManager::bindAllBuffers()
         3, // mass
         4, // radius
     });
+    
+    // Bind spatial grid buffers if spatial partitioning is enabled
+    if (useSpatialPartitioning) {
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, gridCountsBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, gridOffsetsBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, gridDataBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, cellGridPosBuffer);
+    }
 }
 
 void CellManager::updateCells(float deltaTime)
@@ -512,23 +522,43 @@ void CellManager::cleanup()
 
 void CellManager::runPhysicsCompute(float deltaTime)
 {
-    physicsShader->use();
+    if (useSpatialPartitioning && gridPhysicsShader) {
+        // Update spatial grid first
+        updateSpatialGrid();
+        
+        // Use grid-based physics shader
+        gridPhysicsShader->use();
+        gridPhysicsShader->setFloat("u_deltaTime", deltaTime);
+        gridPhysicsShader->setInt("u_cellCount", cellCount);
+        gridPhysicsShader->setFloat("u_damping", 0.98f);
+        gridPhysicsShader->setFloat("u_worldSize", SpatialGrid::WORLD_SIZE);
+        gridPhysicsShader->setInt("u_gridSize", SpatialGrid::GRID_SIZE);
+        gridPhysicsShader->setInt("u_maxCellsPerGrid", SpatialGrid::MAX_CELLS_PER_GRID);
+        
+        // Pass dragged cell index to skip its physics
+        int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+        gridPhysicsShader->setInt("u_draggedCellIndex", draggedIndex);
+        
+        // Dispatch grid-based physics compute shader
+        GLuint numGroups = (cellCount + 63) / 64;
+        gridPhysicsShader->dispatch(numGroups, 1, 1);
+    } else {
+        // Fall back to brute force physics
+        physicsShader->use();
 
-    // Set uniforms
-    physicsShader->setFloat("u_deltaTime", deltaTime);
-    physicsShader->setInt("u_cellCount", cellCount);
-    physicsShader->setFloat("u_damping", 0.98f);
+        // Set uniforms
+        physicsShader->setFloat("u_deltaTime", deltaTime);
+        physicsShader->setInt("u_cellCount", cellCount);
+        physicsShader->setFloat("u_damping", 0.98f);
 
-    // Pass dragged cell index to skip its physics
-    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
-    physicsShader->setInt("u_draggedCellIndex", draggedIndex);
+        // Pass dragged cell index to skip its physics
+        int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+        physicsShader->setInt("u_draggedCellIndex", draggedIndex);
 
-    // Normally we would bind relevant buffers here but we can get away with binding everything at once before all the shaders
-
-    // Dispatch compute shader
-    // Use work groups of 64 threads each
-    GLuint numGroups = (cellCount + 63) / 64; // Round up division
-    physicsShader->dispatch(numGroups, 1, 1);
+        // Dispatch compute shader
+        GLuint numGroups = (cellCount + 63) / 64; // Round up division
+        physicsShader->dispatch(numGroups, 1, 1);
+    }
 }
 
 void CellManager::runUpdateCompute(float deltaTime)
@@ -1024,4 +1054,108 @@ void CellManager::uploadSoADataDirectly(const CellDataSoA &data)
     cellCount += newCellCount;
 
     std::cout << "Uploaded " << newCellCount << " cells directly from SoA. Total cells: " << cellCount << "\n";
+}
+
+// Spatial Partitioning Implementation
+
+void CellManager::initializeSpatialGrid()
+{
+    // Initialize spatial partitioning compute shaders
+    gridBuildShader = new Shader("shaders/grid_build.comp");
+    gridPhysicsShader = new Shader("shaders/grid_physics.comp");
+    
+    // Create spatial grid buffers
+    glGenBuffers(1, &gridCountsBuffer);
+    glGenBuffers(1, &gridOffsetsBuffer);
+    glGenBuffers(1, &gridDataBuffer);
+    glGenBuffers(1, &cellGridPosBuffer);
+    
+    // Initialize grid counts buffer (one count per grid cell)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridCountsBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 
+                 SpatialGrid::TOTAL_GRID_CELLS * sizeof(int), 
+                 nullptr, GL_DYNAMIC_DRAW);
+    
+    // Initialize grid offsets buffer (one offset per grid cell)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridOffsetsBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 
+                 SpatialGrid::TOTAL_GRID_CELLS * sizeof(int), 
+                 nullptr, GL_DYNAMIC_DRAW);
+    
+    // Initialize grid data buffer (stores cell indices)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridDataBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 
+                 SpatialGrid::MAX_GRID_ENTRIES * sizeof(int), 
+                 nullptr, GL_DYNAMIC_DRAW);
+    
+    // Initialize cell grid position buffer (grid position for each cell)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellGridPosBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 
+                 config::MAX_CELLS * sizeof(glm::ivec4), 
+                 nullptr, GL_DYNAMIC_DRAW);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    std::cout << "Spatial partitioning initialized with " << SpatialGrid::GRID_SIZE 
+              << "x" << SpatialGrid::GRID_SIZE << "x" << SpatialGrid::GRID_SIZE 
+              << " grid (" << SpatialGrid::TOTAL_GRID_CELLS << " cells)\n";
+}
+
+void CellManager::updateSpatialGrid()
+{
+    if (!useSpatialPartitioning || cellCount == 0) return;
+    
+    // Bind spatial grid buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, gridCountsBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, gridOffsetsBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, gridDataBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, cellGridPosBuffer);
+    
+    // Clear grid counts
+    int zero = 0;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gridCountsBuffer);
+    glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32I, GL_RED_INTEGER, GL_INT, &zero);
+    
+    // Use grid build shader to populate spatial grid
+    gridBuildShader->use();
+    gridBuildShader->setInt("u_cellCount", cellCount);
+    gridBuildShader->setFloat("u_worldSize", SpatialGrid::WORLD_SIZE);
+    gridBuildShader->setInt("u_gridSize", SpatialGrid::GRID_SIZE);
+    gridBuildShader->setInt("u_maxCellsPerGrid", SpatialGrid::MAX_CELLS_PER_GRID);
+    
+    // Dispatch grid build compute shader
+    GLuint numGroups = (cellCount + 63) / 64;
+    gridBuildShader->dispatch(numGroups, 1, 1);
+    
+    // Memory barrier to ensure grid is built before physics
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::cleanupSpatialGrid()
+{
+    if (gridBuildShader) {
+        delete gridBuildShader;
+        gridBuildShader = nullptr;
+    }
+    if (gridPhysicsShader) {
+        delete gridPhysicsShader;
+        gridPhysicsShader = nullptr;
+    }
+    
+    if (gridCountsBuffer) {
+        glDeleteBuffers(1, &gridCountsBuffer);
+        gridCountsBuffer = 0;
+    }
+    if (gridOffsetsBuffer) {
+        glDeleteBuffers(1, &gridOffsetsBuffer);
+        gridOffsetsBuffer = 0;
+    }
+    if (gridDataBuffer) {
+        glDeleteBuffers(1, &gridDataBuffer);
+        gridDataBuffer = 0;
+    }
+    if (cellGridPosBuffer) {
+        glDeleteBuffers(1, &cellGridPosBuffer);
+        cellGridPosBuffer = 0;
+    }
 }

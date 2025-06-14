@@ -1,0 +1,73 @@
+#version 430
+
+// Local work group size
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// SSBOs: Cell data
+layout(std430, binding = 0) buffer Positions {
+    vec4 positions[]; // xyz = position, w = radius
+};
+
+// SSBOs: Spatial grid data
+layout(std430, binding = 5) buffer GridCounts {
+    int gridCounts[]; // Count of cells in each grid cell
+};
+
+layout(std430, binding = 6) buffer GridOffsets {
+    int gridOffsets[]; // Starting offset for each grid cell
+};
+
+layout(std430, binding = 7) buffer GridData {
+    int gridData[]; // Cell indices sorted by grid position
+};
+
+layout(std430, binding = 8) buffer CellGridPos {
+    ivec4 cellGridPos[]; // Grid position for each cell (xyz = grid pos, w = unused)
+};
+
+// Uniforms
+uniform int u_cellCount;
+uniform float u_worldSize;
+uniform int u_gridSize;
+uniform int u_maxCellsPerGrid;
+
+// Convert world position to grid coordinates
+ivec3 worldToGrid(vec3 worldPos) {
+    vec3 normalizedPos = (worldPos + u_worldSize * 0.5) / u_worldSize;
+    ivec3 gridPos = ivec3(normalizedPos * float(u_gridSize));
+    return clamp(gridPos, ivec3(0), ivec3(u_gridSize - 1));
+}
+
+// Convert grid coordinates to linear index
+int gridToIndex(ivec3 gridPos) {
+    return gridPos.x + gridPos.y * u_gridSize + gridPos.z * u_gridSize * u_gridSize;
+}
+
+void main() {
+    uint cellIndex = gl_GlobalInvocationID.x;
+    
+    // Check bounds
+    if (cellIndex >= u_cellCount) {
+        return;
+    }
+    
+    // Get cell position
+    vec3 cellPos = positions[cellIndex].xyz;
+    
+    // Calculate grid position
+    ivec3 gridPos = worldToGrid(cellPos);
+    int gridIndex = gridToIndex(gridPos);
+    
+    // Store grid position for this cell
+    cellGridPos[cellIndex] = ivec4(gridPos, 0);
+    
+    // Atomically increment the count for this grid cell
+    int localIndex = atomicAdd(gridCounts[gridIndex], 1);
+    
+    // If we haven't exceeded the maximum cells per grid, add this cell to the grid
+    if (localIndex < u_maxCellsPerGrid) {
+        // Calculate the actual index in the grid data array
+        int dataIndex = gridIndex * u_maxCellsPerGrid + localIndex;
+        gridData[dataIndex] = int(cellIndex);
+    }
+}

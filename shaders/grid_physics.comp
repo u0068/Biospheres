@@ -1,0 +1,140 @@
+#version 430
+
+// Local work group size
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// SSBOs: Cell data
+layout(std430, binding = 0) buffer Positions {
+    vec4 positions[]; // xyz = position, w = radius
+};
+layout(std430, binding = 1) buffer Velocities {
+    vec4 velocities[]; // xyz = velocity, w = mass
+};
+layout(std430, binding = 2) buffer Accelerations {
+    vec4 accelerations[]; // xyz = acceleration, w = unused
+};
+layout(std430, binding = 3) buffer Masses {
+    float masses[];
+};
+layout(std430, binding = 4) buffer Radii {
+    float radii[];
+};
+
+// SSBOs: Spatial grid data
+layout(std430, binding = 5) buffer GridCounts {
+    int gridCounts[]; // Count of cells in each grid cell
+};
+
+layout(std430, binding = 7) buffer GridData {
+    int gridData[]; // Cell indices sorted by grid position
+};
+
+layout(std430, binding = 8) buffer CellGridPos {
+    ivec4 cellGridPos[]; // Grid position for each cell
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform int u_cellCount;
+uniform float u_damping;
+uniform int u_draggedCellIndex;
+uniform float u_worldSize;
+uniform int u_gridSize;
+uniform int u_maxCellsPerGrid;
+
+// Convert world position to grid coordinates
+ivec3 worldToGrid(vec3 worldPos) {
+    vec3 normalizedPos = (worldPos + u_worldSize * 0.5) / u_worldSize;
+    ivec3 gridPos = ivec3(normalizedPos * float(u_gridSize));
+    return clamp(gridPos, ivec3(0), ivec3(u_gridSize - 1));
+}
+
+// Convert grid coordinates to linear index
+int gridToIndex(ivec3 gridPos) {
+    return gridPos.x + gridPos.y * u_gridSize + gridPos.z * u_gridSize * u_gridSize;
+}
+
+// Check if grid coordinates are valid
+bool isValidGrid(ivec3 gridPos) {
+    return all(greaterThanEqual(gridPos, ivec3(0))) && all(lessThan(gridPos, ivec3(u_gridSize)));
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    // Check bounds
+    if (index >= u_cellCount) {
+        return;
+    }
+    
+    // Skip physics for dragged cell - it will be positioned directly
+    if (int(index) == u_draggedCellIndex) {
+        // Clear velocity for dragged cell
+        velocities[index] = vec4(0.0);
+        return;
+    }
+    
+    // Reset acceleration
+    accelerations[index] = vec4(0.0);
+    
+    // Get cell data
+    vec3 myPos = positions[index].xyz;
+    float myRadius = radii[index];
+    float myMass = masses[index];
+    
+    // Get grid position for this cell
+    ivec3 myGridPos = cellGridPos[index].xyz;
+    
+    // Calculate forces from nearby cells using spatial grid
+    vec3 totalForce = vec3(0.0);
+    
+    // Check neighboring grid cells (3x3x3 neighborhood)
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                ivec3 neighborGrid = myGridPos + ivec3(dx, dy, dz);
+                
+                // Skip invalid grid positions
+                if (!isValidGrid(neighborGrid)) {
+                    continue;
+                }
+                
+                int neighborGridIndex = gridToIndex(neighborGrid);
+                int cellCount = min(gridCounts[neighborGridIndex], u_maxCellsPerGrid);
+                
+                // Check all cells in this grid cell
+                for (int i = 0; i < cellCount; i++) {
+                    int dataIndex = neighborGridIndex * u_maxCellsPerGrid + i;
+                    int otherIndex = gridData[dataIndex];
+                    
+                    // Skip self
+                    if (otherIndex == int(index)) {
+                        continue;
+                    }
+                    
+                    // Skip invalid indices
+                    if (otherIndex < 0 || otherIndex >= u_cellCount) {
+                        continue;
+                    }
+                    
+                    vec3 otherPos = positions[otherIndex].xyz;
+                    float otherRadius = radii[otherIndex];
+                    
+                    vec3 delta = myPos - otherPos;
+                    float distance = length(delta);
+                    float minDistance = myRadius + otherRadius;
+                    
+                    if (distance < minDistance && distance > 0.001) {
+                        // Collision detected - apply repulsion force
+                        vec3 direction = normalize(delta);
+                        float overlap = minDistance - distance;
+                        totalForce += direction * overlap * 100.0; // Force strength
+                    }
+                }
+            }
+        }
+    }
+    
+    // Store acceleration (F = ma, so a = F/m)
+    accelerations[index] = vec4(totalForce / myMass, 0.0);
+}

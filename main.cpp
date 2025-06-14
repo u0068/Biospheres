@@ -61,7 +61,7 @@ int main()
 		ToolState toolState;
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
-		cellManager.spawnCells(25000); // Use default cell count from config
+		cellManager.spawnCells(50000); // Use default cell count from config
 
 		// Timing variables
 		float deltaTime = 0.0f;
