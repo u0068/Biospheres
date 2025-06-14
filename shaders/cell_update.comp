@@ -3,16 +3,15 @@
 // Local work group size
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Cell data structure for compute shader
-struct ComputeCell {
-    vec4 positionAndRadius;  // x, y, z, radius
-    vec4 velocityAndMass;    // vx, vy, vz, mass
-    vec4 acceleration;       // ax, ay, az, unused
+// SSBOs: Structure of Arrays
+layout(std430, binding = 0) buffer Positions {
+    vec4 positions[]; // xyz = position, w = radius
 };
-
-// Shader storage buffer objects
-layout(std430, binding = 0) restrict buffer CellBuffer {
-    ComputeCell cells[];
+layout(std430, binding = 1) buffer Velocities {
+    vec4 velocities[]; // xyz = velocity, w = mass
+};
+layout(std430, binding = 2) buffer Accelerations {
+    vec4 accelerations[]; // xyz = acceleration, w = unused
 };
 
 // Uniforms
@@ -23,41 +22,33 @@ uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    
-    // Check bounds
-    if (index >= u_cellCount) {
-        return;
-    }
-    
-    // Skip position updates for dragged cell - position is set directly by dragging
-    if (int(index) == u_draggedCellIndex) {
-        return;
-    }
-    
+
+    if (index >= uint(u_cellCount)) return;
+    if (int(index) == u_draggedCellIndex) return;
+
     // Update velocity based on acceleration
-    cells[index].velocityAndMass.xyz += cells[index].acceleration.xyz * u_deltaTime;
-    
+    velocities[index].xyz += accelerations[index].xyz * u_deltaTime;
+
     // Apply damping
-    cells[index].velocityAndMass.xyz *= u_damping;
-    
-    // Update position based on velocity (Euler integration)
-    cells[index].positionAndRadius.xyz += cells[index].velocityAndMass.xyz * u_deltaTime;
-    
-    // Optional: Add boundary constraints here
-    // For example, keep cells within a certain bounds
-    vec3 pos = cells[index].positionAndRadius.xyz;
+    velocities[index].xyz *= u_damping;
+
+    // Update position based on velocity
+    positions[index].xyz += velocities[index].xyz * u_deltaTime;
+
+    // Boundary constraints (bounce off edges)
+    vec3 pos = positions[index].xyz;
     float bounds = 50.0;
-    
+
     if (abs(pos.x) > bounds) {
-        cells[index].positionAndRadius.x = sign(pos.x) * bounds;
-        cells[index].velocityAndMass.x *= -0.8; // Bounce with energy loss
+        positions[index].x = sign(pos.x) * bounds;
+        velocities[index].x *= -0.8;
     }
     if (abs(pos.y) > bounds) {
-        cells[index].positionAndRadius.y = sign(pos.y) * bounds;
-        cells[index].velocityAndMass.y *= -0.8;
+        positions[index].y = sign(pos.y) * bounds;
+        velocities[index].y *= -0.8;
     }
     if (abs(pos.z) > bounds) {
-        cells[index].positionAndRadius.z = sign(pos.z) * bounds;
-        cells[index].velocityAndMass.z *= -0.8;
+        positions[index].z = sign(pos.z) * bounds;
+        velocities[index].z *= -0.8;
     }
 }

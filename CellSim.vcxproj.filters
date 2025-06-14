@@ -81,6 +81,9 @@
     <ClCompile Include="timer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="buffer_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imconfig.h">
@@ -149,20 +152,11 @@
     <ClInclude Include="timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="buffer_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\cells.frag">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\default.vert">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\default.frag">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\test.frag">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
     <None Include="shaders\sphere.vert">
       <Filter>Resource Files\shaders</Filter>
     </None>
@@ -178,5 +172,6 @@
     <None Include="shaders\sphere.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\apply_cell_additions.comp" />
   </ItemGroup>
 </Project>

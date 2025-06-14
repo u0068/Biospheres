@@ -2,14 +2,16 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Input: Full cell data from physics simulation
-layout(std430, binding = 0) buffer CellBuffer {
-    // Cell structure: positionAndRadius, velocityAndMass, acceleration
-    vec4 cellData[];
+layout(std430, binding = 0) readonly buffer Positions {
+    vec4 positions[];
+};
+
+layout(std430, binding = 1) readonly buffer Radii {
+    float radii[];
 };
 
 // Output: Compact instance data for rendering
-layout(std430, binding = 1) buffer InstanceBuffer {
+layout(std430, binding = 2) writeonly buffer InstanceBuffer {
     vec4 instanceData[]; // Only position and radius
 };
 
@@ -23,5 +25,5 @@ void main() {
     // Extract position and radius (first vec4) from full cell data
     // Each cell has 3 vec4s: [posAndRadius, velAndMass, acceleration]
     // We only need the first one for rendering
-    instanceData[index] = cellData[index * 3];
+    instanceData[index] = vec4(positions[index].xyz, radii[index]);
 }
