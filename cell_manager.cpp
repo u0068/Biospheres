@@ -35,6 +35,71 @@ CellManager::~CellManager()
     cleanup();
 }
 
+void CellManager::cleanup()
+{
+    if (cellBuffer != 0)
+    {
+        glDeleteBuffers(1, &cellBuffer);
+        cellBuffer = 0;
+    }
+    if (instanceBuffer != 0)
+    {
+        glDeleteBuffers(1, &instanceBuffer);
+        instanceBuffer = 0;
+    }
+
+    cleanupSpatialGrid();
+
+    if (extractShader)
+    {
+        extractShader->destroy();
+        delete extractShader;
+        extractShader = nullptr;
+    }
+    if (physicsShader)
+    {
+        physicsShader->destroy();
+        delete physicsShader;
+        physicsShader = nullptr;
+    }
+    if (updateShader)
+    {
+        updateShader->destroy();
+        delete updateShader;
+        updateShader = nullptr;
+    }
+
+    // Cleanup spatial grid shaders
+    if (gridClearShader)
+    {
+        gridClearShader->destroy();
+        delete gridClearShader;
+        gridClearShader = nullptr;
+    }
+    if (gridAssignShader)
+    {
+        gridAssignShader->destroy();
+        delete gridAssignShader;
+        gridAssignShader = nullptr;
+    }
+    if (gridPrefixSumShader)
+    {
+        gridPrefixSumShader->destroy();
+        delete gridPrefixSumShader;
+        gridPrefixSumShader = nullptr;
+    }
+    if (gridInsertShader)
+    {
+        gridInsertShader->destroy();
+        delete gridInsertShader;
+        gridInsertShader = nullptr;
+    }
+
+    sphereMesh.cleanup();
+}
+
+// Buffers
+
 void CellManager::initializeGPUBuffers()
 {
     // Create compute buffer for cell data
@@ -50,91 +115,6 @@ void CellManager::initializeGPUBuffers()
 
     // Reserve CPU storage
     cpuCells.reserve(config::MAX_CELLS);
-}
-
-void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera)
-{
-    if (cellCount == 0)
-        return;
-
-    // Safety check for zero-sized framebuffer (minimized window)
-    if (resolution.x <= 0 || resolution.y <= 0)
-    {
-        return;
-    }
-
-    // Additional safety check for very small resolutions that might cause issues
-    if (resolution.x < 1 || resolution.y < 1)
-    {
-        return;
-    }
-
-    try
-    {
-
-        // Use compute shader to efficiently extract instance data
-        extractShader->use();
-        extractShader->setInt("u_cellCount", cellCount);
-
-        // Bind buffers for compute shader
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, instanceBuffer);
-
-        // Dispatch extract compute shader
-        GLuint numGroups = (cellCount + 63) / 64; // 64 threads per group
-        extractShader->dispatch(numGroups, 1, 1);
-
-        // Memory barrier to ensure data is ready for rendering
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        // Use the sphere shader
-        cellShader.use(); // Set up camera matrices (only calculate once per frame, not per cell)
-        glm::mat4 view = camera.getViewMatrix();
-
-        // Calculate aspect ratio with safety check
-        float aspectRatio = resolution.x / resolution.y;
-        if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
-        {
-            // Use a default aspect ratio if calculation fails
-            aspectRatio = 16.0f / 9.0f;
-        }
-
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f),
-                                                aspectRatio,
-                                                0.1f, 1000.0f);
-        // Set uniforms
-        cellShader.setMat4("uProjection", projection);
-        cellShader.setMat4("uView", view);
-        cellShader.setVec3("uCameraPos", camera.getPosition());
-        cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
-
-        // Set selection highlighting uniforms
-        if (selectedCell.isValid)
-        {
-            glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndRadius);
-            float selectedRadius = selectedCell.cellData.positionAndRadius.w;
-            cellShader.setVec3("uSelectedCellPos", selectedPos);
-            cellShader.setFloat("uSelectedCellRadius", selectedRadius);
-        }
-        else
-        {
-            cellShader.setVec3("uSelectedCellPos", glm::vec3(-9999.0f)); // Invalid position
-            cellShader.setFloat("uSelectedCellRadius", 0.0f);
-        }
-        cellShader.setFloat("uTime", static_cast<float>(glfwGetTime())); // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
-        glEnable(GL_DEPTH_TEST);
-
-        // Render instanced spheres
-        sphereMesh.render(cellCount);
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Exception in renderCells: " << e.what() << "\n";
-    }
-    catch (...)
-    {
-        std::cerr << "Unknown exception in renderCells\n";
-    }
 }
 
 void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
@@ -215,6 +195,8 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
     }
 }
 
+// Cell Update
+
 void CellManager::updateCells(float deltaTime)
 {
     if (pendingCellCount > 0)
@@ -222,7 +204,6 @@ void CellManager::updateCells(float deltaTime)
         addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
     }
 
-    TimerGPU timer("Cell Physics Update");
 
     if (cellCount == 0)
         return;
@@ -230,6 +211,8 @@ void CellManager::updateCells(float deltaTime)
     // Update spatial grid before physics
     updateSpatialGrid();
 
+    // Add memory barrier to ensure all computations are complete
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     // Run physics computation on GPU
     runPhysicsCompute(deltaTime);
 
@@ -243,71 +226,95 @@ void CellManager::updateCells(float deltaTime)
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
-void CellManager::cleanup()
+void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera)
 {
-    if (cellBuffer != 0)
+    if (cellCount == 0)
+        return;
+
+    // Safety check for zero-sized framebuffer (minimized window)
+    if (resolution.x <= 0 || resolution.y <= 0)
     {
-        glDeleteBuffers(1, &cellBuffer);
-        cellBuffer = 0;
-    }
-    if (instanceBuffer != 0)
-    {
-        glDeleteBuffers(1, &instanceBuffer);
-        instanceBuffer = 0;
+        return;
     }
 
-    cleanupSpatialGrid();
-
-    if (extractShader)
+    // Additional safety check for very small resolutions that might cause issues
+    if (resolution.x < 1 || resolution.y < 1)
     {
-        extractShader->destroy();
-        delete extractShader;
-        extractShader = nullptr;
-    }
-    if (physicsShader)
-    {
-        physicsShader->destroy();
-        delete physicsShader;
-        physicsShader = nullptr;
-    }
-    if (updateShader)
-    {
-        updateShader->destroy();
-        delete updateShader;
-        updateShader = nullptr;
+        return;
     }
 
-    // Cleanup spatial grid shaders
-    if (gridClearShader)
+    try
     {
-        gridClearShader->destroy();
-        delete gridClearShader;
-        gridClearShader = nullptr;
-    }
-    if (gridAssignShader)
-    {
-        gridAssignShader->destroy();
-        delete gridAssignShader;
-        gridAssignShader = nullptr;
-    }
-    if (gridPrefixSumShader)
-    {
-        gridPrefixSumShader->destroy();
-        delete gridPrefixSumShader;
-        gridPrefixSumShader = nullptr;
-    }
-    if (gridInsertShader)
-    {
-        gridInsertShader->destroy();
-        delete gridInsertShader;
-        gridInsertShader = nullptr;
-    }
 
-    sphereMesh.cleanup();
+        // Use compute shader to efficiently extract instance data
+        extractShader->use();
+        extractShader->setInt("u_cellCount", cellCount);
+
+        // Bind buffers for compute shader
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, instanceBuffer);
+
+        // Dispatch extract compute shader
+        GLuint numGroups = (cellCount + 63) / 64; // 64 threads per group
+        extractShader->dispatch(numGroups, 1, 1);
+
+        // Memory barrier to ensure data is ready for rendering
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+        // Use the sphere shader
+        cellShader.use(); // Set up camera matrices (only calculate once per frame, not per cell)
+        glm::mat4 view = camera.getViewMatrix();
+
+        // Calculate aspect ratio with safety check
+        float aspectRatio = resolution.x / resolution.y;
+        if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
+        {
+            // Use a default aspect ratio if calculation fails
+            aspectRatio = 16.0f / 9.0f;
+        }
+
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f),
+            aspectRatio,
+            0.1f, 1000.0f);
+        // Set uniforms
+        cellShader.setMat4("uProjection", projection);
+        cellShader.setMat4("uView", view);
+        cellShader.setVec3("uCameraPos", camera.getPosition());
+        cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Set selection highlighting uniforms
+        if (selectedCell.isValid)
+        {
+            glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndRadius);
+            float selectedRadius = selectedCell.cellData.positionAndRadius.w;
+            cellShader.setVec3("uSelectedCellPos", selectedPos);
+            cellShader.setFloat("uSelectedCellRadius", selectedRadius);
+        }
+        else
+        {
+            cellShader.setVec3("uSelectedCellPos", glm::vec3(-9999.0f)); // Invalid position
+            cellShader.setFloat("uSelectedCellRadius", 0.0f);
+        }
+        cellShader.setFloat("uTime", static_cast<float>(glfwGetTime())); // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
+        glEnable(GL_DEPTH_TEST);
+
+        // Render instanced spheres
+        sphereMesh.render(cellCount);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Exception in renderCells: " << e.what() << "\n";
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown exception in renderCells\n";
+    }
 }
 
 void CellManager::runPhysicsCompute(float deltaTime)
 {
+    TimerGPU timer("Cell Physics Compute");
+
     physicsShader->use();
 
     // Set uniforms
@@ -339,6 +346,8 @@ void CellManager::runPhysicsCompute(float deltaTime)
 
 void CellManager::runUpdateCompute(float deltaTime)
 {
+    TimerGPU timer("Cell Update Compute");
+
     updateShader->use();
 
     // Set uniforms
@@ -394,6 +403,145 @@ void CellManager::spawnCells(int count)
         addCellToStagingBuffer(newCell);
     }
 }
+
+// Spatial partitioning
+void CellManager::initializeSpatialGrid()
+{
+    // Create grid buffer to store cell indices
+    glCreateBuffers(1, &gridBuffer);
+    glNamedBufferData(gridBuffer,
+        config::TOTAL_GRID_CELLS * config::MAX_CELLS_PER_GRID * sizeof(GLuint),
+        nullptr, GL_DYNAMIC_DRAW);
+
+    // Create grid count buffer to store number of cells per grid cell
+    glCreateBuffers(1, &gridCountBuffer);
+    glNamedBufferData(gridCountBuffer,
+        config::TOTAL_GRID_CELLS * sizeof(GLuint),
+        nullptr, GL_DYNAMIC_DRAW);
+
+    // Create grid offset buffer for prefix sum calculations
+    glCreateBuffers(1, &gridOffsetBuffer);
+    glNamedBufferData(gridOffsetBuffer,
+        config::TOTAL_GRID_CELLS * sizeof(GLuint),
+        nullptr, GL_DYNAMIC_DRAW);
+
+    std::cout << "Initialized spatial grid with " << config::TOTAL_GRID_CELLS
+        << " grid cells (" << config::GRID_RESOLUTION << "^3)\n";
+    std::cout << "Grid cell size: " << config::GRID_CELL_SIZE << "\n";
+    std::cout << "Max cells per grid: " << config::MAX_CELLS_PER_GRID << "\n";
+}
+
+void CellManager::updateSpatialGrid()
+{
+    if (cellCount == 0)
+        return;
+
+    TimerGPU timer("Spatial Grid Update");
+
+    // Step 1: Clear grid counts
+    runGridClear();
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Step 2: Count cells per grid cell
+    runGridAssign();
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Step 3: Calculate prefix sum for offsets
+    runGridPrefixSum();
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Step 4: Insert cells into grid
+    runGridInsert();
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::cleanupSpatialGrid()
+{
+    if (gridBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridBuffer);
+        gridBuffer = 0;
+    }
+    if (gridCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridCountBuffer);
+        gridCountBuffer = 0;
+    }
+    if (gridOffsetBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridOffsetBuffer);
+        gridOffsetBuffer = 0;
+    }
+}
+
+void CellManager::runGridClear()
+{
+    gridClearShader->use();
+
+    gridClearShader->setInt("u_totalGridCells", config::TOTAL_GRID_CELLS);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
+
+    GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
+    gridClearShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::runGridAssign()
+{
+    gridAssignShader->use();
+
+    gridAssignShader->setInt("u_cellCount", cellCount);
+    gridAssignShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
+    gridAssignShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
+    gridAssignShader->setFloat("u_worldSize", config::WORLD_SIZE);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridCountBuffer);
+
+    GLuint numGroups = (cellCount + 63) / 64;
+    gridAssignShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::runGridPrefixSum()
+{
+    gridPrefixSumShader->use();
+
+    gridPrefixSumShader->setInt("u_totalGridCells", config::TOTAL_GRID_CELLS);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffsetBuffer);
+
+    GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
+    gridPrefixSumShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::runGridInsert()
+{
+    gridInsertShader->use();
+
+    gridInsertShader->setInt("u_cellCount", cellCount);
+    gridInsertShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
+    gridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
+    gridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
+    gridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridOffsetBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer);
+
+    GLuint numGroups = (cellCount + 63) / 64;
+    gridInsertShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
 // Cell selection and interaction implementation // todo: REWRITE FOR GPU ONLY
 void CellManager::handleMouseInput(const glm::vec2 &mousePos, const glm::vec2 &screenSize,
                                    const Camera &camera, bool isMousePressed, bool isMouseDown,
@@ -710,142 +858,4 @@ bool CellManager::raySphereIntersection(const glm::vec3 &rayOrigin, const glm::v
     }
 
     return false; // Both intersections are behind the ray origin or too close
-}
-
-// Spatial partitioning implementation
-void CellManager::initializeSpatialGrid()
-{
-    // Create grid buffer to store cell indices
-    glCreateBuffers(1, &gridBuffer);
-    glNamedBufferData(gridBuffer,
-                      config::TOTAL_GRID_CELLS * config::MAX_CELLS_PER_GRID * sizeof(GLuint),
-                      nullptr, GL_DYNAMIC_DRAW);
-
-    // Create grid count buffer to store number of cells per grid cell
-    glCreateBuffers(1, &gridCountBuffer);
-    glNamedBufferData(gridCountBuffer,
-                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                      nullptr, GL_DYNAMIC_DRAW);
-
-    // Create grid offset buffer for prefix sum calculations
-    glCreateBuffers(1, &gridOffsetBuffer);
-    glNamedBufferData(gridOffsetBuffer,
-                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                      nullptr, GL_DYNAMIC_DRAW);
-
-    std::cout << "Initialized spatial grid with " << config::TOTAL_GRID_CELLS
-              << " grid cells (" << config::GRID_RESOLUTION << "^3)\n";
-    std::cout << "Grid cell size: " << config::GRID_CELL_SIZE << "\n";
-    std::cout << "Max cells per grid: " << config::MAX_CELLS_PER_GRID << "\n";
-}
-
-void CellManager::updateSpatialGrid()
-{
-    if (cellCount == 0)
-        return;
-
-    TimerGPU timer("Spatial Grid Update");
-
-    // Step 1: Clear grid counts
-    runGridClear();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Step 2: Count cells per grid cell
-    runGridAssign();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Step 3: Calculate prefix sum for offsets
-    runGridPrefixSum();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Step 4: Insert cells into grid
-    runGridInsert();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-}
-
-void CellManager::cleanupSpatialGrid()
-{
-    if (gridBuffer != 0)
-    {
-        glDeleteBuffers(1, &gridBuffer);
-        gridBuffer = 0;
-    }
-    if (gridCountBuffer != 0)
-    {
-        glDeleteBuffers(1, &gridCountBuffer);
-        gridCountBuffer = 0;
-    }
-    if (gridOffsetBuffer != 0)
-    {
-        glDeleteBuffers(1, &gridOffsetBuffer);
-        gridOffsetBuffer = 0;
-    }
-}
-
-void CellManager::runGridClear()
-{
-    gridClearShader->use();
-
-    gridClearShader->setInt("u_totalGridCells", config::TOTAL_GRID_CELLS);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
-
-    GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
-    gridClearShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
-void CellManager::runGridAssign()
-{
-    gridAssignShader->use();
-
-    gridAssignShader->setInt("u_cellCount", cellCount);
-    gridAssignShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
-    gridAssignShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
-    gridAssignShader->setFloat("u_worldSize", config::WORLD_SIZE);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridCountBuffer);
-
-    GLuint numGroups = (cellCount + 63) / 64;
-    gridAssignShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
-void CellManager::runGridPrefixSum()
-{
-    gridPrefixSumShader->use();
-
-    gridPrefixSumShader->setInt("u_totalGridCells", config::TOTAL_GRID_CELLS);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffsetBuffer);
-
-    GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
-    gridPrefixSumShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
-void CellManager::runGridInsert()
-{
-    gridInsertShader->use();
-
-    gridInsertShader->setInt("u_cellCount", cellCount);
-    gridInsertShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
-    gridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
-    gridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
-    gridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridOffsetBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer);
-
-    GLuint numGroups = (cellCount + 63) / 64;
-    gridInsertShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }

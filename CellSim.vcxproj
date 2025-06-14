@@ -208,9 +208,15 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\apply_cell_additions.comp" />
+    <None Include="shaders\cells_raymarching.frag" />
     <None Include="shaders\cell_physics.comp" />
+    <None Include="shaders\cell_physics_spatial.comp" />
     <None Include="shaders\cell_update.comp" />
     <None Include="shaders\extract_instances.comp" />
+    <None Include="shaders\grid_assign.comp" />
+    <None Include="shaders\grid_clear.comp" />
+    <None Include="shaders\grid_insert.comp" />
+    <None Include="shaders\grid_prefix_sum.comp" />
     <None Include="shaders\sphere.frag" />
     <None Include="shaders\sphere.vert" />
   </ItemGroup>
