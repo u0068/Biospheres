@@ -1,94 +1,96 @@
 #include "ui_manager.h"
 #include "cell_manager.h"
 #include "imgui.h"
+#include <algorithm>
+#include <string>
+#include <cmath>
 
-void UIManager::renderGenomeEditor(CellManager& cellManager)
+void UIManager::renderCellInspector(CellManager &cellManager)
 {
-    ImGui::Begin("Genome Editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-
-    ImGui::Text("Genome Editor");
-    ImGui::Separator();
-
-    ImGui::Text("TEST");
-    ImGui::Text("TEST");
-
-    ImGui::End();
-}
-
-void UIManager::renderCellInspector(CellManager& cellManager) {
     ImGui::Begin("Cell Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    
-    if (cellManager.hasSelectedCell()) {
-        const auto& selectedCell = cellManager.getSelectedCell();
+
+    if (cellManager.hasSelectedCell())
+    {
+        const auto &selectedCell = cellManager.getSelectedCell();
         ImGui::Text("Selected Cell #%d", selectedCell.cellIndex);
         ImGui::Separator();
-        
+
         // Display current properties
         glm::vec3 position = glm::vec3(selectedCell.cellData.positionAndRadius);
         glm::vec3 velocity = glm::vec3(selectedCell.cellData.velocityAndMass);
         float mass = selectedCell.cellData.velocityAndMass.w;
         float radius = selectedCell.cellData.positionAndRadius.w;
-        
+
         ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
         ImGui::Text("Velocity: (%.2f, %.2f, %.2f)", velocity.x, velocity.y, velocity.z);
         ImGui::Text("Mass: %.2f", mass);
         ImGui::Text("Radius: %.2f", radius);
-        
+
         ImGui::Separator();
-        
+
         // Editable properties
         ImGui::Text("Edit Properties:");
-        
+
         bool changed = false;
-        CPUCell editedCell = selectedCell.cellData;
-        
+        ComputeCell editedCell = selectedCell.cellData;
+
         // Position editing
-        float pos[3] = { position.x, position.y, position.z };
-        if (ImGui::DragFloat3("Position", pos, 0.1f)) {
+        float pos[3] = {position.x, position.y, position.z};
+        if (ImGui::DragFloat3("Position", pos, 0.1f))
+        {
             editedCell.positionAndRadius.x = pos[0];
             editedCell.positionAndRadius.y = pos[1];
             editedCell.positionAndRadius.z = pos[2];
             changed = true;
         }
-        
+
         // Velocity editing
-        float vel[3] = { velocity.x, velocity.y, velocity.z };
-        if (ImGui::DragFloat3("Velocity", vel, 0.1f)) {
+        float vel[3] = {velocity.x, velocity.y, velocity.z};
+        if (ImGui::DragFloat3("Velocity", vel, 0.1f))
+        {
             editedCell.velocityAndMass.x = vel[0];
             editedCell.velocityAndMass.y = vel[1];
             editedCell.velocityAndMass.z = vel[2];
             changed = true;
         }
-        
+
         // Mass editing
-        if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 50.0f)) {
+        if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 50.0f))
+        {
             editedCell.velocityAndMass.w = mass;
             changed = true;
         }
-        
+
         // Radius editing
-        if (ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 5.0f)) {
+        if (ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 5.0f))
+        {
             editedCell.positionAndRadius.w = radius;
             changed = true;
         }
-        
+
         // Apply changes
-        if (changed) {
+        if (changed)
+        {
             cellManager.updateCellData(selectedCell.cellIndex, editedCell);
         }
-        
+
         ImGui::Separator();
-        
+
         // Action buttons
-        if (ImGui::Button("Clear Selection")) {
+        if (ImGui::Button("Clear Selection"))
+        {
             cellManager.clearSelection();
         }
-          // Status
-        if (cellManager.isDraggingCell) {
+        // Status
+        if (cellManager.isDraggingCell)
+        {
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "DRAGGING");
             ImGui::Text("Drag Distance: %.2f", selectedCell.dragDistance);
             ImGui::Text("(Use scroll wheel to adjust distance)");
-        }    } else {
+        }
+    }
+    else
+    {
         ImGui::Text("No cell selected");
         ImGui::Separator();
         ImGui::Text("Instructions:");
@@ -98,82 +100,240 @@ void UIManager::renderCellInspector(CellManager& cellManager) {
         ImGui::BulletText("Selected cell moves in a plane");
         ImGui::BulletText("parallel to the camera");
     }
-    
+
     ImGui::End();
 }
 
-void UIManager::renderSelectionInfo(CellManager& cellManager) {
-    // This could be used for a minimal selection display overlay
-    if (cellManager.hasSelectedCell()) {
-        const auto& selectedCell = cellManager.getSelectedCell();
-        
-        // Create a small overlay window
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
-                               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-                               ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
-        
-        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-        ImGui::Begin("Selection Overlay", nullptr, flags);
-        
-        ImGui::Text("Cell #%d selected", selectedCell.cellIndex);
-        if (cellManager.isDraggingCell) {
-            ImGui::TextColored(ImVec4(1, 1, 0, 1), "Dragging...");
-        }
-        
-        ImGui::End();
-    }
-}
-
-void UIManager::drawToolSelector(ToolState& toolState) {
-    const char* tools[] = { "None", "Add", "Edit", "Move (UNIMPLEMENTED)" };
+void UIManager::drawToolSelector(ToolState &toolState)
+{
+    const char *tools[] = {"None", "Add", "Edit", "Move (UNIMPLEMENTED)"};
     int current = static_cast<int>(toolState.activeTool);
-    if (ImGui::Combo("Tool", &current, tools, IM_ARRAYSIZE(tools))) {
+    if (ImGui::Combo("Tool", &current, tools, IM_ARRAYSIZE(tools)))
+    {
         toolState.activeTool = static_cast<ToolType>(current);
     }
 }
 
-void UIManager::drawToolSettings(ToolState& toolState, CellManager& cellManager) {
-    switch (toolState.activeTool) {
+void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
+{
+    switch (toolState.activeTool)
+    {
     case ToolType::AddCell:
         ImGui::ColorEdit4("New Cell Color", &toolState.newCellColor[0]);
-        ImGui::SliderFloat("New Cell Mass", &toolState.newCellMass,0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("New Cell Mass", &toolState.newCellMass, 0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
         break;
     case ToolType::EditCell:
-        
+
     default:
         break;
     }
 }
 
-void UIManager::renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor)
+void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor)
 {
-    ImGui::Begin("Performance Monitor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("FPS: %.1f", perfMonitor.displayFPS);
-    ImGui::Text("Frame Time: %.3f ms", perfMonitor.displayFrameTime);
-    ImGui::Text("Cells: %d", cellManager.getCellCount());
+    ImGui::Begin("Advanced Performance Monitor", nullptr);
 
-    // Visual performance indicators
-    float targetFPS = 60.0f;
-    ImGui::Text("Performance:");
+    // === FPS and Frame Time Section ===
+    ImGui::Text("Performance Overview");
+    ImGui::Separator();
+
+    // Main metrics with color coding
+    ImGui::Text("FPS: ");
     ImGui::SameLine();
-    if (perfMonitor.displayFPS >= targetFPS) {
-        ImGui::TextColored(ImVec4(0, 1, 0, 1), "GOOD");
-    }
-    else if (perfMonitor.displayFPS >= 30.0f) {
-        ImGui::TextColored(ImVec4(1, 1, 0, 1), "OK");
-    }
-    else {
-        ImGui::TextColored(ImVec4(1, 0, 0, 1), "POOR");
+    ImVec4 fpsColor = perfMonitor.displayFPS >= 60.0f ? ImVec4(0, 1, 0, 1) : perfMonitor.displayFPS >= 30.0f ? ImVec4(1, 1, 0, 1)
+                                                                                                             : ImVec4(1, 0, 0, 1);
+    ImGui::TextColored(fpsColor, "%.1f", perfMonitor.displayFPS);
+
+    ImGui::Text("Frame Time: ");
+    ImGui::SameLine();
+    ImVec4 frameTimeColor = perfMonitor.displayFrameTime <= 16.67f ? ImVec4(0, 1, 0, 1) : perfMonitor.displayFrameTime <= 33.33f ? ImVec4(1, 1, 0, 1)
+                                                                                                                                 : ImVec4(1, 0, 0, 1);
+    ImGui::TextColored(frameTimeColor, "%.3f ms", perfMonitor.displayFrameTime);
+
+    // Frame time statistics
+    ImGui::Text("Min/Avg/Max: %.2f/%.2f/%.2f ms",
+                perfMonitor.minFrameTime, perfMonitor.avgFrameTime, perfMonitor.maxFrameTime);
+
+    // === Performance Graphs ===
+    ImGui::Spacing();
+    ImGui::Text("Frame Time History");
+    if (!perfMonitor.frameTimeHistory.empty())
+    {
+        ImGui::PlotLines("##FrameTime", perfMonitor.frameTimeHistory.data(),
+                         perfMonitor.frameTimeHistory.size(), 0, nullptr,
+                         0.0f, 50.0f, ImVec2(0, 80));
     }
 
-    // Technical details
-    const char* renderer = (const char*)glGetString(GL_RENDERER);
-    if (renderer) ImGui::Text("GPU: %s", renderer);
-    ImGui::Text("Total triangles: ~%d", 192 * cellManager.getCellCount());
+    ImGui::Text("FPS History");
+    if (!perfMonitor.fpsHistory.empty())
+    {
+        ImGui::PlotLines("##FPS", perfMonitor.fpsHistory.data(),
+                         perfMonitor.fpsHistory.size(), 0, nullptr,
+                         0.0f, 120.0f, ImVec2(0, 80));
+    } // === Performance Bars ===
+    ImGui::Spacing();
+    ImGui::Text("Performance Indicators");
+    ImGui::Separator();
+
+    // Advanced FPS performance visualization
+    float fpsRatio = std::min(perfMonitor.displayFPS / 120.0f, 1.0f);
+
+    // Color-coded FPS performance bar
+    ImVec4 fpsBarColor;
+    std::string fpsStatus;
+    if (perfMonitor.displayFPS >= 60.0f)
+    {
+        fpsBarColor = ImVec4(0.0f, 0.8f, 0.0f, 1.0f); // Green
+        fpsStatus = "Excellent";
+    }
+    else if (perfMonitor.displayFPS >= 45.0f)
+    {
+        fpsBarColor = ImVec4(0.5f, 0.8f, 0.0f, 1.0f); // Yellow-Green
+        fpsStatus = "Good";
+    }
+    else if (perfMonitor.displayFPS >= 30.0f)
+    {
+        fpsBarColor = ImVec4(1.0f, 0.8f, 0.0f, 1.0f); // Orange
+        fpsStatus = "Fair";
+    }
+    else
+    {
+        fpsBarColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Red
+        fpsStatus = "Poor";
+    }
+
+    ImGui::Text("FPS Performance: %.1f (%s)", perfMonitor.displayFPS, fpsStatus.c_str());
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, fpsBarColor);
+    ImGui::ProgressBar(fpsRatio, ImVec2(-1, 25), ""); // Wider bar
+    ImGui::PopStyleColor();
+
+    // FPS target indicators
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 2));
+
+    // 60 FPS indicator
+    if (perfMonitor.displayFPS >= 60.0f)
+        ImGui::TextColored(ImVec4(0, 1, 0, 1), "60+");
+    else
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1), "60");
+
+    ImGui::SameLine();
+    // 30 FPS indicator
+    if (perfMonitor.displayFPS >= 30.0f)
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "30+");
+    else
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1), "30");
+
+    ImGui::PopStyleVar();
+    ImGui::EndGroup();
+
+    // Frame time performance bar with enhanced visuals
+    float frameTimeRatio = 1.0f - std::min(perfMonitor.displayFrameTime / 50.0f, 1.0f);
+    if (frameTimeRatio < 0)
+        frameTimeRatio = 0;
+
+    ImVec4 frameTimeBarColor;
+    std::string frameTimeStatus;
+    if (perfMonitor.displayFrameTime <= 16.67f)
+    {
+        frameTimeBarColor = ImVec4(0.0f, 0.8f, 0.0f, 1.0f); // Green
+        frameTimeStatus = "Smooth";
+    }
+    else if (perfMonitor.displayFrameTime <= 25.0f)
+    {
+        frameTimeBarColor = ImVec4(0.5f, 0.8f, 0.0f, 1.0f); // Yellow-Green
+        frameTimeStatus = "Good";
+    }
+    else if (perfMonitor.displayFrameTime <= 33.33f)
+    {
+        frameTimeBarColor = ImVec4(1.0f, 0.8f, 0.0f, 1.0f); // Orange
+        frameTimeStatus = "Acceptable";
+    }
+    else
+    {
+        frameTimeBarColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Red
+        frameTimeStatus = "Laggy";
+    }
+
+    ImGui::Text("Frame Time: %.2f ms (%s)", perfMonitor.displayFrameTime, frameTimeStatus.c_str());
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, frameTimeBarColor);
+    ImGui::ProgressBar(frameTimeRatio, ImVec2(-1, 25), ""); // Wider bar
+    ImGui::PopStyleColor();
+
+    // === System Information ===
+    ImGui::Spacing();
+    ImGui::Text("System Information");
+    ImGui::Separator();
+
+    // GPU Information
+    const char *renderer = (const char *)glGetString(GL_RENDERER);
+    const char *vendor = (const char *)glGetString(GL_VENDOR);
+    const char *version = (const char *)glGetString(GL_VERSION);
+
+    if (renderer)
+        ImGui::Text("GPU: %s", renderer);
+    if (vendor)
+        ImGui::Text("Vendor: %s", vendor);
+    if (version)
+        ImGui::Text("OpenGL: %s", version);
+
+    // === Simulation Metrics ===
+    ImGui::Spacing();
+    ImGui::Text("Simulation Metrics");
+    ImGui::Separator();
+
+    int cellCount = cellManager.getCellCount();
+    ImGui::Text("Active Cells: %d", cellCount);
+    ImGui::Text("Triangles: ~%d", 192 * cellCount);
+    ImGui::Text("Vertices: ~%d", 96 * cellCount); // Assuming sphere has ~96 vertices
+
+    // Memory estimate
+    float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
+    ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
+
+    // === Performance Warnings ===
+    ImGui::Spacing();
+    if (perfMonitor.displayFPS < 30.0f)
+    {
+        ImGui::TextColored(ImVec4(1, 0, 0, 1), "⚠ Low FPS detected!");
+        ImGui::TextWrapped("Performance is below 30 FPS. Consider reducing cell count or adjusting quality settings.");
+    }
+
+    if (perfMonitor.displayFrameTime > 33.33f)
+    {
+        ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "⚠ High frame time!");
+        ImGui::TextWrapped("Frame time is over 33ms. This may cause stuttering.");
+    }
+
+    // === Debug Information ===
+    if (ImGui::CollapsingHeader("Debug Information"))
+    {
+        ImGui::Text("Frame Count: %d", perfMonitor.frameCount);
+        ImGui::Text("Update Interval: %.3f s", perfMonitor.perfUpdateInterval);
+        ImGui::Text("Last Update: %.3f s ago", perfMonitor.lastPerfUpdate);
+        ImGui::Text("History Size: %zu entries", perfMonitor.frameTimeHistory.size());
+
+        // Readback system status if available
+        if (cellManager.isReadbackSystemHealthy())
+        {
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "✓ GPU Readback: Healthy");
+            if (cellManager.isReadbackInProgress())
+            {
+                ImGui::Text("  Readback in progress...");
+            }
+            ImGui::Text("  Cooldown: %.2f s", cellManager.getReadbackCooldown());
+        }
+        else
+        {
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), "✗ GPU Readback: Unavailable");
+        }
+    }
+
     ImGui::End();
 }
 
-void UIManager::renderCameraControls(CellManager& cellManager, Camera& camera)
+void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
 {
     ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     glm::vec3 camPos = camera.getPosition();
@@ -191,11 +351,393 @@ void UIManager::renderCameraControls(CellManager& cellManager, Camera& camera)
     ImGui::BulletText("Scroll Wheel - Adjust drag distance");
 
     // Show current selection info
-    if (cellManager.hasSelectedCell()) {
+    if (cellManager.hasSelectedCell())
+    {
         ImGui::Separator();
-        const auto& selection = cellManager.getSelectedCell();
+        const auto &selection = cellManager.getSelectedCell();
         ImGui::Text("Selected: Cell #%d", selection.cellIndex);
         ImGui::Text("Drag Distance: %.1f", selection.dragDistance);
     }
     ImGui::End();
+}
+
+void UIManager::renderGenomeEditor()
+{
+    ImGui::Begin("Genome Editor", nullptr);
+
+    // Genome Name and Save/Load Section
+    ImGui::Text("Genome Name:");
+    ImGui::SameLine();
+    char nameBuffer[256];
+    strcpy_s(nameBuffer, currentGenome.name.c_str());
+    ImGui::PushItemWidth(200.0f);
+    if (ImGui::InputText("##GenomeName", nameBuffer, sizeof(nameBuffer)))
+    {
+        currentGenome.name = std::string(nameBuffer);
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::SameLine();
+    if (ImGui::Button("Save Genome"))
+    {
+        // TODO: Implement genome saving functionality
+        ImGui::OpenPopup("Save Confirmation");
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Load Genome"))
+    {
+        // TODO: Implement genome loading functionality
+        ImGui::OpenPopup("Load Confirmation");
+    }
+
+    // Save confirmation popup
+    if (ImGui::BeginPopupModal("Save Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Genome '%s' saved successfully!", currentGenome.name.c_str());
+        ImGui::Text("(Save functionality not yet implemented)");
+        if (ImGui::Button("OK"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // Load confirmation popup
+    if (ImGui::BeginPopupModal("Load Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Load genome functionality not yet implemented.");
+        if (ImGui::Button("OK"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::Separator();
+
+    // Initial Mode Dropdown
+    ImGui::Text("Initial Mode:");
+    ImGui::SameLine();
+    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
+                     {
+            GenomeData* genome = (GenomeData*)data;
+            if (idx >= 0 && idx < genome->modes.size()) {
+                *out_text = genome->modes[idx].name.c_str();
+                return true;
+            }
+            return false; }, &currentGenome, currentGenome.modes.size()))
+    {
+        // Initial mode changed
+    }
+
+    ImGui::Separator();
+
+    // Mode Management
+    ImGui::Text("Modes:");
+    ImGui::SameLine();
+    if (ImGui::Button("Add Mode"))
+    {
+        ModeSettings newMode;
+        newMode.name = "Mode " + std::to_string(currentGenome.modes.size());
+        currentGenome.modes.push_back(newMode);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
+    {
+        if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
+        {
+            currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
+            if (selectedModeIndex >= currentGenome.modes.size())
+                selectedModeIndex = currentGenome.modes.size() - 1;
+        }
+    }
+    ImGui::Checkbox("Show Mode List", &showModeList);
+
+    // Mode List (Expandable)
+    if (showModeList)
+    {
+        ImGui::BeginChild("ModeList", ImVec2(200, -1), true);
+        for (int i = 0; i < currentGenome.modes.size(); i++)
+        {
+            // Color the mode tab with the mode's color - keep bright for unselected modes
+            ImGui::PushStyleColor(ImGuiCol_Button,
+                                  ImVec4(currentGenome.modes[i].color.r * 0.8f,
+                                         currentGenome.modes[i].color.g * 0.8f,
+                                         currentGenome.modes[i].color.b * 0.8f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                  ImVec4(currentGenome.modes[i].color.r * 0.9f,
+                                         currentGenome.modes[i].color.g * 0.9f,
+                                         currentGenome.modes[i].color.b * 0.9f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                  ImVec4(currentGenome.modes[i].color.r,
+                                         currentGenome.modes[i].color.g,
+                                         currentGenome.modes[i].color.b, 1.0f));
+            bool isSelected = (i == selectedModeIndex);
+            if (isSelected)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImVec4(currentGenome.modes[i].color.r,
+                                             currentGenome.modes[i].color.g,
+                                             currentGenome.modes[i].color.b, 1.0f));
+            }
+
+            // Set text color based on brightness of the mode color
+            glm::vec3 buttonColor = isSelected ? currentGenome.modes[i].color : currentGenome.modes[i].color * 0.8f;
+            if (isColorBright(buttonColor))
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f)); // Black text
+            }
+            else
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // White text
+            }
+
+            std::string buttonLabel = std::to_string(i) + ": " + currentGenome.modes[i].name;
+            if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0)))
+            {
+                selectedModeIndex = i;
+            }
+
+            ImGui::PopStyleColor(isSelected ? 5 : 4); // Pop text color + button colors
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::SameLine();
+
+    // Mode Settings Panel
+    if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
+    {
+        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);
+        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
+        ImGui::EndChild();
+    }
+
+    ImGui::End();
+}
+
+void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
+{
+    ImGui::Text("Mode %d Settings", modeIndex);
+    ImGui::Separator();
+
+    // Mode Name
+    char nameBuffer[256];
+    strcpy_s(nameBuffer, mode.name.c_str());
+    if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
+    {
+        mode.name = std::string(nameBuffer);
+    }
+
+    // Mode Color
+    drawColorPicker("Mode Color", &mode.color);
+
+    ImGui::Separator();
+
+    // Tabbed interface for different settings
+    if (ImGui::BeginTabBar("ModeSettingsTabs"))
+    {
+        if (ImGui::BeginTabItem("Parent Settings"))
+        {
+            drawParentSettings(mode);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Child A Settings"))
+        {
+            drawChildSettings("Child A", mode.childA);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Child B Settings"))
+        {
+            drawChildSettings("Child B", mode.childB);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Adhesion Settings"))
+        {
+            drawAdhesionSettings(mode.adhesion);
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+}
+
+void UIManager::drawParentSettings(ModeSettings &mode)
+{
+    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
+
+    drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 30.0f, "%.1f");
+    ImGui::Text("Parent Split Orientation:");
+    drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+}
+
+void UIManager::drawChildSettings(const char *label, ChildSettings &child)
+{
+    ImGui::Text("%s Settings:", label);
+
+    drawSliderWithInput("Mode Number", (float *)&child.modeNumber, 0.0f,
+                        std::max(1.0f, (float)(currentGenome.modes.size() - 1)), "%.0f");
+    ImGui::Text("Orientation:");
+    drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.0f°", 1.0f);
+
+    ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
+}
+
+void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
+{
+    ImGui::Checkbox("Adhesion Can Break", &adhesion.canBreak);
+
+    drawSliderWithInput("Adhesion Break Force", &adhesion.breakForce, 0.1f, 100.0f);
+    drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, 0.1f, 10.0f);
+    drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
+    drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
+    drawSliderWithInput("Orientation Spring Strength", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
+    drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
+}
+
+void UIManager::drawSliderWithInput(const char *label, float *value, float min, float max, const char *format, float step)
+{
+    ImGui::PushID(label);
+
+    // Calculate layout with proper spacing
+    float inputWidth = 80.0f;        // Increased input field width
+    float valueDisplayWidth = 50.0f; // Width for value display on stepped sliders
+    float availableWidth = ImGui::GetContentRegionAvail().x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+    // Calculate slider width based on whether we need value display
+    float sliderWidth;
+    if (step > 0.0f)
+    {
+        // For stepped sliders: slider + value display + input field
+        sliderWidth = availableWidth - inputWidth - valueDisplayWidth - (spacing * 2);
+    }
+    else
+    {
+        // For continuous sliders: slider + input field
+        sliderWidth = availableWidth - inputWidth - spacing;
+    }
+
+    // Label on its own line
+    ImGui::Text("%s", label);
+
+    // Slider with calculated width and step support
+    ImGui::PushItemWidth(sliderWidth);
+    if (step > 0.0f)
+    {
+        // Use stepped slider for precise increments
+        int steps = (int)((max - min) / step);
+        float normalizedValue = (*value - min) / (max - min);
+        int currentStep = (int)(normalizedValue * steps + 0.5f);
+
+        if (ImGui::SliderInt("##slider", &currentStep, 0, steps, ""))
+        {
+            *value = min + (currentStep * step);
+        }
+    }
+    else
+    {
+        // Use regular float slider for continuous values
+        ImGui::SliderFloat("##slider", value, min, max, format);
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::SameLine();
+
+    // Value display for stepped sliders
+    if (step > 0.0f)
+    {
+        ImGui::PushItemWidth(valueDisplayWidth);
+        ImGui::Text(format, *value);
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+    }
+
+    // Input field with proper width
+    ImGui::PushItemWidth(inputWidth);
+    if (step > 0.0f)
+    {
+        float stepValue = step;
+        if (ImGui::InputFloat("##input", value, stepValue, stepValue, format))
+        {
+            // Round to nearest step
+            *value = min + step * round((*value - min) / step);
+        }
+    }
+    else
+    {
+        ImGui::InputFloat("##input", value, 0.0f, 0.0f, format);
+    }
+    ImGui::PopItemWidth();
+
+    // Clamp value to range
+    if (*value < min)
+        *value = min;
+    if (*value > max)
+        *value = max;
+
+    ImGui::PopID();
+}
+
+void UIManager::drawColorPicker(const char *label, glm::vec3 *color)
+{
+    float colorArray[3] = {color->r, color->g, color->b};
+    if (ImGui::ColorEdit3(label, colorArray))
+    {
+        color->r = colorArray[0];
+        color->g = colorArray[1];
+        color->b = colorArray[2];
+    }
+}
+
+bool UIManager::isColorBright(const glm::vec3 &color)
+{
+    // Calculate luminance using standard weights for RGB
+    // This is the perceived brightness formula
+    float luminance = 0.299f * color.r + 0.587f * color.g + 0.114f * color.b;
+    return luminance > 0.5f; // Threshold for considering a color "bright"
+}
+
+void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime)
+{
+    // Update frame time statistics
+    float frameTimeMs = deltaTime * 1000.0f;
+
+    if (frameTimeMs < perfMonitor.minFrameTime)
+        perfMonitor.minFrameTime = frameTimeMs;
+    if (frameTimeMs > perfMonitor.maxFrameTime)
+        perfMonitor.maxFrameTime = frameTimeMs;
+
+    // Update frame time history
+    perfMonitor.frameTimeHistory.push_back(frameTimeMs);
+    if (perfMonitor.frameTimeHistory.size() > PerformanceMonitor::HISTORY_SIZE)
+        perfMonitor.frameTimeHistory.erase(perfMonitor.frameTimeHistory.begin());
+
+    // Update FPS history
+    float currentFPS = deltaTime > 0.0f ? 1.0f / deltaTime : 0.0f;
+    perfMonitor.fpsHistory.push_back(currentFPS);
+    if (perfMonitor.fpsHistory.size() > PerformanceMonitor::HISTORY_SIZE)
+        perfMonitor.fpsHistory.erase(perfMonitor.fpsHistory.begin());
+
+    // Calculate average frame time
+    if (!perfMonitor.frameTimeHistory.empty())
+    {
+        float sum = 0.0f;
+        for (float ft : perfMonitor.frameTimeHistory)
+            sum += ft;
+        perfMonitor.avgFrameTime = sum / perfMonitor.frameTimeHistory.size();
+    }
+
+    // Reset min/max periodically (every 5 seconds)
+    static float resetTimer = 0.0f;
+    resetTimer += deltaTime;
+    if (resetTimer >= 5.0f)
+    {
+        perfMonitor.minFrameTime = 1000.0f;
+        perfMonitor.maxFrameTime = 0.0f;
+        resetTimer = 0.0f;
+    }
 }
