@@ -21,6 +21,8 @@
 #include "camera.h"
 #include "timer.h"
 
+// this is statement is false
+
 // Simple OpenGL error checking function
 void checkGLError(const char *operation)
 {
