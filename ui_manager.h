@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <vector>
+#include <string>
 #include <glm/glm.hpp>
 #include "camera.h"
 
@@ -19,7 +21,7 @@ struct ToolState
     ToolType activeTool = ToolType::None;
     int selectedCellIndex = -1; // For selection/editing
     // Settings per tool
-    glm::vec4 newCellColor = { 1.0, 1.0, 1.0, 1.0 };
+    glm::vec4 newCellColor = {1.0, 1.0, 1.0, 1.0};
     float newCellMass = 1.0f;
 };
 
@@ -31,17 +33,105 @@ struct PerformanceMonitor
     float displayFrameTime = 0.0f;
     int frameCount = 0;
     float frameTimeAccumulator = 0.0f;
+
+    // Advanced metrics
+    float minFrameTime = 1000.0f;
+    float maxFrameTime = 0.0f;
+    float avgFrameTime = 0.0f;
+    std::vector<float> frameTimeHistory;
+    std::vector<float> fpsHistory;
+    static constexpr int HISTORY_SIZE = 120; // 2 seconds at 60fps
+
+    // GPU metrics
+    float gpuMemoryUsed = 0.0f;
+    float gpuMemoryTotal = 0.0f;
+    int drawCalls = 0;
+    int vertices = 0;
+
+    // CPU metrics
+    float cpuUsage = 0.0f;
+    float memoryUsage = 0.0f;
+
+    // Timing breakdown
+    float updateTime = 0.0f;
+    float renderTime = 0.0f;
+    float uiTime = 0.0f;
+};
+
+// Genome Editor Data Structures
+struct AdhesionSettings
+{
+    bool canBreak = true;
+    float breakForce = 10.0f;
+    float restLength = 2.0f;
+    float linearSpringStiffness = 5.0f;
+    float linearSpringDamping = 0.5f;
+    float orientationSpringStrength = 2.0f;
+    float maxAngularDeviation = 45.0f; // degrees
+};
+
+struct ChildSettings
+{
+    int modeNumber = 0;
+    glm::vec3 orientation = {0.0f, 0.0f, 0.0f}; // pitch, yaw, roll in degrees
+    bool keepAdhesion = false;
+};
+
+struct ModeSettings
+{
+    std::string name = "Untitled Mode";
+    glm::vec3 color = {1.0f, 1.0f, 1.0f}; // RGB color    // Parent Settings
+    bool parentMakeAdhesion = true;
+    float splitInterval = 5.0f;
+    glm::vec3 parentSplitOrientation = {0.0f, 0.0f, 0.0f}; // pitch, yaw, roll in degrees
+
+    // Child Settings
+    ChildSettings childA;
+    ChildSettings childB;
+
+    // Adhesion Settings
+    AdhesionSettings adhesion;
+};
+
+struct GenomeData
+{
+    std::string name = "Untitled Genome";
+    int initialMode = 0;
+    std::vector<ModeSettings> modes;
+
+    GenomeData()
+    {
+        // Initialize with one default mode
+        modes.push_back(ModeSettings());
+        modes[0].name = "Default Mode";
+    }
 };
 
 class UIManager
 {
 public:
-    void renderCellInspector(CellManager& cellManager);
-    void renderSelectionInfo(CellManager& cellManager);
-    void renderPerformanceMonitor(CellManager& cellManager, PerformanceMonitor& perfMonitor);
-    void renderCameraControls(CellManager& cellmanager, Camera& camera);
-    
+    void renderCellInspector(CellManager &cellManager);
+    void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor);
+    void renderCameraControls(CellManager &cellmanager, Camera &camera);
+    void renderGenomeEditor();
+
+    // Performance monitoring helpers
+    void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
+
 private:
-    void drawToolSelector(ToolState& toolState);
-    void drawToolSettings(ToolState& toolState, CellManager& cellManager);
+    void drawToolSelector(ToolState &toolState);
+    void drawToolSettings(ToolState &toolState, CellManager &cellManager); // Genome Editor Helper Functions
+    void drawModeSelector(GenomeData &genome);
+    void drawModeSettings(ModeSettings &mode, int modeIndex);
+    void drawParentSettings(ModeSettings &mode);
+    void drawChildSettings(const char *label, ChildSettings &child);
+    void drawAdhesionSettings(AdhesionSettings &adhesion);
+    void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
+    void drawColorPicker(const char *label, glm::vec3 *color);
+    bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright
+
+    // Genome Editor Data
+    GenomeData currentGenome;
+    int selectedModeIndex = 0;
+    bool showModeList = true;
 };

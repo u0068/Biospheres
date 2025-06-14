@@ -1,0 +1,3 @@
+C:/Users/John/Desktop/New folder/build/CMakeFiles/Biospheres2.dir
+C:/Users/John/Desktop/New folder/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/John/Desktop/New folder/build/CMakeFiles/ZERO_CHECK.dir
