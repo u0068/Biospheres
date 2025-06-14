@@ -165,7 +165,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     }
 }
 
-void CellManager::addCellsToGPUBuffer(const std::vector<CPUCell>& cells) { // Prefer to not use this directly, use addCellToStagingBuffer instead
+void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = cells.size();
 
 	std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount + newCellCount << "\n";
@@ -191,7 +191,7 @@ void CellManager::addCellsToGPUBuffer(const std::vector<CPUCell>& cells) { // Pr
     masses.reserve(count);
     radii.reserve(count);
 
-    for (const CPUCell& cell : cpuCells)
+    for (const ComputeCell& cell : cpuCells)
     {
         positions.push_back(cell.positionAndRadius);               // GPU needs vec4
         velocities.push_back(cell.velocityAndMass);
@@ -217,11 +217,11 @@ void CellManager::addCellsToGPUBuffer(const std::vector<CPUCell>& cells) { // Pr
     cellCount += newCellCount;
 }
 
-void CellManager::addCellToGPUBuffer(const CPUCell& newCell) { // Prefer to not use this directly, use addCellToStagingBuffer instead
+void CellManager::addCellToGPUBuffer(const ComputeCell& newCell) { // Prefer to not use this directly, use addCellToStagingBuffer instead
     addCellsToGPUBuffer({ newCell });
 }
 
-void CellManager::addCellToStagingBuffer(const CPUCell& newCell) {
+void CellManager::addCellToStagingBuffer(const ComputeCell& newCell) {
     if (cellCount + 1 > config::MAX_CELLS) {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -240,14 +240,14 @@ void CellManager::addStagedCellsToGPUBuffer() {
 
 }
 
-CPUCell CellManager::getCellData(int index) const {
+ComputeCell CellManager::getCellData(int index) const {
     if (index >= 0 && index < cellCount) {
         return cpuCells[index];
     }
-    return CPUCell{}; // Return empty cell if index is invalid
+    return ComputeCell{}; // Return empty cell if index is invalid
 }
 
-void CellManager::updateCellData(int index, const CPUCell& newData) {
+void CellManager::updateCellData(int index, const ComputeCell& newData) {
     //if (index >= 0 && index < cellCount) {
     //    cpuCells[index] = newData;
 
@@ -258,8 +258,8 @@ void CellManager::updateCellData(int index, const CPUCell& newData) {
 
     //    // Update only the specific cell in the GPU buffer
     //    glNamedBufferSubData(cellBuffer,
-    //        index * sizeof(CPUCell),
-    //        sizeof(CPUCell),
+    //        index * sizeof(ComputeCell),
+    //        sizeof(ComputeCell),
     //        &cpuCells[index]);
     //}
 }
@@ -395,7 +395,7 @@ void CellManager::spawnCells(int count) {
         float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
         float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
 
-		CPUCell newCell;
+		ComputeCell newCell;
 		newCell.positionAndRadius = glm::vec4(position, cellRadius);
 		newCell.velocityAndMass = glm::vec4(velocity, mass);
 		newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
@@ -526,8 +526,8 @@ void CellManager::dragSelectedCell(const glm::vec3& newWorldPosition) {
     //
     //// Update GPU buffer immediately to ensure compute shaders see the new position
     //glBufferSubData(cellBuffer,
-    //               selectedCell.cellIndex * sizeof(CPUCell), 
-    //               sizeof(CPUCell), 
+    //               selectedCell.cellIndex * sizeof(ComputeCell), 
+    //               sizeof(ComputeCell), 
     //               &cpuCells[selectedCell.cellIndex]);
 }
 
@@ -546,8 +546,8 @@ void CellManager::endDrag() {
     //    
     //    // Update the GPU buffer with the final state
     //    glNamedBufferSubData(cellBuffer,
-    //                   selectedCell.cellIndex * sizeof(CPUCell), 
-    //                   sizeof(CPUCell), 
+    //                   selectedCell.cellIndex * sizeof(ComputeCell), 
+    //                   sizeof(ComputeCell), 
     //                   &cpuCells[selectedCell.cellIndex]);
     //}
     //
@@ -559,7 +559,7 @@ void CellManager::syncCellPositionsFromGPU() { // This will fail if the CPU buff
     //
     //
     //// Use glMapBuffer for efficient GPU->CPU data transfer
-    //CPUCell* gpuData = static_cast<CPUCell*>(glMapNamedBuffer(cellBuffer, GL_READ_ONLY));
+    //ComputeCell* gpuData = static_cast<ComputeCell*>(glMapNamedBuffer(cellBuffer, GL_READ_ONLY));
     //
     //if (gpuData) {
     //    // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
