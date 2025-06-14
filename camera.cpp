@@ -17,7 +17,7 @@ void Camera::processInput(Input& input, float deltaTime)
         velocity *= sprintMultiplier;
 
     // Roll controls (Q and E for camera roll) - handle first so vectors are updated
-    float rollSpeed = 90.0f * deltaTime; // 90 degrees per second
+    float rollSpeed = 45.0f * deltaTime; // 45 degrees per second (reduced from 90)
     bool rollChanged = false;
     if (input.isKeyPressed(GLFW_KEY_Q)) {
         roll += rollSpeed;
