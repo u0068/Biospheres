@@ -13,11 +13,101 @@
 // Forward declaration
 class Camera;
 
-// GPU compute cell structure matching the compute shader
+// GPU compute cell structure matching the compute shader (AoS - for backward compatibility)
 struct ComputeCell {
     glm::vec4 positionAndRadius;  // x, y, z, radius
     glm::vec4 velocityAndMass;    // vx, vy, vz, mass
     glm::vec4 acceleration;       // ax, ay, az, unused
+};
+
+// Structure of Arrays for efficient CPU-side cell data management
+struct CellDataSoA {
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> velocities;
+    std::vector<glm::vec3> accelerations;
+    std::vector<float> masses;
+    std::vector<float> radii;
+    
+    size_t size() const { return positions.size(); }
+    
+    void reserve(size_t count) {
+        positions.reserve(count);
+        velocities.reserve(count);
+        accelerations.reserve(count);
+        masses.reserve(count);
+        radii.reserve(count);
+    }
+    
+    void resize(size_t count) {
+        positions.resize(count);
+        velocities.resize(count);
+        accelerations.resize(count);
+        masses.resize(count);
+        radii.resize(count);
+    }
+    
+    void clear() {
+        positions.clear();
+        velocities.clear();
+        accelerations.clear();
+        masses.clear();
+        radii.clear();
+    }
+    
+    void addCell(const glm::vec3& pos, const glm::vec3& vel, const glm::vec3& accel, float mass, float radius) {
+        positions.push_back(pos);
+        velocities.push_back(vel);
+        accelerations.push_back(accel);
+        masses.push_back(mass);
+        radii.push_back(radius);
+    }
+    
+    // Convert from AoS ComputeCell (for compatibility)
+    void addCell(const ComputeCell& cell) {
+        positions.push_back(glm::vec3(cell.positionAndRadius));
+        velocities.push_back(glm::vec3(cell.velocityAndMass));
+        accelerations.push_back(glm::vec3(cell.acceleration));
+        masses.push_back(cell.velocityAndMass.w);
+        radii.push_back(cell.positionAndRadius.w);
+    }
+    
+    // Convert to AoS ComputeCell at index (for compatibility)
+    ComputeCell getCell(size_t index) const {
+        if (index >= size()) return {};
+        ComputeCell cell;
+        cell.positionAndRadius = glm::vec4(positions[index], radii[index]);
+        cell.velocityAndMass = glm::vec4(velocities[index], masses[index]);
+        cell.acceleration = glm::vec4(accelerations[index], 0.0f);
+        return cell;
+    }
+    
+    // Get data pointers for GPU upload (as vec4 arrays for compatibility with existing GPU buffers)
+    std::vector<glm::vec4> getPositionAndRadiusData() const {
+        std::vector<glm::vec4> data;
+        data.reserve(size());
+        for (size_t i = 0; i < size(); ++i) {
+            data.emplace_back(positions[i], radii[i]);
+        }
+        return data;
+    }
+    
+    std::vector<glm::vec4> getVelocityAndMassData() const {
+        std::vector<glm::vec4> data;
+        data.reserve(size());
+        for (size_t i = 0; i < size(); ++i) {
+            data.emplace_back(velocities[i], masses[i]);
+        }
+        return data;
+    }
+    
+    std::vector<glm::vec4> getAccelerationData() const {
+        std::vector<glm::vec4> data;
+        data.reserve(size());
+        for (size_t i = 0; i < size(); ++i) {
+            data.emplace_back(accelerations[i], 0.0f);
+        }
+        return data;
+    }
 };
 
 struct CellManager {
@@ -52,13 +142,11 @@ struct CellManager {
     // Compute shaders
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
-    Shader* extractShader = nullptr;  // For extracting instance data efficiently
-
-    // CPU-side storage for initialization and debugging
-	std::vector<ComputeCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
-    std::vector<ComputeCell> cellStagingBuffer;
-	int cellCount{ 0 }; // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
-	int pendingCellCount{ 0 }; // Number of cells pending addition
+    Shader* extractShader = nullptr;  // For extracting instance data efficiently    // CPU-side storage for initialization and debugging (now using SoA)
+    CellDataSoA cellDataSoA;                                    // Primary SoA storage
+    std::vector<ComputeCell> cellStagingBuffer;                 // AoS staging buffer for compatibility
+    int cellCount{ 0 };                                         // Current active cell count
+    int pendingCellCount{ 0 };                                  // Number of cells pending addition
 
     // Configuration
     static constexpr int MAX_CELLS = config::MAX_CELLS;
@@ -75,12 +163,21 @@ struct CellManager {
     
     void initializeGPUBuffers();
     void bindAllBuffers();
-    void spawnCells(int count = DEFAULT_CELL_COUNT);
-    void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
+    void spawnCells(int count = DEFAULT_CELL_COUNT);    void renderCells(glm::vec2 resolution, Shader& cellShader, class Camera& camera);
     void addCellsToGPUBuffer(const std::vector<ComputeCell>& cells);
     void addCellToGPUBuffer(const ComputeCell& newCell);
     void addCellToStagingBuffer(const ComputeCell& newCell);
+    
+    // New SoA-optimized methods
+    void addCellsToGPUBufferSoA(const CellDataSoA& cellData);
+    void addCellToStagingBufferSoA(const glm::vec3& position, const glm::vec3& velocity, 
+                                   const glm::vec3& acceleration, float mass, float radius);
+    void addStagedCellsToGPUBufferSoA();
+    
     void addCell(const ComputeCell& newCell) { addCellToStagingBuffer(newCell); }
+    void addCell(const glm::vec3& pos, const glm::vec3& vel, float mass, float radius) {
+        addCellToStagingBufferSoA(pos, vel, glm::vec3(0.0f), mass, radius);
+    }
     void addStagedCellsToGPUBuffer();
     void updateCells(float deltaTime);
     void cleanup();
@@ -144,6 +241,21 @@ struct CellManager {
     void requestAsyncReadback();
     bool checkAsyncReadback(ComputeCell* outputData, int maxCells);
     void cleanupReadbackSystem();
+
+    // SoA data access methods
+    const CellDataSoA& getCellDataSoA() const { return cellDataSoA; }
+    CellDataSoA& getCellDataSoA() { return cellDataSoA; }
+    
+    // Batch operations for SoA
+    void reserveCells(size_t count) { cellDataSoA.reserve(count); }
+    void clearStagedCells() { 
+        cellDataSoA.clear(); 
+        cellStagingBuffer.clear(); 
+        pendingCellCount = 0; 
+    }
+    
+    // Performance comparison utilities
+    void spawnCellsLegacy(int count); // Old AoS method for comparison
 
 private:
     void runPhysicsCompute(float deltaTime);

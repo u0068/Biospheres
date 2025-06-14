@@ -221,14 +221,16 @@ int main()
 			}
 			catch (...)
 			{
-				std::cerr << "Unknown exception in cell rendering\n";
-			} //// Then we handle ImGUI
+				std::cerr << "Unknown exception in cell rendering\n";			} //// Then we handle ImGUI
 			// ui.renderUI();
 			//  Cell Inspector and Selection UI
 			uiManager.renderCellInspector(cellManager);
 
 			// Performance Monitor with readable update rate
 			uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
+
+			// SoA Performance Testing
+			uiManager.renderSoAPerformanceTest(cellManager);
 
 			// Camera Controls
 			uiManager.renderCameraControls(cellManager, camera);

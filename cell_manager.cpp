@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cfloat>
 #include <cmath>
+#include <cstring>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include "timer.h"
@@ -86,14 +87,13 @@ void CellManager::initializeGPUBuffers() {
             sizeof(float),
             sizeof(float),
         },
-        config::MAX_CELLS
-    );
+        config::MAX_CELLS    );
 
     // Setup the sphere mesh, which needs to know the positions and radii
     sphereMesh.setupInstanceBuffer(instanceBuffers);
 
-    // Reserve CPU storage
-    cpuCells.reserve(config::MAX_CELLS);
+    // Reserve CPU storage (SoA)
+    cellDataSoA.reserve(config::MAX_CELLS);
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& camera) {
@@ -141,17 +141,16 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
     cellShader.setMat4("uView", view);
     cellShader.setVec3("uCameraPos", camera.getPosition());
     cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
-    
-    // Set selection highlighting uniforms
-    //if (selectedCell.isValid) {
-    //    glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndRadius);
-    //    float selectedRadius = selectedCell.cellData.positionAndRadius.w;
-    //    cellShader.setVec3("uSelectedCellPos", selectedPos);
-    //    cellShader.setFloat("uSelectedCellRadius", selectedRadius);
-    //} else {
+      // Set selection highlighting uniforms
+    if (selectedCell.isValid) {
+        glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndRadius);
+        float selectedRadius = selectedCell.cellData.positionAndRadius.w;
+        cellShader.setVec3("uSelectedCellPos", selectedPos);
+        cellShader.setFloat("uSelectedCellRadius", selectedRadius);
+    } else {
         cellShader.setVec3("uSelectedCellPos", glm::vec3(-9999.0f)); // Invalid position
         cellShader.setFloat("uSelectedCellRadius", 0.0f);
-    //}
+    }
     cellShader.setFloat("uTime", static_cast<float>(glfwGetTime()));    // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
     glEnable(GL_DEPTH_TEST);
 
@@ -166,7 +165,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader& cellShader, Camera& 
 }
 
 void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { // Prefer to not use this directly, use addCellToStagingBuffer instead
-    int newCellCount = cells.size();
+    int newCellCount = static_cast<int>(cells.size());
 
 	std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount + newCellCount << "\n";
 
@@ -175,7 +174,7 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { /
         return;
     }
 
-	TimerCPU cpuTimer("Converting CPU AoS to GPU SoA");
+	TimerCPU cpuTimer("Converting CPU AoS to GPU SoA (Legacy)");
 
     const int count = static_cast<int>(cells.size());
 
@@ -191,7 +190,8 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { /
     masses.reserve(count);
     radii.reserve(count);
 
-    for (const ComputeCell& cell : cpuCells)
+    // Convert from AoS to SoA
+    for (const ComputeCell& cell : cells)
     {
         positions.push_back(cell.positionAndRadius);               // GPU needs vec4
         velocities.push_back(cell.velocityAndMass);
@@ -217,6 +217,40 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell>& cells) { /
     cellCount += newCellCount;
 }
 
+void CellManager::addCellsToGPUBufferSoA(const CellDataSoA& cellData) {
+    int newCellCount = static_cast<int>(cellData.size());
+
+    std::cout << "Adding " << newCellCount << " cells to GPU buffer (SoA optimized). Current cell count: " << cellCount + newCellCount << "\n";
+
+    if (cellCount + newCellCount > config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
+        return;
+    }
+
+    TimerCPU cpuTimer("Preparing SoA data for GPU upload");
+
+    // Get GPU-compatible data directly from SoA structure
+    auto positions = cellData.getPositionAndRadiusData();
+    auto velocities = cellData.getVelocityAndMassData();
+    auto accelerations = cellData.getAccelerationData();
+
+    std::vector<void*> gpuData = {
+        positions.data(),
+        velocities.data(),
+        accelerations.data(),
+        const_cast<float*>(cellData.masses.data()),
+        const_cast<float*>(cellData.radii.data())
+    };
+
+    TimerGPU gpuTimer("Adding Cells to GPU Buffer (SoA)", true);
+
+    // Update only the specific part of the GPU buffer
+    int dstIndex = cellCount;
+    allBuffers.update(dstIndex, newCellCount, gpuData);
+
+    cellCount += newCellCount;
+}
+
 void CellManager::addCellToGPUBuffer(const ComputeCell& newCell) { // Prefer to not use this directly, use addCellToStagingBuffer instead
     addCellsToGPUBuffer({ newCell });
 }
@@ -227,41 +261,116 @@ void CellManager::addCellToStagingBuffer(const ComputeCell& newCell) {
         return;
     }
 
-    // Add to CPU storage only (no immediate GPU sync)
+    // Add to legacy staging buffer for compatibility
     cellStagingBuffer.push_back(newCell);
-    cpuCells.push_back(newCell);
+    pendingCellCount++;
+}
+
+void CellManager::addCellToStagingBufferSoA(const glm::vec3& position, const glm::vec3& velocity, 
+                                             const glm::vec3& acceleration, float mass, float radius) {
+    if (cellCount + 1 > config::MAX_CELLS) {
+        std::cout << "Warning: Maximum cell count reached!\n";
+        return;
+    }
+
+    // Add directly to SoA structure (more efficient)
+    cellDataSoA.addCell(position, velocity, acceleration, mass, radius);
     pendingCellCount++;
 }
 
 void CellManager::addStagedCellsToGPUBuffer() {
-    addCellsToGPUBuffer(cellStagingBuffer);
-    cellStagingBuffer.clear(); // Clear after adding to GPU buffer
-	pendingCellCount = 0; // Reset pending count
+    // Upload legacy AoS staging buffer if it has data
+    if (!cellStagingBuffer.empty()) {
+        addCellsToGPUBuffer(cellStagingBuffer);
+        cellStagingBuffer.clear();
+    }
+    
+    // Upload SoA data if it has data
+    if (cellDataSoA.size() > 0) {
+        addCellsToGPUBufferSoA(cellDataSoA);
+        cellDataSoA.clear();
+    }
+    
+    pendingCellCount = 0; // Reset pending count
+}
 
+void CellManager::addStagedCellsToGPUBufferSoA() {
+    if (cellDataSoA.size() > 0) {
+        addCellsToGPUBufferSoA(cellDataSoA);
+        cellDataSoA.clear();
+        pendingCellCount = 0;
+    }
 }
 
 ComputeCell CellManager::getCellData(int index) const {
-    if (index >= 0 && index < cellCount) {
-        return cpuCells[index];
+    if (index < 0 || index >= cellCount) {
+        return ComputeCell{}; // Return empty cell if index is invalid
     }
-    return ComputeCell{}; // Return empty cell if index is invalid
+    
+    // For SoA compatibility, try to get from SoA first
+    if (static_cast<size_t>(index) < cellDataSoA.size()) {
+        return cellDataSoA.getCell(index);
+    }
+    
+    // Fall back to reading from GPU buffers
+    ComputeCell cell;
+    
+    // Read position and radius
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer);
+    void* posData = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 
+                                    index * sizeof(glm::vec4), 
+                                    sizeof(glm::vec4), 
+                                    GL_MAP_READ_BIT);
+    if (posData) {
+        cell.positionAndRadius = *static_cast<glm::vec4*>(posData);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    // Read velocity and mass
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer);
+    void* velData = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 
+                                    index * sizeof(glm::vec4), 
+                                    sizeof(glm::vec4), 
+                                    GL_MAP_READ_BIT);
+    if (velData) {
+        cell.velocityAndMass = *static_cast<glm::vec4*>(velData);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    // Read acceleration
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, accelerationBuffer);
+    void* accelData = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 
+                                      index * sizeof(glm::vec4), 
+                                      sizeof(glm::vec4), 
+                                      GL_MAP_READ_BIT);
+    if (accelData) {
+        cell.acceleration = *static_cast<glm::vec4*>(accelData);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    return cell;
 }
 
 void CellManager::updateCellData(int index, const ComputeCell& newData) {
-    //if (index >= 0 && index < cellCount) {
-    //    cpuCells[index] = newData;
+    // Note: This method is mostly deprecated as we work primarily with GPU buffers
+    // For real-time updates, prefer direct GPU buffer updates
+    
+    if (index >= 0 && static_cast<size_t>(index) < cellDataSoA.size()) {
+        // Update SoA data
+        cellDataSoA.positions[index] = glm::vec3(newData.positionAndRadius);
+        cellDataSoA.velocities[index] = glm::vec3(newData.velocityAndMass);
+        cellDataSoA.accelerations[index] = glm::vec3(newData.acceleration);
+        cellDataSoA.masses[index] = newData.velocityAndMass.w;
+        cellDataSoA.radii[index] = newData.positionAndRadius.w;
 
-    //    // Update selected cell cache if this is the selected cell
-    //    if (selectedCell.isValid && selectedCell.cellIndex == index) {
-    //        selectedCell.cellData = newData;
-    //    }
+        // Update selected cell cache if this is the selected cell
+        if (selectedCell.isValid && selectedCell.cellIndex == index) {
+            selectedCell.cellData = newData;
+        }
 
-    //    // Update only the specific cell in the GPU buffer
-    //    glNamedBufferSubData(cellBuffer,
-    //        index * sizeof(ComputeCell),
-    //        sizeof(ComputeCell),
-    //        &cpuCells[index]);
-    //}
+        // TODO: Update specific GPU buffer locations for real-time changes
+        // This requires individual buffer updates for each component
+    }
 }
 
 void CellManager::bindAllBuffers() { // Its safe to bind all buffers once before running shaders if we can GUARANTEE that nothing is gonna bind other stuff while they run
@@ -370,7 +479,7 @@ void CellManager::runUpdateCompute(float deltaTime) {
 }
 
 void CellManager::spawnCells(int count) {
-    TimerCPU cpuTimer("Spawning Cells", true);
+    TimerCPU cpuTimer("Spawning Cells (SoA optimized)", true);
 
     for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i) {
         // Random position within spawn radius
@@ -395,10 +504,42 @@ void CellManager::spawnCells(int count) {
         float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
         float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
 
-		ComputeCell newCell;
-		newCell.positionAndRadius = glm::vec4(position, cellRadius);
-		newCell.velocityAndMass = glm::vec4(velocity, mass);
-		newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
+        // Use SoA method directly (more efficient)
+        addCellToStagingBufferSoA(position, velocity, glm::vec3(0.0f), mass, cellRadius);
+    }
+}
+
+void CellManager::spawnCellsLegacy(int count) {
+    TimerCPU cpuTimer("Spawning Cells (Legacy AoS)", true);
+
+    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i) {
+        // Random position within spawn radius
+        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
+        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
+        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
+
+        glm::vec3 position = glm::vec3(
+            radius * sin(angle2) * cos(angle1),
+            radius * cos(angle2),
+            radius * sin(angle2) * sin(angle1)
+        );
+
+        // Random velocity
+        glm::vec3 velocity = glm::vec3(
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f
+        );
+
+        // Random mass and radius
+        float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
+        float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
+
+        // Use legacy AoS method
+        ComputeCell newCell;
+        newCell.positionAndRadius = glm::vec4(position, cellRadius);
+        newCell.velocityAndMass = glm::vec4(velocity, mass);
+        newCell.acceleration = glm::vec4(0.0f);
 
         addCellToStagingBuffer(newCell);
     }
@@ -407,176 +548,203 @@ void CellManager::spawnCells(int count) {
 void CellManager::handleMouseInput(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                   const Camera& camera, bool isMousePressed, bool isMouseDown, 
                                   float scrollDelta) {
-    //// Safety check for invalid screen size (minimized window)
-    //if (screenSize.x <= 0 || screenSize.y <= 0) {
-    //    return;
-    //}
-    //
-    //// Handle scroll wheel to adjust drag distance when cell is selected
-    //if (selectedCell.isValid && scrollDelta != 0.0f) {
-    //    float scrollSensitivity = 2.0f;
-    //    selectedCell.dragDistance += scrollDelta * scrollSensitivity;
-    //    selectedCell.dragDistance = glm::clamp(selectedCell.dragDistance, 1.0f, 100.0f);
-    //    
-    //    // If we're dragging, update the cell position to maintain the new distance
-    //    if (isDraggingCell) {
-    //        glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
-    //        glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
-    //        dragSelectedCell(newWorldPos);
-    //    }
-    //}    if (isMousePressed && !isDraggingCell) {
-    //    // Sync current cell positions from GPU before attempting selection
-    //    syncCellPositionsFromGPU();
-    //    
-    //    // Start new selection with improved raycasting
-    //    glm::vec3 rayOrigin = camera.getPosition();
-    //    glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
-    //      // Debug: Print mouse coordinates and ray info (reduced logging)
-    //    std::cout << "Mouse click at (" << mousePos.x << ", " << mousePos.y << ")\n";
-    //    
-    //    int selectedIndex = selectCellAtPosition(rayOrigin, rayDirection);
-    //    if (selectedIndex >= 0) {
-    //        selectedCell.cellIndex = selectedIndex;
-    //        selectedCell.cellData = cpuCells[selectedIndex];
-    //        selectedCell.isValid = true;
-    //        
-    //        // Calculate the distance from camera to the selected cell
-    //        glm::vec3 cellPosition = glm::vec3(selectedCell.cellData.positionAndRadius);
-    //        selectedCell.dragDistance = glm::distance(rayOrigin, cellPosition);
-    //        
-    //        // Calculate drag offset for smooth dragging
-    //        glm::vec3 mouseWorldPos = rayOrigin + rayDirection * selectedCell.dragDistance;
-    //        selectedCell.dragOffset = cellPosition - mouseWorldPos;
-    //        
-    //        isDraggingCell = true;
-    //        
-    //        // Debug output
-    //        std::cout << "Selected cell " << selectedIndex << " at distance " << selectedCell.dragDistance << "\n";
-    //    } else {
-    //        clearSelection();
-    //    }
-    //}
-    //
-    //if (isDraggingCell && isMouseDown && selectedCell.isValid) {
-    //    // Continue dragging at the maintained distance
-    //    glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
-    //    glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
-    //    dragSelectedCell(newWorldPos + selectedCell.dragOffset);
-    //}
-    //  if (!isMouseDown) {
-    //    if (isDraggingCell) {
-    //        endDrag();
-    //    }
-    //}
+    // Safety check for invalid screen size (minimized window)
+    if (screenSize.x <= 0 || screenSize.y <= 0) {
+        return;
+    }
+
+    // Handle scroll wheel to adjust drag distance when cell is selected
+    if (selectedCell.isValid && scrollDelta != 0.0f) {
+        float scrollSensitivity = 2.0f;
+        selectedCell.dragDistance += scrollDelta * scrollSensitivity;
+        selectedCell.dragDistance = glm::clamp(selectedCell.dragDistance, 1.0f, 100.0f);
+        
+        // If we're dragging, update the cell position to maintain the new distance
+        if (isDraggingCell) {
+            glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+            glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
+            dragSelectedCell(newWorldPos);
+        }
+    }
+    
+    if (isMousePressed && !isDraggingCell) {
+        // Start new selection with improved raycasting
+        glm::vec3 rayOrigin = camera.getPosition();
+        glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+        
+        // Debug: Print mouse coordinates and ray info (reduced logging)
+        std::cout << "Mouse click at (" << mousePos.x << ", " << mousePos.y << ")\n";
+        
+        int selectedIndex = selectCellAtPosition(rayOrigin, rayDirection);
+        if (selectedIndex >= 0) {
+            selectedCell.cellIndex = selectedIndex;
+            selectedCell.cellData = getCellData(selectedIndex);
+            selectedCell.isValid = true;
+            
+            // Calculate the distance from camera to the selected cell
+            glm::vec3 cellPosition = glm::vec3(selectedCell.cellData.positionAndRadius);
+            selectedCell.dragDistance = glm::distance(rayOrigin, cellPosition);
+            
+            // Calculate drag offset for smooth dragging
+            glm::vec3 mouseWorldPos = rayOrigin + rayDirection * selectedCell.dragDistance;
+            selectedCell.dragOffset = cellPosition - mouseWorldPos;
+            
+            isDraggingCell = true;
+            
+            // Debug output
+            std::cout << "Selected cell " << selectedIndex << " at distance " << selectedCell.dragDistance << "\n";
+        } else {
+            clearSelection();
+        }
+    }
+
+    if (isDraggingCell && isMouseDown && selectedCell.isValid) {
+        // Continue dragging at the maintained distance
+        glm::vec3 rayDirection = calculateMouseRay(mousePos, screenSize, camera);
+        glm::vec3 newWorldPos = camera.getPosition() + rayDirection * selectedCell.dragDistance;
+        dragSelectedCell(newWorldPos + selectedCell.dragOffset);
+    }
+    
+    if (!isMouseDown) {
+        if (isDraggingCell) {
+            endDrag();
+        }
+    }
 }
 
-// todo: REWRITE FOR GPU ONLY
 int CellManager::selectCellAtPosition(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
-    //float closestDistance = FLT_MAX;
-    //int closestCellIndex = -1;
-    //int intersectionCount = 0;
-    //
-    //// Debug output for raycasting
-    //std::cout << "Testing " << cellCount << " cells for intersection..." << std::endl;
-    //
-    //for (int i = 0; i < cellCount; i++) {
-    //    glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndRadius);
-    //    float cellRadius = cpuCells[i].positionAndRadius.w;
-    //    
-    //    float intersectionDistance;
-    //    if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance)) {
-    //        intersectionCount++;
-    //        std::cout << "Cell " << i << " at (" << cellPosition.x << ", " << cellPosition.y << ", " << cellPosition.z 
-    //                 << ") radius " << cellRadius << " intersected at distance " << intersectionDistance << std::endl;
-    //                 
-    //        if (intersectionDistance < closestDistance && intersectionDistance > 0) {
-    //            closestDistance = intersectionDistance;
-    //            closestCellIndex = i;
-    //        }
-    //    }
-    //}
-    //
-    //std::cout << "Found " << intersectionCount << " intersections total" << std::endl;
-    //if (closestCellIndex >= 0) {
-    //    std::cout << "Selected closest cell " << closestCellIndex << " at distance " << closestDistance << std::endl;
-    //} else {
-    //    std::cout << "No valid cell intersections found" << std::endl;
-    //}
-    //
-    //return closestCellIndex;
-    return 0;
+    if (cellCount == 0) return -1;
+    
+    float closestDistance = FLT_MAX;
+    int closestCellIndex = -1;
+    int intersectionCount = 0;
+    
+    // Read position and radius data from GPU buffers
+    std::vector<glm::vec4> positions(cellCount);
+    std::vector<float> radii(cellCount);
+    
+    // Map GPU buffers to read current cell data
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer);
+    void* posData = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+    if (posData) {
+        memcpy(positions.data(), posData, cellCount * sizeof(glm::vec4));
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    } else {
+        std::cerr << "Failed to map position buffer for selection" << std::endl;
+        return -1;
+    }
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, radiusBuffer);
+    void* radData = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+    if (radData) {
+        memcpy(radii.data(), radData, cellCount * sizeof(float));
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    } else {
+        std::cerr << "Failed to map radius buffer for selection" << std::endl;
+        return -1;
+    }
+    
+    // Debug output for raycasting
+    std::cout << "Testing " << cellCount << " cells for intersection..." << std::endl;
+    
+    // Test intersection with each cell
+    for (int i = 0; i < cellCount; i++) {
+        glm::vec3 cellPosition = glm::vec3(positions[i]);
+        float cellRadius = radii[i];
+        
+        float intersectionDistance;
+        if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance)) {
+            intersectionCount++;
+            std::cout << "Cell " << i << " at (" << cellPosition.x << ", " << cellPosition.y << ", " << cellPosition.z 
+                     << ") radius " << cellRadius << " intersected at distance " << intersectionDistance << std::endl;
+                     
+            if (intersectionDistance < closestDistance && intersectionDistance > 0) {
+                closestDistance = intersectionDistance;
+                closestCellIndex = i;
+            }
+        }
+    }
+    
+    std::cout << "Found " << intersectionCount << " intersections total" << std::endl;
+    if (closestCellIndex >= 0) {
+        std::cout << "Selected closest cell " << closestCellIndex << " at distance " << closestDistance << std::endl;
+    } else {
+        std::cout << "No valid cell intersections found" << std::endl;
+    }
+    
+    return closestCellIndex;
 }
 
-// todo: REWRITE FOR GPU ONLY
 void CellManager::dragSelectedCell(const glm::vec3& newWorldPosition) {
-    //if (!selectedCell.isValid) return;
-    //
-    //// Update CPU cell data
-    //cpuCells[selectedCell.cellIndex].positionAndRadius.x = newWorldPosition.x;
-    //cpuCells[selectedCell.cellIndex].positionAndRadius.y = newWorldPosition.y;
-    //cpuCells[selectedCell.cellIndex].positionAndRadius.z = newWorldPosition.z;
-    //
-    //// Clear velocity when dragging to prevent conflicts with physics
-    //cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
-    //cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
-    //cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
-    //
-    //// Update cached selected cell data
-    //selectedCell.cellData = cpuCells[selectedCell.cellIndex];
-    //
-    //// Update GPU buffer immediately to ensure compute shaders see the new position
-    //glBufferSubData(cellBuffer,
-    //               selectedCell.cellIndex * sizeof(ComputeCell), 
-    //               sizeof(ComputeCell), 
-    //               &cpuCells[selectedCell.cellIndex]);
+    if (!selectedCell.isValid || selectedCell.cellIndex < 0 || selectedCell.cellIndex >= cellCount) return;
+    
+    // Update position in GPU buffer directly
+    glm::vec4 newPosAndRadius = glm::vec4(newWorldPosition, selectedCell.cellData.positionAndRadius.w);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+                   selectedCell.cellIndex * sizeof(glm::vec4),
+                   sizeof(glm::vec4),
+                   &newPosAndRadius);
+    
+    // Clear velocity when dragging to prevent conflicts with physics
+    glm::vec4 zeroVelocity = glm::vec4(0.0f, 0.0f, 0.0f, selectedCell.cellData.velocityAndMass.w);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+                   selectedCell.cellIndex * sizeof(glm::vec4),
+                   sizeof(glm::vec4),
+                   &zeroVelocity);
+    
+    // Update cached selected cell data
+    selectedCell.cellData.positionAndRadius.x = newWorldPosition.x;
+    selectedCell.cellData.positionAndRadius.y = newWorldPosition.y;
+    selectedCell.cellData.positionAndRadius.z = newWorldPosition.z;
+    selectedCell.cellData.velocityAndMass.x = 0.0f;
+    selectedCell.cellData.velocityAndMass.y = 0.0f;
+    selectedCell.cellData.velocityAndMass.z = 0.0f;
+    
+    // Also update SoA data if the cell exists there
+    if (static_cast<size_t>(selectedCell.cellIndex) < cellDataSoA.size()) {
+        cellDataSoA.positions[selectedCell.cellIndex] = newWorldPosition;
+        cellDataSoA.velocities[selectedCell.cellIndex] = glm::vec3(0.0f);
+    }
 }
 
 void CellManager::clearSelection() {
-    //selectedCell.cellIndex = -1;
-    //selectedCell.isValid = false;
-    //isDraggingCell = false;
+    selectedCell.cellIndex = -1;
+    selectedCell.isValid = false;
+    isDraggingCell = false;
 }
 
 void CellManager::endDrag() {
-    //if (isDraggingCell && selectedCell.isValid) {
-    //    // Reset velocity to zero when ending drag to prevent sudden jumps
-    //    cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
-    //    cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
-    //    cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f;
-    //    
-    //    // Update the GPU buffer with the final state
-    //    glNamedBufferSubData(cellBuffer,
-    //                   selectedCell.cellIndex * sizeof(ComputeCell), 
-    //                   sizeof(ComputeCell), 
-    //                   &cpuCells[selectedCell.cellIndex]);
-    //}
-    //
-    //isDraggingCell = false;
+    if (isDraggingCell && selectedCell.isValid) {
+        // Reset velocity to zero when ending drag to prevent sudden jumps
+        glm::vec4 zeroVelocity = glm::vec4(0.0f, 0.0f, 0.0f, selectedCell.cellData.velocityAndMass.w);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+                       selectedCell.cellIndex * sizeof(glm::vec4),
+                       sizeof(glm::vec4),
+                       &zeroVelocity);
+        
+        // Update cached data
+        selectedCell.cellData.velocityAndMass.x = 0.0f;
+        selectedCell.cellData.velocityAndMass.y = 0.0f;
+        selectedCell.cellData.velocityAndMass.z = 0.0f;
+        
+        // Also update SoA data if the cell exists there
+        if (static_cast<size_t>(selectedCell.cellIndex) < cellDataSoA.size()) {
+            cellDataSoA.velocities[selectedCell.cellIndex] = glm::vec3(0.0f);
+        }
+    }
+    
+    isDraggingCell = false;
 }
 
-void CellManager::syncCellPositionsFromGPU() { // This will fail if the CPU buffer has the wrong size, which will happen once cell division is implemented so i will have to rewrite this
-    //if (cellCount == 0) return;
-    //
-    //
-    //// Use glMapBuffer for efficient GPU->CPU data transfer
-    //ComputeCell* gpuData = static_cast<ComputeCell*>(glMapNamedBuffer(cellBuffer, GL_READ_ONLY));
-    //
-    //if (gpuData) {
-    //    // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
-    //    for (int i = 0; i < cellCount; i++) {
-    //        // Only sync position and radius, preserve velocity and mass from CPU
-    //        cpuCells[i].positionAndRadius = gpuData[i].positionAndRadius;
-    //    }
-    //    
-    //    glUnmapNamedBuffer(cellBuffer);
-    //    
-    //    std::cout << "Synced " << cellCount << " cell positions from GPU" << std::endl;
-    //} else {
-    //    std::cerr << "Failed to map GPU buffer for readback" << std::endl;
-    //}
+void CellManager::syncCellPositionsFromGPU() {
+    // This method is deprecated in favor of direct GPU buffer access
+    // Cell selection now reads directly from GPU buffers when needed
+    std::cout << "syncCellPositionsFromGPU called (deprecated - using direct GPU access)" << std::endl;
 }
 
-// todo: REWRITE FOR GPU ONLY
 glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::vec2& screenSize, 
                                         const Camera& camera) {
     // Safety check for zero screen size
@@ -649,7 +817,6 @@ glm::vec3 CellManager::calculateMouseRay(const glm::vec2& mousePos, const glm::v
     return rayDirection;
 }
 
-// todo: REWRITE FOR GPU ONLY
 bool CellManager::raySphereIntersection(const glm::vec3& rayOrigin, const glm::vec3& rayDirection,
                                        const glm::vec3& sphereCenter, float sphereRadius, float& distance) {
     glm::vec3 oc = rayOrigin - sphereCenter;

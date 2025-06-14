@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string>
 #include <cmath>
+#include <chrono>
 
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
@@ -155,12 +156,11 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
                 perfMonitor.minFrameTime, perfMonitor.avgFrameTime, perfMonitor.maxFrameTime);
 
     // === Performance Graphs ===
-    ImGui::Spacing();
-    ImGui::Text("Frame Time History");
+    ImGui::Spacing();    ImGui::Text("Frame Time History");
     if (!perfMonitor.frameTimeHistory.empty())
     {
         ImGui::PlotLines("##FrameTime", perfMonitor.frameTimeHistory.data(),
-                         perfMonitor.frameTimeHistory.size(), 0, nullptr,
+                         static_cast<int>(perfMonitor.frameTimeHistory.size()), 0, nullptr,
                          0.0f, 50.0f, ImVec2(0, 80));
     }
 
@@ -168,9 +168,9 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     if (!perfMonitor.fpsHistory.empty())
     {
         ImGui::PlotLines("##FPS", perfMonitor.fpsHistory.data(),
-                         perfMonitor.fpsHistory.size(), 0, nullptr,
+                         static_cast<int>(perfMonitor.fpsHistory.size()), 0, nullptr,
                          0.0f, 120.0f, ImVec2(0, 80));
-    } // === Performance Bars ===
+    }// === Performance Bars ===
     ImGui::Spacing();
     ImGui::Text("Performance Indicators");
     ImGui::Separator();
@@ -410,19 +410,18 @@ void UIManager::renderGenomeEditor()
         ImGui::EndPopup();
     }
 
-    ImGui::Separator();
-
-    // Initial Mode Dropdown
+    ImGui::Separator();    // Initial Mode Dropdown
     ImGui::Text("Initial Mode:");
     ImGui::SameLine();
     if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
                      {
-            GenomeData* genome = (GenomeData*)data;
-            if (idx >= 0 && idx < genome->modes.size()) {
-                *out_text = genome->modes[idx].name.c_str();
-                return true;
-            }
-            return false; }, &currentGenome, currentGenome.modes.size()))
+        GenomeData* genome = (GenomeData*)data;
+        if (idx >= 0 && idx < static_cast<int>(genome->modes.size())) {
+            *out_text = genome->modes[idx].name.c_str();
+            return true;
+        }
+        return false; 
+    }, &currentGenome, static_cast<int>(currentGenome.modes.size())))
     {
         // Initial mode changed
     }
@@ -442,10 +441,9 @@ void UIManager::renderGenomeEditor()
     if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
     {
         if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
-        {
-            currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
-            if (selectedModeIndex >= currentGenome.modes.size())
-                selectedModeIndex = currentGenome.modes.size() - 1;
+        {            currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
+            if (selectedModeIndex >= static_cast<int>(currentGenome.modes.size()))
+                selectedModeIndex = static_cast<int>(currentGenome.modes.size()) - 1;
         }
     }
     ImGui::Checkbox("Show Mode List", &showModeList);
@@ -739,5 +737,50 @@ void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float 
         perfMonitor.minFrameTime = 1000.0f;
         perfMonitor.maxFrameTime = 0.0f;
         resetTimer = 0.0f;
+    }
+}
+
+void UIManager::renderSoAPerformanceTest(CellManager& cellManager) {
+    if (ImGui::CollapsingHeader("SoA vs AoS Performance Test")) {
+        ImGui::Text("Compare Structure of Arrays vs Array of Structures performance");
+        ImGui::Separator();
+        
+        static int testCellCount = 1000;
+        ImGui::SliderInt("Test Cell Count", &testCellCount, 100, 10000);
+        
+        if (ImGui::Button("Run SoA Test")) {
+            // Clear existing staged cells
+            cellManager.clearStagedCells();
+            
+            // Measure SoA performance
+            auto start = std::chrono::high_resolution_clock::now();
+            cellManager.spawnCells(testCellCount);
+            auto end = std::chrono::high_resolution_clock::now();
+            
+            auto soaDuration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            ImGui::Text("SoA spawn time: %ld microseconds", soaDuration.count());
+        }
+        
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Run AoS Test")) {
+            // Clear existing staged cells
+            cellManager.clearStagedCells();
+            
+            // Measure AoS performance
+            auto start = std::chrono::high_resolution_clock::now();
+            cellManager.spawnCellsLegacy(testCellCount);
+            auto end = std::chrono::high_resolution_clock::now();
+            
+            auto aosDuration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            ImGui::Text("AoS spawn time: %ld microseconds", aosDuration.count());
+        }
+        
+        ImGui::Separator();
+        ImGui::Text("Benefits of SoA:");
+        ImGui::BulletText("Better cache locality for batch operations");
+        ImGui::BulletText("Easier vectorization for SIMD operations");
+        ImGui::BulletText("More efficient GPU data uploads");
+        ImGui::BulletText("Reduced memory bandwidth for partial data access");
     }
 }

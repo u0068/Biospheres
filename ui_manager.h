@@ -118,6 +118,9 @@ public:
     // Performance monitoring helpers
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
 
+    // Performance testing for SoA vs AoS
+    void renderSoAPerformanceTest(CellManager& cellManager);
+
 private:
     void drawToolSelector(ToolState &toolState);
     void drawToolSettings(ToolState &toolState, CellManager &cellManager); // Genome Editor Helper Functions
