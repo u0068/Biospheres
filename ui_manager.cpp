@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <string>
 #include <cmath>
-#include <chrono>
 
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
@@ -27,52 +26,50 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         ImGui::Text("Mass: %.2f", mass);
         ImGui::Text("Radius: %.2f", radius);
 
-        ImGui::Separator();
-
-        // Editable properties
+        ImGui::Separator(); // Editable properties using SoA access for better performance
         ImGui::Text("Edit Properties:");
 
         bool changed = false;
-        ComputeCell editedCell = selectedCell.cellData;
+
+        // Get current values using SoA access
+        glm::vec3 editPosition = position;
+        glm::vec3 editVelocity = velocity;
+        glm::vec3 editAcceleration = glm::vec3(0.0f); // Default acceleration
+        float editMass = mass;
+        float editRadius = radius;
 
         // Position editing
-        float pos[3] = {position.x, position.y, position.z};
+        float pos[3] = {editPosition.x, editPosition.y, editPosition.z};
         if (ImGui::DragFloat3("Position", pos, 0.1f))
         {
-            editedCell.positionAndRadius.x = pos[0];
-            editedCell.positionAndRadius.y = pos[1];
-            editedCell.positionAndRadius.z = pos[2];
+            editPosition = glm::vec3(pos[0], pos[1], pos[2]);
             changed = true;
         }
 
         // Velocity editing
-        float vel[3] = {velocity.x, velocity.y, velocity.z};
+        float vel[3] = {editVelocity.x, editVelocity.y, editVelocity.z};
         if (ImGui::DragFloat3("Velocity", vel, 0.1f))
         {
-            editedCell.velocityAndMass.x = vel[0];
-            editedCell.velocityAndMass.y = vel[1];
-            editedCell.velocityAndMass.z = vel[2];
+            editVelocity = glm::vec3(vel[0], vel[1], vel[2]);
             changed = true;
         }
 
         // Mass editing
-        if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 50.0f))
+        if (ImGui::DragFloat("Mass", &editMass, 0.1f, 0.1f, 50.0f))
         {
-            editedCell.velocityAndMass.w = mass;
             changed = true;
         }
 
         // Radius editing
-        if (ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 5.0f))
+        if (ImGui::DragFloat("Radius", &editRadius, 0.1f, 0.1f, 5.0f))
         {
-            editedCell.positionAndRadius.w = radius;
             changed = true;
         }
 
-        // Apply changes
+        // Apply changes using SoA method
         if (changed)
         {
-            cellManager.updateCellData(selectedCell.cellIndex, editedCell);
+            cellManager.updateCellDataSoA(selectedCell.cellIndex, editPosition, editVelocity, editAcceleration, editMass, editRadius);
         }
 
         ImGui::Separator();
@@ -156,7 +153,8 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
                 perfMonitor.minFrameTime, perfMonitor.avgFrameTime, perfMonitor.maxFrameTime);
 
     // === Performance Graphs ===
-    ImGui::Spacing();    ImGui::Text("Frame Time History");
+    ImGui::Spacing();
+    ImGui::Text("Frame Time History");
     if (!perfMonitor.frameTimeHistory.empty())
     {
         ImGui::PlotLines("##FrameTime", perfMonitor.frameTimeHistory.data(),
@@ -170,7 +168,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         ImGui::PlotLines("##FPS", perfMonitor.fpsHistory.data(),
                          static_cast<int>(perfMonitor.fpsHistory.size()), 0, nullptr,
                          0.0f, 120.0f, ImVec2(0, 80));
-    }// === Performance Bars ===
+    } // === Performance Bars ===
     ImGui::Spacing();
     ImGui::Text("Performance Indicators");
     ImGui::Separator();
@@ -286,11 +284,14 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %d", cellCount);
     ImGui::Text("Triangles: ~%d", 192 * cellCount);
-    ImGui::Text("Vertices: ~%d", 96 * cellCount); // Assuming sphere has ~96 vertices
-
-    // Memory estimate
-    float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
-    ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
+    ImGui::Text("Vertices: ~%d", 96 * cellCount); // Assuming sphere has ~96 vertices    // Memory estimate (SoA structure)
+    float memoryMB = cellManager.getSoAMemoryUsage() / (1024.0f * 1024.0f);
+    float stagingMemoryMB = cellManager.getStagingSoAMemoryUsage() / (1024.0f * 1024.0f);
+    ImGui::Text("Cell Data Memory (SoA): %.2f MB", memoryMB);
+    if (stagingMemoryMB > 0)
+    {
+        ImGui::Text("Staging Memory (SoA): %.2f MB", stagingMemoryMB);
+    }
 
     // === Performance Warnings ===
     ImGui::Spacing();
@@ -410,7 +411,7 @@ void UIManager::renderGenomeEditor()
         ImGui::EndPopup();
     }
 
-    ImGui::Separator();    // Initial Mode Dropdown
+    ImGui::Separator(); // Initial Mode Dropdown
     ImGui::Text("Initial Mode:");
     ImGui::SameLine();
     if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
@@ -420,8 +421,7 @@ void UIManager::renderGenomeEditor()
             *out_text = genome->modes[idx].name.c_str();
             return true;
         }
-        return false; 
-    }, &currentGenome, static_cast<int>(currentGenome.modes.size())))
+        return false; }, &currentGenome, static_cast<int>(currentGenome.modes.size())))
     {
         // Initial mode changed
     }
@@ -441,7 +441,8 @@ void UIManager::renderGenomeEditor()
     if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
     {
         if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
-        {            currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
+        {
+            currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
             if (selectedModeIndex >= static_cast<int>(currentGenome.modes.size()))
                 selectedModeIndex = static_cast<int>(currentGenome.modes.size()) - 1;
         }
@@ -737,50 +738,5 @@ void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float 
         perfMonitor.minFrameTime = 1000.0f;
         perfMonitor.maxFrameTime = 0.0f;
         resetTimer = 0.0f;
-    }
-}
-
-void UIManager::renderSoAPerformanceTest(CellManager& cellManager) {
-    if (ImGui::CollapsingHeader("SoA vs AoS Performance Test")) {
-        ImGui::Text("Compare Structure of Arrays vs Array of Structures performance");
-        ImGui::Separator();
-        
-        static int testCellCount = 1000;
-        ImGui::SliderInt("Test Cell Count", &testCellCount, 100, 10000);
-        
-        if (ImGui::Button("Run SoA Test")) {
-            // Clear existing staged cells
-            cellManager.clearStagedCells();
-            
-            // Measure SoA performance
-            auto start = std::chrono::high_resolution_clock::now();
-            cellManager.spawnCells(testCellCount);
-            auto end = std::chrono::high_resolution_clock::now();
-            
-            auto soaDuration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-            ImGui::Text("SoA spawn time: %ld microseconds", soaDuration.count());
-        }
-        
-        ImGui::SameLine();
-        
-        if (ImGui::Button("Run AoS Test")) {
-            // Clear existing staged cells
-            cellManager.clearStagedCells();
-            
-            // Measure AoS performance
-            auto start = std::chrono::high_resolution_clock::now();
-            cellManager.spawnCellsLegacy(testCellCount);
-            auto end = std::chrono::high_resolution_clock::now();
-            
-            auto aosDuration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-            ImGui::Text("AoS spawn time: %ld microseconds", aosDuration.count());
-        }
-        
-        ImGui::Separator();
-        ImGui::Text("Benefits of SoA:");
-        ImGui::BulletText("Better cache locality for batch operations");
-        ImGui::BulletText("Easier vectorization for SIMD operations");
-        ImGui::BulletText("More efficient GPU data uploads");
-        ImGui::BulletText("Reduced memory bandwidth for partial data access");
     }
 }

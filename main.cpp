@@ -41,16 +41,16 @@ void glfwErrorCallback(int error, const char *description)
 
 int main()
 {
-{
-	// Set up error callback before initializing GLFW
-	glfwSetErrorCallback(glfwErrorCallback);
-	initGLFW();
-	GLFWwindow* window = createWindow();
-	initGLAD(window);
-	setupGLFWDebugFlags();
-	assert(glad_glDrawElementsInstanced != NULL);
-	// Load the sphere shader for instanced rendering
-	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
+	{
+		// Set up error callback before initializing GLFW
+		glfwSetErrorCallback(glfwErrorCallback);
+		initGLFW();
+		GLFWwindow *window = createWindow();
+		initGLAD(window);
+		setupGLFWDebugFlags();
+		assert(glad_glDrawElementsInstanced != NULL);
+		// Load the sphere shader for instanced rendering
+		Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 
 		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
 		Input input;
@@ -186,27 +186,30 @@ int main()
 				bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
 				float scrollDelta = input.getScrollDelta();
 
-			cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
-				isLeftMousePressed, isLeftMouseDown, scrollDelta);
-		}
-		//// Then we handle cell simulation
-		cellManager.bindAllBuffers();
-		if (cellManager.pendingCellCount > 0)
-		{
-			cellManager.addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
-		}
-		try {
-			// Update cell simulation with the delta time
-			// GPU timer was moved inside the function because it has multiple elements that need individual timing
-			cellManager.updateCells(deltaTime);
-			checkGLError("updateCells");
-		}
-		catch (const std::exception& e) {
-			std::cerr << "Exception in cell simulation: " << e.what() << "\n";
-		}
-		catch (...) {
-			std::cerr << "Unknown exception in cell simulation\n";
-		}
+				cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
+											 isLeftMousePressed, isLeftMouseDown, scrollDelta);
+			}
+			//// Then we handle cell simulation
+			cellManager.bindAllBuffers();
+			if (cellManager.pendingCellCount > 0)
+			{
+				cellManager.addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
+			}
+			try
+			{
+				// Update cell simulation with the delta time
+				// GPU timer was moved inside the function because it has multiple elements that need individual timing
+				cellManager.updateCells(deltaTime);
+				checkGLError("updateCells");
+			}
+			catch (const std::exception &e)
+			{
+				std::cerr << "Exception in cell simulation: " << e.what() << "\n";
+			}
+			catch (...)
+			{
+				std::cerr << "Unknown exception in cell simulation\n";
+			}
 
 			//// Then we handle rendering
 			try
@@ -221,16 +224,13 @@ int main()
 			}
 			catch (...)
 			{
-				std::cerr << "Unknown exception in cell rendering\n";			} //// Then we handle ImGUI
-			// ui.renderUI();
-			//  Cell Inspector and Selection UI
+				std::cerr << "Unknown exception in cell rendering\n";
+			} //// Then we handle ImGUI
+			// ui.renderUI();			//  Cell Inspector and Selection UI
 			uiManager.renderCellInspector(cellManager);
 
 			// Performance Monitor with readable update rate
 			uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
-
-			// SoA Performance Testing
-			uiManager.renderSoAPerformanceTest(cellManager);
 
 			// Camera Controls
 			uiManager.renderCameraControls(cellManager, camera);
