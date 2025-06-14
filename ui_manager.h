@@ -128,7 +128,7 @@ private:
     void drawParentSettings(ModeSettings &mode);
     void drawChildSettings(const char *label, ChildSettings &child);
     void drawAdhesionSettings(AdhesionSettings &adhesion);
-    void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f");
+    void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawColorPicker(const char *label, glm::vec3 *color);
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright
 

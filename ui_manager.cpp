@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include <algorithm>
 #include <string>
+#include <cmath>
 
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
@@ -550,11 +551,9 @@ void UIManager::drawParentSettings(ModeSettings &mode)
 {
     ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
 
-    drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 1000.0f, "%.1f");
-
-    ImGui::Text("Parent Split Orientation:");
-    drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.1f°");
-    drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.1f°");
+    drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 1000.0f, "%.1f");    ImGui::Text("Parent Split Orientation:");
+    drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
 }
 
 void UIManager::drawChildSettings(const char *label, ChildSettings &child)
@@ -562,12 +561,10 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     ImGui::Text("%s Settings:", label);
 
     drawSliderWithInput("Mode Number", (float *)&child.modeNumber, 0.0f,
-                        std::max(1.0f, (float)(currentGenome.modes.size() - 1)), "%.0f");
-
-    ImGui::Text("Orientation:");
-    drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.1f°");
-    drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.1f°");
-    drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.1f°");
+                        std::max(1.0f, (float)(currentGenome.modes.size() - 1)), "%.0f");    ImGui::Text("Orientation:");
+    drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.0f°", 1.0f);
 
     ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
 }
@@ -581,31 +578,82 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
     drawSliderWithInput("Orientation Spring Strength", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
-    drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.1f°");
+    drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
 }
 
-void UIManager::drawSliderWithInput(const char *label, float *value, float min, float max, const char *format)
+void UIManager::drawSliderWithInput(const char *label, float *value, float min, float max, const char *format, float step)
 {
     ImGui::PushID(label);
 
-    // Calculate full width layout
-    float inputWidth = 60.0f; // Fixed width for input fields
+    // Calculate layout with proper spacing
+    float inputWidth = 80.0f; // Increased input field width
+    float valueDisplayWidth = 50.0f; // Width for value display on stepped sliders
     float availableWidth = ImGui::GetContentRegionAvail().x;
-    float sliderWidth = availableWidth - inputWidth - ImGui::GetStyle().ItemSpacing.x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    
+    // Calculate slider width based on whether we need value display
+    float sliderWidth;
+    if (step > 0.0f)
+    {
+        // For stepped sliders: slider + value display + input field
+        sliderWidth = availableWidth - inputWidth - valueDisplayWidth - (spacing * 2);
+    }
+    else
+    {
+        // For continuous sliders: slider + input field
+        sliderWidth = availableWidth - inputWidth - spacing;
+    }
 
-    // Label on its own line for full width sliders
+    // Label on its own line
     ImGui::Text("%s", label);
 
-    // Slider with calculated full width
+    // Slider with calculated width and step support
     ImGui::PushItemWidth(sliderWidth);
-    ImGui::SliderFloat("##slider", value, min, max, format);
+    if (step > 0.0f)
+    {
+        // Use stepped slider for precise increments
+        int steps = (int)((max - min) / step);
+        float normalizedValue = (*value - min) / (max - min);
+        int currentStep = (int)(normalizedValue * steps + 0.5f);
+        
+        if (ImGui::SliderInt("##slider", &currentStep, 0, steps, ""))
+        {
+            *value = min + (currentStep * step);
+        }
+    }
+    else
+    {
+        // Use regular float slider for continuous values
+        ImGui::SliderFloat("##slider", value, min, max, format);
+    }
     ImGui::PopItemWidth();
 
     ImGui::SameLine();
 
-    // Input field with fixed width
+    // Value display for stepped sliders
+    if (step > 0.0f)
+    {
+        ImGui::PushItemWidth(valueDisplayWidth);
+        ImGui::Text(format, *value);
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+    }
+
+    // Input field with proper width
     ImGui::PushItemWidth(inputWidth);
-    ImGui::InputFloat("##input", value, 0.0f, 0.0f, format);
+    if (step > 0.0f)
+    {
+        float stepValue = step;
+        if (ImGui::InputFloat("##input", value, stepValue, stepValue, format))
+        {
+            // Round to nearest step
+            *value = min + step * round((*value - min) / step);
+        }
+    }
+    else
+    {
+        ImGui::InputFloat("##input", value, 0.0f, 0.0f, format);
+    }
     ImGui::PopItemWidth();
 
     // Clamp value to range
