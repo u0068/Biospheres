@@ -82,6 +82,7 @@ struct ModeSettings
     std::string name = "Untitled Mode";
     glm::vec3 color = {1.0f, 1.0f, 1.0f}; // RGB color    // Parent Settings
     bool parentMakeAdhesion = true;
+    float splitMass = 1.0f;
     float splitInterval = 5.0f;
     glm::vec3 parentSplitOrientation = {0.0f, 0.0f, 0.0f}; // pitch, yaw, roll in degrees
 

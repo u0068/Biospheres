@@ -487,11 +487,61 @@ void UIManager::renderGenomeEditor()
         {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // White text
         }
-
         std::string buttonLabel = std::to_string(i) + ": " + currentGenome.modes[i].name;
         if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0)))
         {
             selectedModeIndex = i;
+        } // Draw outline for selected mode (red or white depending on background)
+        if (isSelected)
+        {
+            ImDrawList *draw_list = ImGui::GetWindowDrawList();
+            ImVec2 min = ImGui::GetItemRectMin();
+            ImVec2 max = ImGui::GetItemRectMax();
+
+            // Create alternating black and white outline by drawing dashed lines
+            float dashLength = 6.0f;
+            ImU32 blackColor = IM_COL32(0, 0, 0, 255);
+            ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
+
+            // Draw top edge
+            for (float x = min.x; x < max.x; x += dashLength * 2)
+            {
+                float endX = std::min(x + dashLength, max.x);
+                draw_list->AddLine(ImVec2(x, min.y), ImVec2(endX, min.y), blackColor, 2.0f);
+                endX = std::min(x + dashLength * 2, max.x);
+                if (x + dashLength < max.x)
+                    draw_list->AddLine(ImVec2(x + dashLength, min.y), ImVec2(endX, min.y), whiteColor, 2.0f);
+            }
+
+            // Draw bottom edge
+            for (float x = min.x; x < max.x; x += dashLength * 2)
+            {
+                float endX = std::min(x + dashLength, max.x);
+                draw_list->AddLine(ImVec2(x, max.y), ImVec2(endX, max.y), blackColor, 2.0f);
+                endX = std::min(x + dashLength * 2, max.x);
+                if (x + dashLength < max.x)
+                    draw_list->AddLine(ImVec2(x + dashLength, max.y), ImVec2(endX, max.y), whiteColor, 2.0f);
+            }
+
+            // Draw left edge
+            for (float y = min.y; y < max.y; y += dashLength * 2)
+            {
+                float endY = std::min(y + dashLength, max.y);
+                draw_list->AddLine(ImVec2(min.x, y), ImVec2(min.x, endY), blackColor, 2.0f);
+                endY = std::min(y + dashLength * 2, max.y);
+                if (y + dashLength < max.y)
+                    draw_list->AddLine(ImVec2(min.x, y + dashLength), ImVec2(min.x, endY), whiteColor, 2.0f);
+            }
+
+            // Draw right edge
+            for (float y = min.y; y < max.y; y += dashLength * 2)
+            {
+                float endY = std::min(y + dashLength, max.y);
+                draw_list->AddLine(ImVec2(max.x, y), ImVec2(max.x, endY), blackColor, 2.0f);
+                endY = std::min(y + dashLength * 2, max.y);
+                if (y + dashLength < max.y)
+                    draw_list->AddLine(ImVec2(max.x, y + dashLength), ImVec2(max.x, endY), whiteColor, 2.0f);
+            }
         }
 
         ImGui::PopStyleColor(isSelected ? 5 : 4); // Pop text color + button colors
@@ -562,24 +612,64 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 
 void UIManager::drawParentSettings(ModeSettings &mode)
 {
-    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
-
+    drawSliderWithInput("Split Mass", &mode.splitMass, 0.1f, 10.0f, "%.2f");
     drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 30.0f, "%.1f");
+
+    // Add divider before Parent Split Orientation
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     ImGui::Text("Parent Split Orientation:");
     drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
     drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+
+    // Add divider before Parent Make Adhesion checkbox
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
 }
 
 void UIManager::drawChildSettings(const char *label, ChildSettings &child)
 {
-    ImGui::Text("%s Settings:", label);
+    // Mode selection dropdown
+    ImGui::Text("Mode:");
+    if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
+                     {
+                         UIManager* uiManager = (UIManager*)data;
+                         if (idx >= 0 && idx < uiManager->currentGenome.modes.size()) {
+                             *out_text = uiManager->currentGenome.modes[idx].name.c_str();
+                             return true;
+                         }
+                         return false; }, this, currentGenome.modes.size()))
+    {
+        // Mode selection changed - clamp to valid range
+        if (child.modeNumber >= currentGenome.modes.size())
+        {
+            child.modeNumber = currentGenome.modes.size() - 1;
+        }
+        if (child.modeNumber < 0)
+        {
+            child.modeNumber = 0;
+        }
+    }
 
-    drawSliderWithInput("Mode Number", (float *)&child.modeNumber, 0.0f,
-                        std::max(1.0f, (float)(currentGenome.modes.size() - 1)), "%.0f");
+    // Add some spacing before orientation controls
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     ImGui::Text("Orientation:");
     drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
     drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
     drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.0f°", 1.0f);
+
+    // Add divider before Keep Adhesion checkbox
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
 
     ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
 }
