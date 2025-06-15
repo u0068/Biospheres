@@ -81,6 +81,9 @@
     <ClCompile Include="timer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="genome.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imconfig.h">
@@ -149,6 +152,9 @@
     <ClInclude Include="timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="genome.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\sphere.vert">
@@ -179,6 +185,12 @@
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\grid_insert.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell_update.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell_update_enhanced.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
   </ItemGroup>
