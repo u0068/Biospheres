@@ -23,7 +23,7 @@ public:
         }
 
         double freq = midiToFreq(melody[currentNote]);
-        double sample = round(std::sin(phase));
+        double sample = round(0.5 + 0.5 * std::sin(phase));
 
         // Envelope
         double attack = 0.05;
