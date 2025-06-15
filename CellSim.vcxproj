@@ -85,15 +85,15 @@
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>Libraries\include;$(IncludePath)</IncludePath>
     <LibraryPath>Libraries\lib;$(LibraryPath)</LibraryPath>
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)</OutDir>
-    <IntDir>$(ShortProjectName)\$(Platform)\$(Configuration)</IntDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ShortProjectName)\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>Libraries\include;$(IncludePath)</IncludePath>
     <LibraryPath>Libraries\lib;$(LibraryPath)</LibraryPath>
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)</OutDir>
-    <IntDir>$(ShortProjectName)\$(Platform)\$(Configuration)</IntDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ShortProjectName)\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -162,12 +162,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="audio_engine.cpp" />
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
     <ClCompile Include="genome.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
+    <ClCompile Include="synthesizer.cpp" />
     <ClCompile Include="timer.cpp" />
     <ClCompile Include="ui_manager.cpp" />
     <ClCompile Include="imgui_helpers.cpp" />
@@ -184,12 +186,14 @@
     <ClCompile Include="sphere_mesh.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="audio_engine.h" />
     <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="genome.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
+    <ClInclude Include="synthesizer.h" />
     <ClInclude Include="timer.h" />
     <ClInclude Include="ui_manager.h" />
     <ClInclude Include="imgui_helpers.h" />

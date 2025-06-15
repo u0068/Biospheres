@@ -84,6 +84,12 @@
     <ClCompile Include="genome.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="synthesizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="audio_engine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imconfig.h">
@@ -153,6 +159,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="genome.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="synthesizer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="audio_engine.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

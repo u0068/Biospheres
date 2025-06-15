@@ -11,6 +11,8 @@
 #include <thread>
 #include <chrono>
 
+#define MINIAUDIO_IMPLEMENTATION
+#include "audio_engine.h"
 #include "cell_manager.h"
 #include "glad_helpers.h"
 #include "glfw_helpers.h"
@@ -20,6 +22,7 @@
 #include "ui_manager.h"
 #include "camera.h"
 #include "timer.h"
+#include "synthesizer.h"
 
 // Simple OpenGL error checking function
 void checkGLError(const char *operation)
@@ -64,6 +67,11 @@ int main()
 			glm::vec4(0., 0., 0., 1.),
 			glm::vec4(0., 0., 0., 0.)
 		));
+
+		AudioEngine audioEngine;
+		audioEngine.init();
+		audioEngine.start();
+		SynthEngine synthEngine;
 
 		// Timing variables
 		float deltaTime = 0.0f;
@@ -191,6 +199,7 @@ int main()
 				cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
 											 isLeftMousePressed, isLeftMouseDown, scrollDelta);
 			}
+			synthEngine.generateSample();
 			//// Then we handle cell simulation
 			try
 			{
