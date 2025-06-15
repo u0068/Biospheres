@@ -59,12 +59,10 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         {
             editedCell.velocityAndMass.w = mass;
             changed = true;
-        }
-
-        // Radius editing
+        } // Radius editing (always enforce radius = 1)
         if (ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 5.0f))
         {
-            editedCell.positionAndRadius.w = radius;
+            editedCell.positionAndRadius.w = 1.0f; // Force radius to always be 1
             changed = true;
         }
 
