@@ -81,9 +81,6 @@
     <ClCompile Include="timer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="buffer_manager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imconfig.h">
@@ -152,18 +149,9 @@
     <ClInclude Include="timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="buffer_manager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\sphere.vert">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cell_physics.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cell_update.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\extract_instances.comp">
@@ -172,6 +160,26 @@
     <None Include="shaders\sphere.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
-    <None Include="shaders\apply_cell_additions.comp" />
+    <None Include="shaders\grid_prefix_sum.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\apply_cell_additions.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell_physics_spatial.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cells_raymarching.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\grid_assign.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\grid_clear.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\grid_insert.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
