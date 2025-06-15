@@ -53,12 +53,17 @@ int main()
 		Input input;
 		input.init(window);
 		// Initialise the camera
-		Camera camera(glm::vec3(0.0f, 0.0f, 150.0f)); // Start further back to see more cells
+		Camera camera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
 		// Initialise the UI manager // We dont have any ui to manage yet
 		ToolState toolState;
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
-		cellManager.spawnCells(200000); // Use default cell count from config
+		//cellManager.spawnCells(1);
+		cellManager.addCellToStagingBuffer(ComputeCell(
+			glm::vec4(0., 0., 0., 1.),
+			glm::vec4(0., 0., 0., 1.),
+			glm::vec4(0., 0., 0., 0.)
+		));
 
 		// Timing variables
 		float deltaTime = 0.0f;
