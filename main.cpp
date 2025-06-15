@@ -117,10 +117,12 @@ int main()
 			{
 				lastKnownWidth = currentWidth;
 				lastKnownHeight = currentHeight;
-			}
-			// Update performance monitoring
+			} // Update performance monitoring
 			perfMonitor.frameCount++;
 			perfMonitor.frameTimeAccumulator += deltaTime;
+
+			// Update performance metrics for min/avg/max calculations and history
+			uiManager.updatePerformanceMetrics(perfMonitor, deltaTime);
 
 			// Update performance display every 250ms
 			if (currentFrame - perfMonitor.lastPerfUpdate >= perfMonitor.perfUpdateInterval)
@@ -171,11 +173,9 @@ int main()
 			// Take care of all GLFW events
 			glfwPollEvents();
 			input.update();
-
 			if (!ImGui::GetIO().WantCaptureMouse)
 			{
 				TimerCPU cpuTimer("Input Processing"); // Start CPU timer for input processing
-				TimerGPU gpuTimer("Input Processing"); // Start GPU timer for input processing
 				// Handle camera input
 				camera.processInput(input, deltaTime);				// Handle cell selection and dragging
 				glm::vec2 mousePos = input.getMousePosition(false); // Get raw screen coordinates

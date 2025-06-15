@@ -24,16 +24,16 @@ struct CellManager
 {
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
-    // The compute shaders handle physics calculations and position updates
+    // The compute shaders handle physics calculations and position updates    // GPU buffer objects - Double buffered for performance
+    GLuint cellBuffer[2] = {0, 0};     // SSBO for compute cell data (double buffered)
+    GLuint instanceBuffer[2] = {0, 0}; // VBO for instance rendering data (double buffered)
+    int currentBufferIndex = 0;        // Index of current buffer (0 or 1)
+    int previousBufferIndex = 1;       // Index of previous buffer (1 or 0)
 
-    // GPU buffer objects
-    GLuint cellBuffer = 0;     // SSBO for compute cell data
-    GLuint instanceBuffer = 0; // VBO for instance rendering data
-
-    // Spatial partitioning buffers
-    GLuint gridBuffer = 0;       // SSBO for grid cell data (stores cell indices)
-    GLuint gridCountBuffer = 0;  // SSBO for grid cell counts
-    GLuint gridOffsetBuffer = 0; // SSBO for grid cell starting offsets
+    // Spatial partitioning buffers - Double buffered
+    GLuint gridBuffer[2] = {0, 0};       // SSBO for grid cell data (stores cell indices)
+    GLuint gridCountBuffer[2] = {0, 0};  // SSBO for grid cell counts
+    GLuint gridOffsetBuffer[2] = {0, 0}; // SSBO for grid cell starting offsets
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
@@ -152,6 +152,16 @@ struct CellManager
     void requestAsyncReadback();
     bool checkAsyncReadback(ComputeCell *outputData, int maxCells);
     void cleanupReadbackSystem();
+
+    // Double buffering management functions
+    void swapBuffers();
+    GLuint getCurrentCellBuffer() const { return cellBuffer[currentBufferIndex]; }
+    GLuint getPreviousCellBuffer() const { return cellBuffer[previousBufferIndex]; }
+    GLuint getCurrentInstanceBuffer() const { return instanceBuffer[currentBufferIndex]; }
+    GLuint getPreviousInstanceBuffer() const { return instanceBuffer[previousBufferIndex]; }
+    GLuint getCurrentGridBuffer() const { return gridBuffer[currentBufferIndex]; }
+    GLuint getCurrentGridCountBuffer() const { return gridCountBuffer[currentBufferIndex]; }
+    GLuint getCurrentGridOffsetBuffer() const { return gridOffsetBuffer[currentBufferIndex]; }
 
 private:
     void runPhysicsCompute(float deltaTime);
