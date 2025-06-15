@@ -59,12 +59,10 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         {
             editedCell.velocityAndMass.w = mass;
             changed = true;
-        }
-
-        // Radius editing
+        } // Radius editing (always enforce radius = 1)
         if (ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 5.0f))
         {
-            editedCell.positionAndRadius.w = radius;
+            editedCell.positionAndRadius.w = 1.0f; // Force radius to always be 1
             changed = true;
         }
 
@@ -363,6 +361,8 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
 
 void UIManager::renderGenomeEditor()
 {
+    // Set minimum window size constraints
+    ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));
     ImGui::Begin("Genome Editor", nullptr);
 
     // Genome Name and Save/Load Section
@@ -448,57 +448,103 @@ void UIManager::renderGenomeEditor()
                 selectedModeIndex = currentGenome.modes.size() - 1;
         }
     }
-    ImGui::Checkbox("Show Mode List", &showModeList);
 
-    // Mode List (Expandable)
-    if (showModeList)
+    // Mode List
+    ImGui::BeginChild("ModeList", ImVec2(200, -1), true);
+    for (int i = 0; i < currentGenome.modes.size(); i++)
     {
-        ImGui::BeginChild("ModeList", ImVec2(200, -1), true);
-        for (int i = 0; i < currentGenome.modes.size(); i++)
+        // Color the mode tab with the mode's color - keep bright for unselected modes
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImVec4(currentGenome.modes[i].color.r * 0.8f,
+                                     currentGenome.modes[i].color.g * 0.8f,
+                                     currentGenome.modes[i].color.b * 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                              ImVec4(currentGenome.modes[i].color.r * 0.9f,
+                                     currentGenome.modes[i].color.g * 0.9f,
+                                     currentGenome.modes[i].color.b * 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                              ImVec4(currentGenome.modes[i].color.r,
+                                     currentGenome.modes[i].color.g,
+                                     currentGenome.modes[i].color.b, 1.0f));
+        bool isSelected = (i == selectedModeIndex);
+        if (isSelected)
         {
-            // Color the mode tab with the mode's color - keep bright for unselected modes
             ImGui::PushStyleColor(ImGuiCol_Button,
-                                  ImVec4(currentGenome.modes[i].color.r * 0.8f,
-                                         currentGenome.modes[i].color.g * 0.8f,
-                                         currentGenome.modes[i].color.b * 0.8f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  ImVec4(currentGenome.modes[i].color.r * 0.9f,
-                                         currentGenome.modes[i].color.g * 0.9f,
-                                         currentGenome.modes[i].color.b * 0.9f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
                                   ImVec4(currentGenome.modes[i].color.r,
                                          currentGenome.modes[i].color.g,
                                          currentGenome.modes[i].color.b, 1.0f));
-            bool isSelected = (i == selectedModeIndex);
-            if (isSelected)
-            {
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                                      ImVec4(currentGenome.modes[i].color.r,
-                                             currentGenome.modes[i].color.g,
-                                             currentGenome.modes[i].color.b, 1.0f));
-            }
-
-            // Set text color based on brightness of the mode color
-            glm::vec3 buttonColor = isSelected ? currentGenome.modes[i].color : currentGenome.modes[i].color * 0.8f;
-            if (isColorBright(buttonColor))
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f)); // Black text
-            }
-            else
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // White text
-            }
-
-            std::string buttonLabel = std::to_string(i) + ": " + currentGenome.modes[i].name;
-            if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0)))
-            {
-                selectedModeIndex = i;
-            }
-
-            ImGui::PopStyleColor(isSelected ? 5 : 4); // Pop text color + button colors
         }
-        ImGui::EndChild();
+
+        // Set text color based on brightness of the mode color
+        glm::vec3 buttonColor = isSelected ? currentGenome.modes[i].color : currentGenome.modes[i].color * 0.8f;
+        if (isColorBright(buttonColor))
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f)); // Black text
+        }
+        else
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // White text
+        }
+        std::string buttonLabel = std::to_string(i) + ": " + currentGenome.modes[i].name;
+        if (ImGui::Button(buttonLabel.c_str(), ImVec2(-1, 0)))
+        {
+            selectedModeIndex = i;
+        } // Draw outline for selected mode (red or white depending on background)
+        if (isSelected)
+        {
+            ImDrawList *draw_list = ImGui::GetWindowDrawList();
+            ImVec2 min = ImGui::GetItemRectMin();
+            ImVec2 max = ImGui::GetItemRectMax();
+
+            // Create alternating black and white outline by drawing dashed lines
+            float dashLength = 6.0f;
+            ImU32 blackColor = IM_COL32(0, 0, 0, 255);
+            ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
+
+            // Draw top edge
+            for (float x = min.x; x < max.x; x += dashLength * 2)
+            {
+                float endX = std::min(x + dashLength, max.x);
+                draw_list->AddLine(ImVec2(x, min.y), ImVec2(endX, min.y), blackColor, 2.0f);
+                endX = std::min(x + dashLength * 2, max.x);
+                if (x + dashLength < max.x)
+                    draw_list->AddLine(ImVec2(x + dashLength, min.y), ImVec2(endX, min.y), whiteColor, 2.0f);
+            }
+
+            // Draw bottom edge
+            for (float x = min.x; x < max.x; x += dashLength * 2)
+            {
+                float endX = std::min(x + dashLength, max.x);
+                draw_list->AddLine(ImVec2(x, max.y), ImVec2(endX, max.y), blackColor, 2.0f);
+                endX = std::min(x + dashLength * 2, max.x);
+                if (x + dashLength < max.x)
+                    draw_list->AddLine(ImVec2(x + dashLength, max.y), ImVec2(endX, max.y), whiteColor, 2.0f);
+            }
+
+            // Draw left edge
+            for (float y = min.y; y < max.y; y += dashLength * 2)
+            {
+                float endY = std::min(y + dashLength, max.y);
+                draw_list->AddLine(ImVec2(min.x, y), ImVec2(min.x, endY), blackColor, 2.0f);
+                endY = std::min(y + dashLength * 2, max.y);
+                if (y + dashLength < max.y)
+                    draw_list->AddLine(ImVec2(min.x, y + dashLength), ImVec2(min.x, endY), whiteColor, 2.0f);
+            }
+
+            // Draw right edge
+            for (float y = min.y; y < max.y; y += dashLength * 2)
+            {
+                float endY = std::min(y + dashLength, max.y);
+                draw_list->AddLine(ImVec2(max.x, y), ImVec2(max.x, endY), blackColor, 2.0f);
+                endY = std::min(y + dashLength * 2, max.y);
+                if (y + dashLength < max.y)
+                    draw_list->AddLine(ImVec2(max.x, y + dashLength), ImVec2(max.x, endY), whiteColor, 2.0f);
+            }
+        }
+
+        ImGui::PopStyleColor(isSelected ? 5 : 4); // Pop text color + button colors
     }
+    ImGui::EndChild();
 
     ImGui::SameLine();
 
@@ -564,24 +610,64 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 
 void UIManager::drawParentSettings(ModeSettings &mode)
 {
-    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
-
+    drawSliderWithInput("Split Mass", &mode.splitMass, 0.1f, 10.0f, "%.2f");
     drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 30.0f, "%.1f");
+
+    // Add divider before Parent Split Orientation
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     ImGui::Text("Parent Split Orientation:");
     drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
     drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+
+    // Add divider before Parent Make Adhesion checkbox
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
 }
 
 void UIManager::drawChildSettings(const char *label, ChildSettings &child)
 {
-    ImGui::Text("%s Settings:", label);
+    // Mode selection dropdown
+    ImGui::Text("Mode:");
+    if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
+                     {
+                         UIManager* uiManager = (UIManager*)data;
+                         if (idx >= 0 && idx < uiManager->currentGenome.modes.size()) {
+                             *out_text = uiManager->currentGenome.modes[idx].name.c_str();
+                             return true;
+                         }
+                         return false; }, this, currentGenome.modes.size()))
+    {
+        // Mode selection changed - clamp to valid range
+        if (child.modeNumber >= currentGenome.modes.size())
+        {
+            child.modeNumber = currentGenome.modes.size() - 1;
+        }
+        if (child.modeNumber < 0)
+        {
+            child.modeNumber = 0;
+        }
+    }
 
-    drawSliderWithInput("Mode Number", (float *)&child.modeNumber, 0.0f,
-                        std::max(1.0f, (float)(currentGenome.modes.size() - 1)), "%.0f");
+    // Add some spacing before orientation controls
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     ImGui::Text("Orientation:");
     drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
     drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
     drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.0f°", 1.0f);
+
+    // Add divider before Keep Adhesion checkbox
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
 
     ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
 }
@@ -589,53 +675,34 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
 void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
 {
     ImGui::Checkbox("Adhesion Can Break", &adhesion.canBreak);
-
     drawSliderWithInput("Adhesion Break Force", &adhesion.breakForce, 0.1f, 100.0f);
     drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, 0.1f, 10.0f);
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
-    drawSliderWithInput("Orientation Spring Strength", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
+    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
 }
 
 void UIManager::drawSliderWithInput(const char *label, float *value, float min, float max, const char *format, float step)
 {
-    ImGui::PushID(label);
-
-    // Calculate layout with proper spacing
-    float inputWidth = 80.0f;        // Increased input field width
-    float valueDisplayWidth = 50.0f; // Width for value display on stepped sliders
+    ImGui::PushID(label);     // Calculate layout with proper spacing
+    float inputWidth = 80.0f; // Increased input field width
     float availableWidth = ImGui::GetContentRegionAvail().x;
     float spacing = ImGui::GetStyle().ItemSpacing.x;
 
-    // Calculate slider width based on whether we need value display
-    float sliderWidth;
-    if (step > 0.0f)
-    {
-        // For stepped sliders: slider + value display + input field
-        sliderWidth = availableWidth - inputWidth - valueDisplayWidth - (spacing * 2);
-    }
-    else
-    {
-        // For continuous sliders: slider + input field
-        sliderWidth = availableWidth - inputWidth - spacing;
-    }
+    // Calculate slider width: slider + input field
+    float sliderWidth = availableWidth - inputWidth - spacing;
 
     // Label on its own line
-    ImGui::Text("%s", label);
-
-    // Slider with calculated width and step support
+    ImGui::Text("%s", label); // Slider with calculated width and step support
     ImGui::PushItemWidth(sliderWidth);
     if (step > 0.0f)
     {
-        // Use stepped slider for precise increments
-        int steps = (int)((max - min) / step);
-        float normalizedValue = (*value - min) / (max - min);
-        int currentStep = (int)(normalizedValue * steps + 0.5f);
-
-        if (ImGui::SliderInt("##slider", &currentStep, 0, steps, ""))
+        // For stepped sliders, use float slider but with restricted stepping
+        if (ImGui::SliderFloat("##slider", value, min, max, format))
         {
-            *value = min + (currentStep * step);
+            // Round to nearest step
+            *value = min + step * round((*value - min) / step);
         }
     }
     else
@@ -644,17 +711,7 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         ImGui::SliderFloat("##slider", value, min, max, format);
     }
     ImGui::PopItemWidth();
-
     ImGui::SameLine();
-
-    // Value display for stepped sliders
-    if (step > 0.0f)
-    {
-        ImGui::PushItemWidth(valueDisplayWidth);
-        ImGui::Text(format, *value);
-        ImGui::PopItemWidth();
-        ImGui::SameLine();
-    }
 
     // Input field with proper width
     ImGui::PushItemWidth(inputWidth);

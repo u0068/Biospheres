@@ -82,6 +82,7 @@ struct ModeSettings
     std::string name = "Untitled Mode";
     glm::vec3 color = {1.0f, 1.0f, 1.0f}; // RGB color    // Parent Settings
     bool parentMakeAdhesion = true;
+    float splitMass = 1.0f;
     float splitInterval = 5.0f;
     glm::vec3 parentSplitOrientation = {0.0f, 0.0f, 0.0f}; // pitch, yaw, roll in degrees
 
@@ -128,10 +129,7 @@ private:
     void drawAdhesionSettings(AdhesionSettings &adhesion);
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawColorPicker(const char *label, glm::vec3 *color);
-    bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright
-
-    // Genome Editor Data
+    bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
     GenomeData currentGenome;
     int selectedModeIndex = 0;
-    bool showModeList = true;
 };

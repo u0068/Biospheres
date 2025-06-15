@@ -163,9 +163,13 @@ void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
         return;
     }
 
+    // Create a copy of the cell and enforce radius = 1.0f
+    ComputeCell correctedCell = newCell;
+    correctedCell.positionAndRadius.w = 1.0f; // Force all cells to have radius of 1
+
     // Add to CPU storage only (no immediate GPU sync)
-    cellStagingBuffer.push_back(newCell);
-    cpuCells.push_back(newCell);
+    cellStagingBuffer.push_back(correctedCell);
+    cpuCells.push_back(correctedCell);
     pendingCellCount++;
 }
 
@@ -189,12 +193,16 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
 {
     if (index >= 0 && index < cellCount)
     {
-        cpuCells[index] = newData;
+        // Create a copy of the new data and enforce radius = 1.0f
+        ComputeCell correctedData = newData;
+        correctedData.positionAndRadius.w = 1.0f; // Force all cells to have radius of 1
+
+        cpuCells[index] = correctedData;
 
         // Update selected cell cache if this is the selected cell
         if (selectedCell.isValid && selectedCell.cellIndex == index)
         {
-            selectedCell.cellData = newData;
+            selectedCell.cellData = correctedData;
         }
 
         // Update the specific cell in both GPU buffers to keep them synchronized
@@ -218,25 +226,14 @@ void CellManager::updateCells(float deltaTime)
     }
 
     if (cellCount == 0)
-        return;
-
-    // Update spatial grid before physics
+        return; // Update spatial grid before physics
     updateSpatialGrid();
-
-    // Add memory barrier to ensure all computations are complete
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Run physics computation on GPU (reads from previous, writes to current)
     runPhysicsCompute(deltaTime);
 
-    // Add memory barrier to ensure physics calculations are complete
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
     // Run position/velocity update on GPU (still working on current buffer)
     runUpdateCompute(deltaTime);
-
-    // Add memory barrier to ensure all computations are complete
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
     swapBuffers();
@@ -266,14 +263,9 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
 
         // Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentInstanceBuffer());
-
-        // Dispatch extract compute shader
-        GLuint numGroups = (cellCount + 63) / 64; // 64 threads per group
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentInstanceBuffer()); // Dispatch extract compute shader
+        GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
         extractShader->dispatch(numGroups, 1, 1);
-
-        // Memory barrier to ensure data is ready for rendering
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // Use the sphere shader
         cellShader.use(); // Set up camera matrices (only calculate once per frame, not per cell)
@@ -402,11 +394,9 @@ void CellManager::spawnCells(int count)
         glm::vec3 velocity = glm::vec3(
             (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
             (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f);
-
-        // Random mass and radius
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f); // Random mass and fixed radius of 1
         float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
-        float cellRadius = 0.5f + static_cast<float>(rand()) / RAND_MAX * 1.0f;
+        float cellRadius = 1.0f; // All cells have the same radius of 1
 
         ComputeCell newCell;
         newCell.positionAndRadius = glm::vec4(position, cellRadius);
@@ -451,24 +441,19 @@ void CellManager::updateSpatialGrid()
 {
     if (cellCount == 0)
         return;
-
     TimerGPU timer("Spatial Grid Update");
 
     // Step 1: Clear grid counts
     runGridClear();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Step 2: Count cells per grid cell
     runGridAssign();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Step 3: Calculate prefix sum for offsets
     runGridPrefixSum();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Step 4: Insert cells into grid
     runGridInsert();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 void CellManager::cleanupSpatialGrid()
@@ -550,7 +535,7 @@ void CellManager::runGridInsert()
     gridInsertShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
     gridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     gridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
-    gridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);    // Use previous buffer for spatial grid to match physics compute input
+    gridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID); // Use previous buffer for spatial grid to match physics compute input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getPreviousCellBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentGridOffsetBuffer());
