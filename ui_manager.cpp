@@ -9,7 +9,7 @@
 
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
-    ImGui::Begin("Cell Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Cell Inspector", nullptr, getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize));
 
     if (cellManager.hasSelectedCell())
     {
@@ -126,7 +126,7 @@ void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
 
 void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor)
 {
-    ImGui::Begin("Advanced Performance Monitor", nullptr);
+    ImGui::Begin("Advanced Performance Monitor", nullptr, getWindowFlags());
 
     // === FPS and Frame Time Section ===
     ImGui::Text("Performance Overview");
@@ -330,10 +330,25 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
 void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
 {
-    ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Camera & Controls", nullptr, getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize));
     glm::vec3 camPos = camera.getPosition();
     ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
     ImGui::Separator();
+    
+    // Window lock/unlock button
+    ImGui::Text("Window Management:");
+    if (ImGui::Button(windowsLocked ? "Unlock All Windows" : "Lock All Windows"))
+    {
+        windowsLocked = !windowsLocked;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Lock/unlock position and size of all UI windows");
+    }
+    ImGui::Separator();
+    
     ImGui::Text("Camera Controls:");
     ImGui::BulletText("WASD - Move");
     ImGui::BulletText("Q/E - Roll");
@@ -356,11 +371,21 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
     ImGui::End();
 }
 
+// Helper method to get window flags based on lock state
+int UIManager::getWindowFlags(int baseFlags) const
+{
+    if (windowsLocked)
+    {
+        return baseFlags | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    }
+    return baseFlags;
+}
+
 void UIManager::renderGenomeEditor()
 {
     // Set minimum window size constraints
     ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::Begin("Genome Editor", nullptr);
+    ImGui::Begin("Genome Editor", nullptr, getWindowFlags());
 
     // Genome Name and Save/Load Section
     ImGui::Text("Genome Name:");
@@ -819,7 +844,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager)
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     
-    if (ImGui::Begin("Time Scrubber", nullptr, ImGuiWindowFlags_None))
+    if (ImGui::Begin("Time Scrubber", nullptr, getWindowFlags(ImGuiWindowFlags_None)))
     {
         // Get available width for responsive layout
         float available_width = ImGui::GetContentRegionAvail().x;

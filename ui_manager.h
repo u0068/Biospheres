@@ -74,6 +74,9 @@ public:
     GenomeData currentGenome;
 
 private:
+    // Helper to get window flags based on lock state
+    int getWindowFlags(int baseFlags = 0) const;
+    
     void drawToolSelector(ToolState &toolState);
     void drawToolSettings(ToolState &toolState, CellManager &cellManager); // Genome Editor Helper Functions
     void drawModeSelector(GenomeData &genome);
@@ -90,4 +93,7 @@ private:
     float currentTime = 0.0f;
     float maxTime = 100.0f;
     char timeInputBuffer[32] = "0.00";
+    
+    // Window management
+    bool windowsLocked = false;
 };
