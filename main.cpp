@@ -62,7 +62,8 @@ int main()
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
 		//cellManager.spawnCells(1);
-		//cellManager.addCellToStagingBuffer(ComputeCell());
+		cellManager.addGenomeToBuffer(uiManager.currentGenome);
+		cellManager.addCellToStagingBuffer(ComputeCell());
 		
 
 		AudioEngine audioEngine;

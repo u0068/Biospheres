@@ -829,8 +829,8 @@ void UIManager::renderTimeScrubber(CellManager& cellManager)
         if (ImGui::Button("Re-simulate!")) // Get rid of this later when re-simulation is automatic
         {
             cellManager.resetSimulation();
-            cellManager.addCellToStagingBuffer(ComputeCell());
             cellManager.addGenomeToBuffer(currentGenome);
+            cellManager.addCellToStagingBuffer(ComputeCell());
         }
         
         // Calculate available width for slider (reserve space for input field)

@@ -71,6 +71,7 @@ public:
 
     // Performance monitoring helpers
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
+    GenomeData currentGenome;
 
 private:
     void drawToolSelector(ToolState &toolState);
@@ -83,7 +84,6 @@ private:
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawColorPicker(const char *label, glm::vec3 *color);
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
-    GenomeData currentGenome;
     int selectedModeIndex = 0;
     
     // Time Scrubber Data
