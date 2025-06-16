@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <string>
 #include <cmath>
+#include <cstdlib>
+#include <cstdio>
 
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
@@ -590,18 +592,35 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
         {
             drawChildSettings("Child A", mode.childA);
             ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Child B Settings"))
+        }        if (ImGui::BeginTabItem("Child B Settings"))
         {
             drawChildSettings("Child B", mode.childB);
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Adhesion Settings"))
+        // Grey out Adhesion Settings tab when Parent Make Adhesion is not checked
+        bool adhesionTabEnabled = mode.parentMakeAdhesion;
+        if (!adhesionTabEnabled)
         {
-            drawAdhesionSettings(mode.adhesion);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+        }
+        
+        if (ImGui::BeginTabItem("Adhesion Settings", nullptr, adhesionTabEnabled ? ImGuiTabItemFlags_None : ImGuiTabItemFlags_NoTooltip))
+        {
+            if (adhesionTabEnabled)
+            {
+                drawAdhesionSettings(mode.adhesion);
+            }
+            else
+            {
+                ImGui::TextDisabled("Enable 'Parent Make Adhesion' to configure adhesion settings");
+            }
             ImGui::EndTabItem();
+        }
+        
+        if (!adhesionTabEnabled)
+        {
+            ImGui::PopStyleVar();
         }
 
         ImGui::EndTabBar();
@@ -797,4 +816,64 @@ void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float 
         perfMonitor.maxFrameTime = 0.0f;
         resetTimer = 0.0f;
     }
+}
+
+void UIManager::renderTimeScrubber()
+{
+    // Set window size and position for a long horizontal resizable window
+    ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
+    
+    if (ImGui::Begin("Time Scrubber", nullptr, ImGuiWindowFlags_None))
+    {
+        // Get available width for responsive layout
+        float available_width = ImGui::GetContentRegionAvail().x;
+          // Title and main slider on one line
+        ImGui::Text("Time Scrubber");
+        
+        // Calculate available width for slider (reserve space for input field)
+        float input_width = 80.0f;
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+        float slider_width = available_width - input_width - spacing;
+        
+        // Make the slider take almost all available width
+        ImGui::SetNextItemWidth(slider_width);
+        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
+        {
+            // Update input buffer when slider changes
+            snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+        }
+          // Time input and controls on the same line
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(input_width);
+        if (ImGui::InputText("##TimeInput", timeInputBuffer, sizeof(timeInputBuffer), ImGuiInputTextFlags_EnterReturnsTrue))
+        {
+            // Parse input and update current time
+            float inputTime = (float)atof(timeInputBuffer);
+            if (inputTime >= 0.0f && inputTime <= maxTime)
+            {
+                currentTime = inputTime;
+            }
+            else
+            {
+                // Reset to current time if input is invalid
+                snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+            }
+        }
+        
+        // Max time control on a separate line but compact
+        ImGui::Text("Max Time:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(100.0f);
+        if (ImGui::DragFloat("##MaxTime", &maxTime, 1.0f, 1.0f, 10000.0f, "%.2f"))
+        {
+            // Ensure current time doesn't exceed max time
+            if (currentTime > maxTime)
+            {
+                currentTime = maxTime;
+                snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+            }
+        }
+    }
+    ImGui::End();
 }

@@ -248,6 +248,9 @@ int main()
 			// Genome Editor
 			uiManager.renderGenomeEditor();
 
+			// Time Scrubber
+			uiManager.renderTimeScrubber();
+
 			// Render the demo window if enabled
 			if (config::showDemoWindow)
 			{
