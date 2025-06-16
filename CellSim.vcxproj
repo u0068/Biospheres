@@ -218,6 +218,7 @@
     <None Include="shaders\cell_physics_spatial.comp" />
     <None Include="shaders\cell_update.comp" />
     <None Include="shaders\cell_update_enhanced.comp" />
+    <None Include="shaders\cell_update_internal.comp" />
     <None Include="shaders\extract_instances.comp" />
     <None Include="shaders\grid_assign.comp" />
     <None Include="shaders\grid_clear.comp" />

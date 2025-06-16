@@ -205,5 +205,6 @@
     <None Include="shaders\cell_update_enhanced.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\cell_update_internal.comp" />
   </ItemGroup>
 </Project>

@@ -3,6 +3,14 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+struct GPUMode {
+    glm::vec4 color;        // R, G, B, padding
+    float splitInterval;
+    float genomeOffset;
+    glm::vec2 splitOrientation; // Pitch, Yaw
+    glm::ivec2 childModes;
+};
+
 // Genome Editor Data Structures
 struct AdhesionSettings
 {
@@ -29,7 +37,7 @@ struct ModeSettings
     bool parentMakeAdhesion = true;
     float splitMass = 1.0f;
     float splitInterval = 5.0f;
-    glm::vec3 parentSplitOrientation = { 0.0f, 0.0f, 0.0f }; // pitch, yaw, roll in degrees
+    glm::vec2 parentSplitOrientation = { 0.0f, 0.0f}; // pitch, yaw in degrees
 
     // Child Settings
     ChildSettings childA;
@@ -37,7 +45,13 @@ struct ModeSettings
 
     // Adhesion Settings
     AdhesionSettings adhesion;
+
+    GPUMode getPacked()
+    {
+
+    }
 };
+
 
 struct GenomeData
 {
@@ -51,4 +65,5 @@ struct GenomeData
         modes.push_back(ModeSettings());
         modes[0].name = "Default Mode";
     }
+
 };

@@ -7,6 +7,8 @@
 #include <cmath>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+
+#include "genome.h"
 #include "timer.h"
 
 CellManager::CellManager()
@@ -116,6 +118,10 @@ void CellManager::initializeGPUBuffers()
         glCreateBuffers(1, &instanceBuffer[i]);
         glNamedBufferData(instanceBuffer[i], config::MAX_CELLS * sizeof(glm::vec4), nullptr, GL_DYNAMIC_DRAW);
     }
+
+    // Create single buffered genome buffer
+    glCreateBuffers(1, &genomeBuffer);
+    glNamedBufferData(genomeBuffer, config::MAX_CELLS * sizeof(GPUMode), nullptr, GL_DYNAMIC_DRAW);
 
     // Setup the sphere mesh to use our current instance buffer
     sphereMesh.setupInstanceBuffer(getCurrentInstanceBuffer());

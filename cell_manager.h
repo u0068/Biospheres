@@ -30,6 +30,9 @@ struct CellManager
     int currentBufferIndex = 0;        // Index of current buffer (0 or 1)
     int previousBufferIndex = 1;       // Index of previous buffer (1 or 0)
 
+    // Genome buffer, no need for double buffering as, ironically, genomes are immutable
+    GLuint genomeBuffer = 0;
+
     // Spatial partitioning buffers - Double buffered
     GLuint gridBuffer[2] = {0, 0};       // SSBO for grid cell data (stores cell indices)
     GLuint gridCountBuffer[2] = {0, 0};  // SSBO for grid cell counts
