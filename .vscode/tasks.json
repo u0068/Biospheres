@@ -20,6 +20,25 @@
             ]
         },
         {
+            "label": "Build Debug (Solution)",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "\"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat\" && msbuild \"Biospheres 2.sln\" /p:Configuration=Debug /p:Platform=x64 /verbosity:minimal"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ]
+        },
+        {
             "label": "Build Release (MSBuild)",
             "type": "shell",
             "command": "${workspaceFolder}/build-release.bat",
