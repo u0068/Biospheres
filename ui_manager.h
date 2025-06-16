@@ -86,14 +86,14 @@ private:
     void drawAdhesionSettings(AdhesionSettings &adhesion);
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawColorPicker(const char *label, glm::vec3 *color);
+    void addTooltip(const char* tooltip); // Helper to add question mark tooltips
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
     int selectedModeIndex = 0;
-    
-    // Time Scrubber Data
+      // Time Scrubber Data
     float currentTime = 0.0f;
     float maxTime = 100.0f;
     char timeInputBuffer[32] = "0.00";
     
     // Window management
-    bool windowsLocked = false;
+    bool windowsLocked = true;
 };
