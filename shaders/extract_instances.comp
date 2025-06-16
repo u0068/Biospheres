@@ -58,5 +58,5 @@ void main() {
     
     float myRadius = pow(cellData[index].positionAndMass.w, 1./3.);
     instanceData[index].positionAndRadius = vec4(cellData[index].positionAndMass.xyz, myRadius);
-    instanceData[index].color = vec4(1.);//modes[cellData[index].modeIndex].color;
+    instanceData[index].color = vec4(modes[cellData[index].modeIndex].color, 0.);
 }

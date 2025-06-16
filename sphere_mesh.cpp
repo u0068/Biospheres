@@ -92,11 +92,18 @@ void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
     // Associate instance buffer with slot 1
     glVertexArrayVertexBuffer(VAO, 1, instanceDataBuffer, 0, 2*sizeof(glm::vec4));
 
-    // Set instance attribute at location = 2
+    // Attribute 2: positionAndRadius (offset 0)
     glEnableVertexArrayAttrib(VAO, 2);
     glVertexArrayAttribFormat(VAO, 2, 4, GL_FLOAT, GL_FALSE, 0);
-    glVertexArrayAttribBinding(VAO, 2, 1); // Comes from binding index 1
-    glVertexArrayBindingDivisor(VAO, 1, 1); // Instanced
+    glVertexArrayAttribBinding(VAO, 2, 1);
+
+    // Attribute 3: color (offset sizeof(vec4))
+    glEnableVertexArrayAttrib(VAO, 3);
+    glVertexArrayAttribFormat(VAO, 3, 4, GL_FLOAT, GL_FALSE, sizeof(glm::vec4));
+    glVertexArrayAttribBinding(VAO, 3, 1);
+
+    // Set divisor to 1 for instancing
+    glVertexArrayBindingDivisor(VAO, 1, 1);
 }
 
 void SphereMesh::render(int instanceCount) const {
