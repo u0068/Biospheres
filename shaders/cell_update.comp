@@ -5,9 +5,19 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 // Cell data structure for compute shader
 struct ComputeCell {
-    vec4 positionAndRadius;  // x, y, z, radius
-    vec4 velocityAndMass;    // vx, vy, vz, mass
-    vec4 acceleration;       // ax, ay, az, unused
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec3 velocity;
+    vec3 acceleration;
+    vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
 };
 
 // Shader storage buffer objects
@@ -35,29 +45,29 @@ void main() {
     }
     
     // Update velocity based on acceleration
-    cells[index].velocityAndMass.xyz += cells[index].acceleration.xyz * u_deltaTime;
+    cells[index].velocity += cells[index].acceleration.xyz * u_deltaTime;
     
     // Apply damping
-    cells[index].velocityAndMass.xyz *= u_damping;
+    cells[index].velocity *= u_damping;
     
     // Update position based on velocity (Euler integration)
-    cells[index].positionAndRadius.xyz += cells[index].velocityAndMass.xyz * u_deltaTime;
+    cells[index].positionAndMass.xyz += cells[index].velocity * u_deltaTime;
     
     // Optional: Add boundary constraints here
     // For example, keep cells within a certain bounds
-    vec3 pos = cells[index].positionAndRadius.xyz;
+    vec3 pos = cells[index].positionAndMass.xyz;
     float bounds = 50.0;
     
     if (abs(pos.x) > bounds) {
-        cells[index].positionAndRadius.x = sign(pos.x) * bounds;
-        cells[index].velocityAndMass.x *= -0.8; // Bounce with energy loss
+        cells[index].positionAndMass.x = sign(pos.x) * bounds;
+        cells[index].velocity.x *= -0.8; // Bounce with energy loss
     }
     if (abs(pos.y) > bounds) {
-        cells[index].positionAndRadius.y = sign(pos.y) * bounds;
-        cells[index].velocityAndMass.y *= -0.8;
+        cells[index].positionAndMass.y = sign(pos.y) * bounds;
+        cells[index].velocity.y *= -0.8;
     }
     if (abs(pos.z) > bounds) {
-        cells[index].positionAndRadius.z = sign(pos.z) * bounds;
-        cells[index].velocityAndMass.z *= -0.8;
+        cells[index].positionAndMass.z = sign(pos.z) * bounds;
+        cells[index].velocity.z *= -0.8;
     }
 }

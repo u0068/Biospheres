@@ -181,13 +181,7 @@
     <None Include="shaders\grid_prefix_sum.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
-    <None Include="shaders\apply_cell_additions.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
     <None Include="shaders\cell_physics_spatial.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cells_raymarching.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\grid_assign.comp">
@@ -199,12 +193,11 @@
     <None Include="shaders\grid_insert.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\cell_update_internal.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
     <None Include="shaders\cell_update.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
-    <None Include="shaders\cell_update_enhanced.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cell_update_internal.comp" />
   </ItemGroup>
 </Project>

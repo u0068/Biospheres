@@ -8,16 +8,32 @@
 #include "config.h"
 #include "sphere_mesh.h"
 #include "config.h"
+#include "genome.h"
 
 // Forward declaration
 class Camera;
 
 // GPU compute cell structure matching the compute shader
-struct ComputeCell
-{
-    glm::vec4 positionAndRadius; // x, y, z, radius
-    glm::vec4 velocityAndMass;   // vx, vy, vz, mass
-    glm::vec4 acceleration;      // ax, ay, az, unused
+struct ComputeCell {
+    // Physics:
+    glm::vec4 positionAndMass{ glm::vec4(0, 0, 0, 1) };       // x, y, z, mass
+    glm::vec3 velocity{};
+    glm::vec3 acceleration{};
+    glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
+    glm::vec4 angularVelocity{};
+    glm::vec4 angularAcceleration{};
+
+    // Internal:
+    glm::vec4 signallingSubstances{}; // 4 substances for now
+    int modeIndex{ 0 };
+    float age{ 0 };                      // also used for split timer
+    float toxins{ 0 };
+    float nitrates{ 1 };
+
+    float getRadius() const
+    {
+        return pow(positionAndMass.w, 1 / 3);
+    }
 };
 
 struct CellManager
@@ -38,6 +54,16 @@ struct CellManager
     GLuint gridCountBuffer[2] = {0, 0};  // SSBO for grid cell counts
     GLuint gridOffsetBuffer[2] = {0, 0}; // SSBO for grid cell starting offsets
 
+    // Buffer bindings, universal across all shaders for convenience
+	// Odd is previous, Even is current
+    // 0    : modes(single buffer)
+    // 1, 2 : cellBuffer
+    // 3, 4 : instanceBuffer
+    // 5, 6 : gridBuffer
+    // 7, 8 : gridCountBuffer
+    // 9, 10 : gridOffsetBuffer
+    // 11 onwards: any future buffers, like type ECS stuff
+
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
 
@@ -48,15 +74,16 @@ struct CellManager
     float readbackCooldown = 0.0f; // Timer to limit readback frequency
 
     // Compute shaders
-    Shader *physicsShader = nullptr;
-    Shader *updateShader = nullptr;
-    Shader *extractShader = nullptr; // For extracting instance data efficiently
+    Shader* physicsShader = nullptr;
+    Shader* updateShader = nullptr;
+    Shader* extractShader = nullptr; // For extracting instance data efficiently
+    Shader* internalUpdateShader = nullptr; // For extracting instance data efficiently
 
     // Spatial partitioning compute shaders
-    Shader *gridClearShader = nullptr;     // Clear grid counts
-    Shader *gridAssignShader = nullptr;    // Assign cells to grid
-    Shader *gridPrefixSumShader = nullptr; // Calculate grid offsets
-    Shader *gridInsertShader = nullptr;    // Insert cells into grid
+    Shader* gridClearShader = nullptr;     // Clear grid counts
+    Shader* gridAssignShader = nullptr;    // Assign cells to grid
+    Shader* gridPrefixSumShader = nullptr; // Calculate grid offsets
+    Shader* gridInsertShader = nullptr;    // Insert cells into grid
 
     // CPU-side storage for initialization and debugging
     std::vector<ComputeCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
@@ -78,13 +105,15 @@ struct CellManager
     // So we will define the functions in a separate file to avoid recompiling the whole project when we change the implementation.
 
     void initializeGPUBuffers();
-    void spawnCells(int count = DEFAULT_CELL_COUNT);
+    void resetSimulation();
+    //void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera);
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
     void addCellToStagingBuffer(const ComputeCell &newCell);
     void addCell(const ComputeCell &newCell) { addCellToStagingBuffer(newCell); }
     void addStagedCellsToGPUBuffer();
+    void addGenomeToBuffer(GenomeData& genomeData);
     void updateCells(float deltaTime);
     void cleanup();
 
@@ -169,6 +198,7 @@ struct CellManager
 private:
     void runPhysicsCompute(float deltaTime);
     void runUpdateCompute(float deltaTime);
+    void runInternalUpdateCompute(float deltaTime);
 
     // Spatial grid helper functions
     void runGridClear();

@@ -18,10 +18,10 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         ImGui::Separator();
 
         // Display current properties
-        glm::vec3 position = glm::vec3(selectedCell.cellData.positionAndRadius);
-        glm::vec3 velocity = glm::vec3(selectedCell.cellData.velocityAndMass);
-        float mass = selectedCell.cellData.velocityAndMass.w;
-        float radius = selectedCell.cellData.positionAndRadius.w;
+        glm::vec3 position = glm::vec3(selectedCell.cellData.positionAndMass);
+        glm::vec3 velocity = glm::vec3(selectedCell.cellData.velocity);
+        float mass = selectedCell.cellData.positionAndMass.w;
+        float radius = selectedCell.cellData.getRadius();
 
         ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
         ImGui::Text("Velocity: (%.2f, %.2f, %.2f)", velocity.x, velocity.y, velocity.z);
@@ -40,9 +40,9 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         float pos[3] = {position.x, position.y, position.z};
         if (ImGui::DragFloat3("Position", pos, 0.1f))
         {
-            editedCell.positionAndRadius.x = pos[0];
-            editedCell.positionAndRadius.y = pos[1];
-            editedCell.positionAndRadius.z = pos[2];
+            editedCell.positionAndMass.x = pos[0];
+            editedCell.positionAndMass.y = pos[1];
+            editedCell.positionAndMass.z = pos[2];
             changed = true;
         }
 
@@ -50,21 +50,16 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         float vel[3] = {velocity.x, velocity.y, velocity.z};
         if (ImGui::DragFloat3("Velocity", vel, 0.1f))
         {
-            editedCell.velocityAndMass.x = vel[0];
-            editedCell.velocityAndMass.y = vel[1];
-            editedCell.velocityAndMass.z = vel[2];
+            editedCell.velocity.x = vel[0];
+            editedCell.velocity.y = vel[1];
+            editedCell.velocity.z = vel[2];
             changed = true;
         }
 
         // Mass editing
         if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 50.0f))
         {
-            editedCell.velocityAndMass.w = mass;
-            changed = true;
-        } // Radius editing (always enforce radius = 1)
-        if (ImGui::DragFloat("Radius", &radius, 0.1f, 0.1f, 5.0f))
-        {
-            editedCell.positionAndRadius.w = 1.0f; // Force radius to always be 1
+            editedCell.positionAndMass.w = mass;
             changed = true;
         }
 
@@ -818,7 +813,7 @@ void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float 
     }
 }
 
-void UIManager::renderTimeScrubber()
+void UIManager::renderTimeScrubber(CellManager& cellManager)
 {
     // Set window size and position for a long horizontal resizable window
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
@@ -830,6 +825,13 @@ void UIManager::renderTimeScrubber()
         float available_width = ImGui::GetContentRegionAvail().x;
           // Title and main slider on one line
         ImGui::Text("Time Scrubber");
+        ImGui::SameLine();
+        if (ImGui::Button("Re-simulate!")) // Get rid of this later when re-simulation is automatic
+        {
+            cellManager.resetSimulation();
+            cellManager.addCellToStagingBuffer(ComputeCell());
+            cellManager.addGenomeToBuffer(currentGenome);
+        }
         
         // Calculate available width for slider (reserve space for input field)
         float input_width = 80.0f;

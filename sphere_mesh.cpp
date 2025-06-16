@@ -90,7 +90,7 @@ void SphereMesh::setupBuffers() {
 
 void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
     // Associate instance buffer with slot 1
-    glVertexArrayVertexBuffer(VAO, 1, instanceDataBuffer, 0, sizeof(glm::vec4));
+    glVertexArrayVertexBuffer(VAO, 1, instanceDataBuffer, 0, 2*sizeof(glm::vec4));
 
     // Set instance attribute at location = 2
     glEnableVertexArrayAttrib(VAO, 2);

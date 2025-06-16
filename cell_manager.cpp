@@ -171,7 +171,7 @@ void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
 
     // Create a copy of the cell and enforce radius = 1.0f
     ComputeCell correctedCell = newCell;
-    correctedCell.positionAndRadius.w = 1.0f; // Force all cells to have radius of 1
+    correctedCell.positionAndMass.w = 1.0f; // Force all cells to have radius of 1
 
     // Add to CPU storage only (no immediate GPU sync)
     cellStagingBuffer.push_back(correctedCell);
@@ -184,6 +184,37 @@ void CellManager::addStagedCellsToGPUBuffer()
     addCellsToGPUBuffer(cellStagingBuffer);
     cellStagingBuffer.clear(); // Clear after adding to GPU buffer
     pendingCellCount = 0;      // Reset pending count
+}
+
+void CellManager::addGenomeToBuffer(GenomeData& genomeData) {
+    int genomeBaseOffset = 0; // Later make it add to the end of the buffer
+
+    std::vector<GPUMode> gpuModes;
+    gpuModes.reserve(genomeData.modes.size());
+
+    for (size_t i = 0; i < genomeData.modes.size(); ++i) {
+        const ModeSettings& mode = genomeData.modes[i];
+
+        GPUMode gmode{};
+        gmode.color = glm::vec4(mode.color, 0.0);
+        gmode.splitInterval = mode.splitInterval;
+        gmode.genomeOffset = genomeBaseOffset;
+
+        // Convert degrees to radians
+        gmode.splitOrientation = glm::radians(mode.parentSplitOrientation);
+
+        // Store child mode indices
+        gmode.childModes = glm::ivec2(mode.childA.modeNumber, mode.childB.modeNumber);
+
+        gpuModes.push_back(gmode);
+    }
+
+    glNamedBufferSubData(
+        genomeBuffer,
+        genomeBaseOffset,
+        sizeof(GPUMode),
+        gpuModes.data()
+    );
 }
 
 ComputeCell CellManager::getCellData(int index) const
@@ -201,7 +232,7 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
     {
         // Create a copy of the new data and enforce radius = 1.0f
         ComputeCell correctedData = newData;
-        correctedData.positionAndRadius.w = 1.0f; // Force all cells to have radius of 1
+        correctedData.positionAndMass.w = 1.0f; // Force all cells to have radius of 1
 
         cpuCells[index] = correctedData;
 
@@ -269,7 +300,8 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
 
         // Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentInstanceBuffer()); // Dispatch extract compute shader
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, genomeBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentInstanceBuffer()); // Dispatch extract compute shader
         GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
         extractShader->dispatch(numGroups, 1, 1);
 
@@ -297,8 +329,8 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         // Set selection highlighting uniforms
         if (selectedCell.isValid)
         {
-            glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndRadius);
-            float selectedRadius = selectedCell.cellData.positionAndRadius.w;
+            glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndMass);
+            float selectedRadius = selectedCell.cellData.getRadius();
             cellShader.setVec3("uSelectedCellPos", selectedPos);
             cellShader.setFloat("uSelectedCellRadius", selectedRadius);
         }
@@ -380,38 +412,63 @@ void CellManager::runUpdateCompute(float deltaTime)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void CellManager::spawnCells(int count)
+void CellManager::runInternalUpdateCompute(float deltaTime)
 {
-    TimerCPU cpuTimer("Spawning Cells", true);
+    TimerGPU timer("Cell Update Compute");
 
-    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i)
-    {
-        // Random position within spawn radius
-        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
-        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
-        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
+    internalUpdateShader->use();
 
-        glm::vec3 position = glm::vec3(
-            radius * sin(angle2) * cos(angle1),
-            radius * cos(angle2),
-            radius * sin(angle2) * sin(angle1));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, genomeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCurrentCellBuffer());
 
-        // Random velocity
-        glm::vec3 velocity = glm::vec3(
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f); // Random mass and fixed radius of 1
-        float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
-        float cellRadius = 1.0f; // All cells have the same radius of 1
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 63) / 64; // Round up division
+    internalUpdateShader->dispatch(numGroups, 1, 1);
 
-        ComputeCell newCell;
-        newCell.positionAndRadius = glm::vec4(position, cellRadius);
-        newCell.velocityAndMass = glm::vec4(velocity, mass);
-        newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
-
-        addCellToStagingBuffer(newCell);
-    }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
+
+void CellManager::resetSimulation()
+{
+    initializeGPUBuffers();
+    cellCount = 0;
+
+    std::cout << "Reset simulation\n";
+}
+
+//void CellManager::spawnCells(int count) // no longer functional, needs to be updated for the new cell struct
+//{
+//    TimerCPU cpuTimer("Spawning Cells", true);
+//
+//    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i)
+//    {
+//        // Random position within spawn radius
+//        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
+//        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
+//        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
+//
+//        glm::vec3 position = glm::vec3(
+//            radius * sin(angle2) * cos(angle1),
+//            radius * cos(angle2),
+//            radius * sin(angle2) * sin(angle1));
+//
+//        // Random velocity
+//        glm::vec3 velocity = glm::vec3(
+//            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+//            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+//            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f); // Random mass and fixed radius of 1
+//        float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
+//        float cellRadius = 1.0f; // All cells have the same radius of 1
+//
+//        ComputeCell newCell;
+//        newCell.positionAndRadius = glm::vec4(position, cellRadius);
+//        newCell.velocityAndMass = glm::vec4(velocity, mass);
+//        newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
+//
+//        addCellToStagingBuffer(newCell);
+//    }
+//}
 
 // Spatial partitioning
 void CellManager::initializeSpatialGrid()
@@ -598,7 +655,7 @@ void CellManager::handleMouseInput(const glm::vec2 &mousePos, const glm::vec2 &s
             selectedCell.isValid = true;
 
             // Calculate the distance from camera to the selected cell
-            glm::vec3 cellPosition = glm::vec3(selectedCell.cellData.positionAndRadius);
+            glm::vec3 cellPosition = glm::vec3(selectedCell.cellData.positionAndMass);
             selectedCell.dragDistance = glm::distance(rayOrigin, cellPosition);
 
             // Calculate drag offset for smooth dragging
@@ -644,8 +701,8 @@ int CellManager::selectCellAtPosition(const glm::vec3 &rayOrigin, const glm::vec
 
     for (int i = 0; i < cellCount; i++)
     {
-        glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndRadius);
-        float cellRadius = cpuCells[i].positionAndRadius.w;
+        glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndMass);
+        float cellRadius = cpuCells[i].getRadius();
 
         float intersectionDistance;
         if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance))
@@ -682,14 +739,14 @@ void CellManager::dragSelectedCell(const glm::vec3 &newWorldPosition)
         return;
 
     // Update CPU cell data
-    cpuCells[selectedCell.cellIndex].positionAndRadius.x = newWorldPosition.x;
-    cpuCells[selectedCell.cellIndex].positionAndRadius.y = newWorldPosition.y;
-    cpuCells[selectedCell.cellIndex].positionAndRadius.z = newWorldPosition.z;
+    cpuCells[selectedCell.cellIndex].positionAndMass.x = newWorldPosition.x;
+    cpuCells[selectedCell.cellIndex].positionAndMass.y = newWorldPosition.y;
+    cpuCells[selectedCell.cellIndex].positionAndMass.z = newWorldPosition.z;
 
     // Clear velocity when dragging to prevent conflicts with physics
-    cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
-    cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
-    cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f; // Update cached selected cell data
+    cpuCells[selectedCell.cellIndex].velocity.x = 0.0f;
+    cpuCells[selectedCell.cellIndex].velocity.y = 0.0f;
+    cpuCells[selectedCell.cellIndex].velocity.z = 0.0f; // Update cached selected cell data
     selectedCell.cellData = cpuCells[selectedCell.cellIndex];
 
     // Update GPU buffers immediately to ensure compute shaders see the new position
@@ -714,9 +771,9 @@ void CellManager::endDrag()
     if (isDraggingCell && selectedCell.isValid)
     {
         // Reset velocity to zero when ending drag to prevent sudden jumps
-        cpuCells[selectedCell.cellIndex].velocityAndMass.x = 0.0f;
-        cpuCells[selectedCell.cellIndex].velocityAndMass.y = 0.0f;
-        cpuCells[selectedCell.cellIndex].velocityAndMass.z = 0.0f; // Update the GPU buffers with the final state
+        cpuCells[selectedCell.cellIndex].velocity.x = 0.0f;
+        cpuCells[selectedCell.cellIndex].velocity.y = 0.0f;
+        cpuCells[selectedCell.cellIndex].velocity.z = 0.0f; // Update the GPU buffers with the final state
         for (int i = 0; i < 2; i++)
         {
             glNamedBufferSubData(cellBuffer[i],
@@ -743,7 +800,7 @@ void CellManager::syncCellPositionsFromGPU()
         for (int i = 0; i < cellCount; i++)
         {
             // Only sync position and radius, preserve velocity and mass from CPU
-            cpuCells[i].positionAndRadius = gpuData[i].positionAndRadius;
+            cpuCells[i].positionAndMass = gpuData[i].positionAndMass;
         }
 
         glUnmapNamedBuffer(getCurrentCellBuffer());

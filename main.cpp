@@ -62,11 +62,8 @@ int main()
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
 		//cellManager.spawnCells(1);
-		cellManager.addCellToStagingBuffer(ComputeCell(
-			glm::vec4(0., 0., 0., 1.),
-			glm::vec4(0., 0., 0., 1.),
-			glm::vec4(0., 0., 0., 0.)
-		));
+		//cellManager.addCellToStagingBuffer(ComputeCell());
+		
 
 		AudioEngine audioEngine;
 		audioEngine.init();
@@ -246,7 +243,7 @@ int main()
 			uiManager.renderGenomeEditor();
 
 			// Time Scrubber
-			uiManager.renderTimeScrubber();
+			uiManager.renderTimeScrubber(cellManager);
 
 			// Render the demo window if enabled
 			if (config::showDemoWindow)

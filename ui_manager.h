@@ -67,7 +67,7 @@ public:
     void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor);
     void renderCameraControls(CellManager &cellmanager, Camera &camera);
     void renderGenomeEditor();
-    void renderTimeScrubber(); // New time scrubber window
+    void renderTimeScrubber(CellManager& cellManager); // New time scrubber window
 
     // Performance monitoring helpers
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);

@@ -5,9 +5,19 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 // Cell data structure for compute shader
 struct ComputeCell {
-    vec4 positionAndRadius;  // x, y, z, radius
-    vec4 velocityAndMass;    // vx, vy, vz, mass
-    vec4 acceleration;       // ax, ay, az, unused
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec3 velocity;
+    vec3 acceleration;
+    vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
 };
 
 // Shader storage buffer objects
@@ -61,7 +71,7 @@ void main() {
     }
     
     // Get cell position
-    vec3 cellPos = cells[cellIndex].positionAndRadius.xyz;
+    vec3 cellPos = cells[cellIndex].positionAndMass.xyz;
     
     // Convert to grid coordinates
     ivec3 gridPos = worldToGrid(cellPos);

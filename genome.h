@@ -3,11 +3,13 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "glad/glad.h"
+
 struct GPUMode {
-    glm::vec4 color;        // R, G, B, padding
+    glm::vec4 color;            // R, G, B padding
     float splitInterval;
-    float genomeOffset;
-    glm::vec2 splitOrientation; // Pitch, Yaw
+    int genomeOffset;         // Offset into global buffer where this genome starts
+    glm::vec2 splitOrientation; // pitch, yaw (in radians)
     glm::ivec2 childModes;
 };
 
@@ -45,13 +47,7 @@ struct ModeSettings
 
     // Adhesion Settings
     AdhesionSettings adhesion;
-
-    GPUMode getPacked()
-    {
-
-    }
 };
-
 
 struct GenomeData
 {
@@ -65,5 +61,4 @@ struct GenomeData
         modes.push_back(ModeSettings());
         modes[0].name = "Default Mode";
     }
-
 };

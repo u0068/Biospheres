@@ -5,6 +5,7 @@ in vec3 vNormal;
 in vec3 vCameraPos;
 in float vRadius;
 in vec3 vInstanceCenter;
+in vec3 vBaseColor;
 
 out vec4 fragColor;
 
@@ -33,7 +34,7 @@ void main() {
     float specular = pow(max(0.0, dot(viewDir, reflectDir)), 32.0) * 0.3;
     
     // Base color is white by default
-    vec3 baseColor = vec3(0.9, 0.9, 0.9); // Slightly off-white for better lighting visibility
+    vec3 baseColor = vBaseColor; // Slightly off-white for better lighting visibility
     
     // Highlight selected cell
     if (isSelected) {
