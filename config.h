@@ -30,5 +30,5 @@ namespace config
 	constexpr int TOTAL_GRID_CELLS{GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION};
 
 	inline bool showDemoWindow = true;
-	inline bool playStartupJingle = true;
+	inline bool playStartupJingle = false;
 };

@@ -1,4 +1,5 @@
 #include "synthesizer.h"
+#include "config.h"
 
 SynthEngine::SynthEngine(double sampleRate)
     : sampleRate(sampleRate), phase(0), time(0), noteTime(0), currentNote(0) {
@@ -12,6 +13,10 @@ float SynthEngine::generateSample() {
         noteTime = 0.0;
     }
     if (currentNote >= melody.size())
+    {
+        return 0.0;
+    }
+    if (!config::playStartupJingle)
     {
         return 0.0;
     }

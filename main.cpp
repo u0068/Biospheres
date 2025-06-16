@@ -199,10 +199,7 @@ int main()
 				cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
 											 isLeftMousePressed, isLeftMouseDown, scrollDelta);
 			}
-			if (config::playStartupJingle)
-			{
-				synthEngine.generateSample();
-			}
+			synthEngine.generateSample();
 			//// Then we handle cell simulation
 			try
 			{
