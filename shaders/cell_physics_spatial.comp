@@ -37,9 +37,12 @@ layout(std430, binding = 3) restrict buffer CellOutputBuffer {
     ComputeCell outputCells[];  // Current frame cell data (write-only)
 };
 
+layout(std430, binding = 4) buffer CellCountBuffer {
+    uint cellCount;
+};
+
 // Uniforms
 uniform float u_deltaTime;
-uniform int u_cellCount;
 uniform float u_damping;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 uniform int u_gridResolution;
@@ -74,9 +77,8 @@ bool isValidGridPos(ivec3 gridPos) {
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    
-    // Check bounds
-    if (index >= u_cellCount) {
+      // Check bounds
+    if (index >= cellCount) {
         return;
     }
       // Skip physics for dragged cell - it will be positioned directly
@@ -123,11 +125,10 @@ void main() {
                     if (otherIndex == index) {
                         continue;
                     }
-                    
-                    // Skip if other index is out of bounds
-                    if (otherIndex >= u_cellCount) {
+                      // Skip if other index is out of bounds
+                    if (otherIndex >= cellCount) {
                         continue;
-                    }                    
+                    }
                     vec3 otherPos = inputCells[otherIndex].positionAndMass.xyz;
                     float otherRadius = pow(inputCells[otherIndex].positionAndMass.w, 1./3.);
                     

@@ -25,9 +25,12 @@ layout(std430, binding = 0) restrict buffer CellBuffer {
     ComputeCell cells[];
 };
 
+layout(std430, binding = 1) buffer CellCountBuffer {
+    uint cellCount;
+};
+
 // Uniforms
 uniform float u_deltaTime;
-uniform int u_cellCount;
 uniform float u_damping;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 
@@ -35,7 +38,7 @@ void main() {
     uint index = gl_GlobalInvocationID.x;
     
     // Check bounds
-    if (index >= u_cellCount) {
+    if (index >= cellCount) {
         return;
     }
     

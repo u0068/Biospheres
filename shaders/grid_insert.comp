@@ -37,8 +37,11 @@ layout(std430, binding = 3) restrict buffer GridCountBuffer {
     uint gridCounts[];
 };
 
+layout(std430, binding = 4) buffer CellCountBuffer {
+    uint cellCount;
+};
+
 // Uniforms
-uniform int u_cellCount;
 uniform int u_gridResolution;
 uniform float u_gridCellSize;
 uniform float u_worldSize;
@@ -64,9 +67,8 @@ uint gridToIndex(ivec3 gridPos) {
 
 void main() {
     uint cellIndex = gl_GlobalInvocationID.x;
-    
-    // Check bounds
-    if (cellIndex >= u_cellCount) {
+      // Check bounds
+    if (cellIndex >= cellCount) {
         return;
     }
     
