@@ -9,7 +9,8 @@
 
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
-    ImGui::Begin("Cell Inspector", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    int flags = windowsLocked ? getWindowFlags() : getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Cell Inspector", nullptr, flags);
 
     if (cellManager.hasSelectedCell())
     {
@@ -128,7 +129,7 @@ void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
 
 void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor)
 {
-    ImGui::Begin("Advanced Performance Monitor", nullptr);
+    ImGui::Begin("Advanced Performance Monitor", nullptr, getWindowFlags());
 
     // === FPS and Frame Time Section ===
     ImGui::Text("Performance Overview");
@@ -332,10 +333,26 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
 void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
 {
-    ImGui::Begin("Camera & Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    int flags = windowsLocked ? getWindowFlags() : getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Camera & Controls", nullptr, flags);
     glm::vec3 camPos = camera.getPosition();
     ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
     ImGui::Separator();
+    
+    // Window lock/unlock button
+    ImGui::Text("Window Management:");
+    if (ImGui::Button(windowsLocked ? "Unlock All Windows" : "Lock All Windows"))
+    {
+        windowsLocked = !windowsLocked;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Lock/unlock position and size of all UI windows");
+    }
+    ImGui::Separator();
+    
     ImGui::Text("Camera Controls:");
     ImGui::BulletText("WASD - Move");
     ImGui::BulletText("Q/E - Roll");
@@ -358,14 +375,26 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
     ImGui::End();
 }
 
+// Helper method to get window flags based on lock state
+int UIManager::getWindowFlags(int baseFlags) const
+{
+    if (windowsLocked)
+    {
+        // Remove AlwaysAutoResize flag if present since it conflicts with NoResize
+        int lockedFlags = baseFlags & ~ImGuiWindowFlags_AlwaysAutoResize;
+        return lockedFlags | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    }
+    return baseFlags;
+}
+
 void UIManager::renderGenomeEditor()
 {
     // Set minimum window size constraints
     ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::Begin("Genome Editor", nullptr);
-
-    // Genome Name and Save/Load Section
+    ImGui::Begin("Genome Editor", nullptr, getWindowFlags());    // Genome Name and Save/Load Section
     ImGui::Text("Genome Name:");
+    addTooltip("The name identifier for this genome configuration");
+    
     ImGui::SameLine();
     char nameBuffer[256];
     strcpy_s(nameBuffer, currentGenome.name.c_str());
@@ -382,6 +411,7 @@ void UIManager::renderGenomeEditor()
         // TODO: Implement genome saving functionality
         ImGui::OpenPopup("Save Confirmation");
     }
+    addTooltip("Save the current genome configuration to file");
 
     ImGui::SameLine();
     if (ImGui::Button("Load Genome"))
@@ -389,6 +419,7 @@ void UIManager::renderGenomeEditor()
         // TODO: Implement genome loading functionality
         ImGui::OpenPopup("Load Confirmation");
     }
+    addTooltip("Load a previously saved genome configuration");
 
     // Save confirmation popup
     if (ImGui::BeginPopupModal("Save Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
@@ -409,10 +440,10 @@ void UIManager::renderGenomeEditor()
         ImGui::EndPopup();
     }
 
-    ImGui::Separator();
-
-    // Initial Mode Dropdown
+    ImGui::Separator();    // Initial Mode Dropdown
     ImGui::Text("Initial Mode:");
+    addTooltip("The starting mode for new cells in this genome");
+    
     ImGui::SameLine();
     if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
                      {
@@ -430,6 +461,8 @@ void UIManager::renderGenomeEditor()
 
     // Mode Management
     ImGui::Text("Modes:");
+    addTooltip("Manage the different behavioral modes available in this genome");
+    
     ImGui::SameLine();
     if (ImGui::Button("Add Mode"))
     {
@@ -437,6 +470,8 @@ void UIManager::renderGenomeEditor()
         newMode.name = "Mode " + std::to_string(currentGenome.modes.size());
         currentGenome.modes.push_back(newMode);
     }
+    addTooltip("Add a new mode to the genome");
+    
     ImGui::SameLine();
     if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
     {
@@ -447,6 +482,7 @@ void UIManager::renderGenomeEditor()
                 selectedModeIndex = currentGenome.modes.size() - 1;
         }
     }
+    addTooltip("Remove the currently selected mode from the genome");
 
     // Mode List
     ImGui::BeginChild("ModeList", ImVec2(200, -1), true);
@@ -561,18 +597,18 @@ void UIManager::renderGenomeEditor()
 void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 {
     ImGui::Text("Mode %d Settings", modeIndex);
-    ImGui::Separator();
-
-    // Mode Name
+    ImGui::Separator();    // Mode Name
     char nameBuffer[256];
     strcpy_s(nameBuffer, mode.name.c_str());
     if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
     {
         mode.name = std::string(nameBuffer);
     }
+    addTooltip("The display name for this cell mode");
 
     // Mode Color
     drawColorPicker("Mode Color", &mode.color);
+    addTooltip("The visual color representing this cell mode");
 
     ImGui::Separator();
 
@@ -627,16 +663,21 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 void UIManager::drawParentSettings(ModeSettings &mode)
 {
     drawSliderWithInput("Split Mass", &mode.splitMass, 0.1f, 10.0f, "%.2f");
+    addTooltip("The mass threshold at which the cell will split into two child cells");
+    
     drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 30.0f, "%.1f");
-
-    // Add divider before Parent Split Orientation
+    addTooltip("Time interval (in seconds) between cell splits");    // Add divider before Parent Split Angle
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::Text("Parent Split Orientation:");
-    drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    ImGui::Text("Parent Split Angle:");
+    addTooltip("Controls the vector direction that child cells split along relative to the parent");
+      drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    addTooltip("Vertical angle of the split vector (up/down direction for child cell placement)");
+    
     drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+    addTooltip("Horizontal angle of the split vector (left/right direction for child cell placement)");
 
     // Add divider before Parent Make Adhesion checkbox
     ImGui::Spacing();
@@ -644,12 +685,15 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     ImGui::Spacing();
 
     ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
+    addTooltip("Whether the parent cell creates adhesive connections with its children");
 }
 
 void UIManager::drawChildSettings(const char *label, ChildSettings &child)
 {
     // Mode selection dropdown
     ImGui::Text("Mode:");
+    addTooltip("The cell mode that this child will switch to after splitting");
+    
     if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
                      {
                          UIManager* uiManager = (UIManager*)data;
@@ -676,9 +720,16 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     ImGui::Spacing();
 
     ImGui::Text("Orientation:");
+    addTooltip("The initial orientation angles of the child cell after splitting");
+    
     drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+    addTooltip("Rotation around the X-axis (up/down angle) for the child's initial orientation");
+    
     drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+    addTooltip("Rotation around the Y-axis (left/right angle) for the child's initial orientation");
+    
     drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.0f°", 1.0f);
+    addTooltip("Rotation around the Z-axis (twist angle) for the child's initial orientation");
 
     // Add divider before Keep Adhesion checkbox
     ImGui::Spacing();
@@ -686,17 +737,39 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     ImGui::Spacing();
 
     ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
+    addTooltip("Whether this child maintains adhesive connections with its parent and siblings");
 }
 
 void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
 {
     ImGui::Checkbox("Adhesion Can Break", &adhesion.canBreak);
+    addTooltip("Whether adhesive connections can be broken by external forces");
+    
     drawSliderWithInput("Adhesion Break Force", &adhesion.breakForce, 0.1f, 100.0f);
+    addTooltip("The force threshold required to break an adhesive connection");
+    
     drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, 0.1f, 10.0f);
+    addTooltip("The natural resting distance of the adhesive connection");
+    
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
+    addTooltip("How strongly the adhesion resists stretching or compression");
+    
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
-    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
+    addTooltip("Damping factor that reduces oscillations in the adhesive connection");    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
+    addTooltip("How strongly the adhesion resists rotational changes between connected cells");
+    
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
+    addTooltip("How far the adhesive connection can bend freely before angular constraints kick in");
+}
+
+void UIManager::addTooltip(const char* tooltip)
+{
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("%s", tooltip);
+    }
 }
 
 void UIManager::drawSliderWithInput(const char *label, float *value, float min, float max, const char *format, float step)
@@ -821,7 +894,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager)
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     
-    if (ImGui::Begin("Time Scrubber", nullptr, ImGuiWindowFlags_None))
+    if (ImGui::Begin("Time Scrubber", nullptr, getWindowFlags(ImGuiWindowFlags_None)))
     {
         // Get available width for responsive layout
         float available_width = ImGui::GetContentRegionAvail().x;
