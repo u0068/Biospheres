@@ -19,12 +19,12 @@ struct ComputeCell {
     glm::vec4 positionAndMass{ glm::vec4(0, 0, 0, 1) };       // x, y, z, mass
     glm::vec4 velocity{};
     glm::vec4 acceleration{};
-    //glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
-    //glm::vec4 angularVelocity{};
-    //glm::vec4 angularAcceleration{};
+    glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
+    glm::vec4 angularVelocity{};
+    glm::vec4 angularAcceleration{};
 
     // Internal:
-    //glm::vec4 signallingSubstances{}; // 4 substances for now
+    glm::vec4 signallingSubstances{}; // 4 substances for now
     int modeIndex{ 0 };
     float age{ 0 };                      // also used for split timer
     float toxins{ 0 };
