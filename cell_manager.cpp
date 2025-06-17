@@ -186,13 +186,14 @@ void CellManager::addStagedCellsToGPUBuffer()
     pendingCellCount = 0;      // Reset pending count
 }
 
-void CellManager::addGenomeToBuffer(GenomeData& genomeData) {
+void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     int genomeBaseOffset = 0; // Later make it add to the end of the buffer
+    int modeCount = genomeData.modes.size();
 
     std::vector<GPUMode> gpuModes;
-    gpuModes.reserve(genomeData.modes.size());
+    gpuModes.reserve(modeCount);
 
-    for (size_t i = 0; i < genomeData.modes.size(); ++i) {
+    for (size_t i = 0; i < modeCount; ++i) {
         const ModeSettings& mode = genomeData.modes[i];
 
         GPUMode gmode{};
@@ -212,7 +213,7 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) {
     glNamedBufferSubData(
         genomeBuffer,
         genomeBaseOffset,
-        sizeof(GPUMode),
+        modeCount * sizeof(GPUMode),
         gpuModes.data()
     );
 }
@@ -230,16 +231,12 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
 {
     if (index >= 0 && index < cellCount)
     {
-        // Create a copy of the new data and enforce radius = 1.0f
-        ComputeCell correctedData = newData;
-        correctedData.positionAndMass.w = 1.0f; // Force all cells to have radius of 1
-
-        cpuCells[index] = correctedData;
+        cpuCells[index] = newData;
 
         // Update selected cell cache if this is the selected cell
         if (selectedCell.isValid && selectedCell.cellIndex == index)
         {
-            selectedCell.cellData = correctedData;
+            selectedCell.cellData = newData;
         }
 
         // Update the specific cell in both GPU buffers to keep them synchronized
@@ -437,38 +434,38 @@ void CellManager::resetSimulation()
     std::cout << "Reset simulation\n";
 }
 
-//void CellManager::spawnCells(int count) // no longer functional, needs to be updated for the new cell struct
-//{
-//    TimerCPU cpuTimer("Spawning Cells", true);
-//
-//    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i)
-//    {
-//        // Random position within spawn radius
-//        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
-//        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
-//        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
-//
-//        glm::vec3 position = glm::vec3(
-//            radius * sin(angle2) * cos(angle1),
-//            radius * cos(angle2),
-//            radius * sin(angle2) * sin(angle1));
-//
-//        // Random velocity
-//        glm::vec3 velocity = glm::vec3(
-//            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-//            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
-//            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f); // Random mass and fixed radius of 1
-//        float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
-//        float cellRadius = 1.0f; // All cells have the same radius of 1
-//
-//        ComputeCell newCell;
-//        newCell.positionAndRadius = glm::vec4(position, cellRadius);
-//        newCell.velocityAndMass = glm::vec4(velocity, mass);
-//        newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
-//
-//        addCellToStagingBuffer(newCell);
-//    }
-//}
+void CellManager::spawnCells(int count) // no longer functional, needs to be updated for the new cell struct
+{
+    TimerCPU cpuTimer("Spawning Cells", true);
+
+    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i)
+    {
+        // Random position within spawn radius
+        float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
+        float angle2 = static_cast<float>(rand()) / RAND_MAX * 3.14159f;
+        float radius = static_cast<float>(rand()) / RAND_MAX * spawnRadius;
+
+        glm::vec3 position = glm::vec3(
+            radius * sin(angle2) * cos(angle1),
+            radius * cos(angle2),
+            radius * sin(angle2) * sin(angle1));
+
+        // Random velocity
+        glm::vec3 velocity = glm::vec3(
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f,
+            (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 5.0f); // Random mass and fixed radius of 1
+        //float mass = 1.0f + static_cast<float>(rand()) / RAND_MAX * 2.0f;
+        //float cellRadius = 1.0f; // All cells have the same radius of 1
+
+        ComputeCell newCell{};
+        newCell.positionAndMass = glm::vec4(position, 1.);
+        newCell.velocity = glm::vec4(velocity, 0.);
+        newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
+
+        addCellToStagingBuffer(newCell);
+    }
+}
 
 // Spatial partitioning
 void CellManager::initializeSpatialGrid()
@@ -800,7 +797,8 @@ void CellManager::syncCellPositionsFromGPU()
         for (int i = 0; i < cellCount; i++)
         {
             // Only sync position and radius, preserve velocity and mass from CPU
-            cpuCells[i].positionAndMass = gpuData[i].positionAndMass;
+            //cpuCells[i].positionAndMass = gpuData[i].positionAndMass;
+            cpuCells[i] = gpuData[i];
         }
 
         glUnmapNamedBuffer(getCurrentCellBuffer());

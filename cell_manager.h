@@ -17,8 +17,8 @@ class Camera;
 struct ComputeCell {
     // Physics:
     glm::vec4 positionAndMass{ glm::vec4(0, 0, 0, 1) };       // x, y, z, mass
-    glm::vec3 velocity{};
-    glm::vec3 acceleration{};
+    glm::vec4 velocity{};
+    glm::vec4 acceleration{};
     glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
     glm::vec4 angularVelocity{};
     glm::vec4 angularAcceleration{};
@@ -32,7 +32,7 @@ struct ComputeCell {
 
     float getRadius() const
     {
-        return pow(positionAndMass.w, 1 / 3);
+        return pow(positionAndMass.w, 1./3.);
     }
 };
 
@@ -53,16 +53,6 @@ struct CellManager
     GLuint gridBuffer[2] = {0, 0};       // SSBO for grid cell data (stores cell indices)
     GLuint gridCountBuffer[2] = {0, 0};  // SSBO for grid cell counts
     GLuint gridOffsetBuffer[2] = {0, 0}; // SSBO for grid cell starting offsets
-
-    // Buffer bindings, universal across all shaders for convenience
-	// Odd is previous, Even is current
-    // 0    : modes(single buffer)
-    // 1, 2 : cellBuffer
-    // 3, 4 : instanceBuffer
-    // 5, 6 : gridBuffer
-    // 7, 8 : gridCountBuffer
-    // 9, 10 : gridOffsetBuffer
-    // 11 onwards: any future buffers, like type ECS stuff
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
@@ -106,14 +96,14 @@ struct CellManager
 
     void initializeGPUBuffers();
     void resetSimulation();
-    //void spawnCells(int count = DEFAULT_CELL_COUNT);
+    void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera);
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
     void addCellToStagingBuffer(const ComputeCell &newCell);
     void addCell(const ComputeCell &newCell) { addCellToStagingBuffer(newCell); }
     void addStagedCellsToGPUBuffer();
-    void addGenomeToBuffer(GenomeData& genomeData);
+    void addGenomeToBuffer(GenomeData& genomeData) const;
     void updateCells(float deltaTime);
     void cleanup();
 
@@ -132,14 +122,7 @@ struct CellManager
     float getReadbackCooldown() const { return readbackCooldown; }
 
     // Performance testing function
-    void setActiveCellCount(int count)
-    {
-        if (count <= cellCount && count >= 0)
-        {
-            // This allows reducing active cells for performance testing
-            // without changing the actual cell count or buffer data
-        }
-    } // Cell selection and interaction system
+	// Cell selection and interaction system
     struct SelectedCellInfo
     {
         int cellIndex = -1;

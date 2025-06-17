@@ -61,9 +61,9 @@ int main()
 		ToolState toolState;
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
-		//cellManager.spawnCells(1);
 		cellManager.addGenomeToBuffer(uiManager.currentGenome);
-		cellManager.addCellToStagingBuffer(ComputeCell());
+		//cellManager.spawnCells(200000);
+		cellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
 		
 
 		AudioEngine audioEngine;

@@ -16,7 +16,7 @@ namespace config
 	constexpr const char *APPLICATION_NAME{"Biospheres 2"};
 
 	// Cell simulation configuration
-	constexpr int MAX_CELLS{64};
+	constexpr int MAX_CELLS{200000};
 	constexpr int MAX_COMMANDS{50000};
 	constexpr int DEFAULT_CELL_COUNT{100000};
 	constexpr float DEFAULT_SPAWN_RADIUS{15.0f};

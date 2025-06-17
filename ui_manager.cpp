@@ -13,7 +13,7 @@ void UIManager::renderCellInspector(CellManager &cellManager)
 
     if (cellManager.hasSelectedCell())
     {
-        const auto &selectedCell = cellManager.getSelectedCell();
+    	const auto &selectedCell = cellManager.getSelectedCell();
         ImGui::Text("Selected Cell #%d", selectedCell.cellIndex);
         ImGui::Separator();
 
@@ -22,11 +22,13 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         glm::vec3 velocity = glm::vec3(selectedCell.cellData.velocity);
         float mass = selectedCell.cellData.positionAndMass.w;
         float radius = selectedCell.cellData.getRadius();
+        int modeIndex = selectedCell.cellData.modeIndex;
 
         ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
         ImGui::Text("Velocity: (%.2f, %.2f, %.2f)", velocity.x, velocity.y, velocity.z);
         ImGui::Text("Mass: %.2f", mass);
         ImGui::Text("Radius: %.2f", radius);
+        ImGui::Text("Absolute Mode Index: %i", modeIndex);
 
         ImGui::Separator();
 
@@ -57,7 +59,7 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         }
 
         // Mass editing
-        if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 50.0f))
+        if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 50.0f, "%.3f", ImGuiSliderFlags_Logarithmic))
         {
             editedCell.positionAndMass.w = mass;
             changed = true;
@@ -830,7 +832,9 @@ void UIManager::renderTimeScrubber(CellManager& cellManager)
         {
             cellManager.resetSimulation();
             cellManager.addGenomeToBuffer(currentGenome);
-            cellManager.addCellToStagingBuffer(ComputeCell());
+            ComputeCell newCell{};
+            newCell.modeIndex = currentGenome.initialMode;
+            cellManager.addCellToStagingBuffer(newCell);
         }
         
         // Calculate available width for slider (reserve space for input field)

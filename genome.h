@@ -6,11 +6,12 @@
 #include "glad/glad.h"
 
 struct GPUMode {
-    glm::vec4 color;            // R, G, B padding
-    float splitInterval;
-    int genomeOffset;         // Offset into global buffer where this genome starts
-    glm::vec2 splitOrientation; // pitch, yaw (in radians)
-    glm::ivec2 childModes;
+    glm::vec4 color{ 1.};  // R, G, B padding
+    glm::vec2 splitOrientation{ 0. };           // pitch, yaw (in radians)
+    glm::ivec2 childModes{ 0 };
+    float splitInterval{ 5 };
+    int genomeOffset{ 0 };                  // Offset into global buffer where this genome starts
+    float padding[2]{};                     // Struct must align to 16 bytes
 };
 
 // Genome Editor Data Structures
