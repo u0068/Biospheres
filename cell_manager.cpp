@@ -55,6 +55,21 @@ void CellManager::cleanup()
             instanceBuffer[i] = 0;
         }
     }
+    if (genomeBuffer != 0)
+    {
+        glDeleteBuffers(1, &genomeBuffer);
+        genomeBuffer = 0;
+    }
+    if (gpuCellCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &gpuCellCountBuffer);
+        gpuCellCountBuffer = 0;
+    }
+    if (stagingCellCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &stagingCellCountBuffer);
+        stagingCellCountBuffer = 0;
+    }
 
     cleanupSpatialGrid();
 
@@ -120,7 +135,6 @@ void CellManager::initializeGPUBuffers()
             nullptr,
             GL_DYNAMIC_DRAW
         );
-        glClearNamedBufferData(cellBuffer[i], GL_RGBA32F, GL_RGBA, GL_FLOAT, nullptr); // this zeroes the first 16 bytes of the struct to prevent garbage
 
         // Create double buffered instance buffers for rendering (contains position + radius)
         glCreateBuffers(1, &instanceBuffer[i]);
@@ -180,10 +194,10 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
     }
 
 
+    TimerGPU gpuTimer("Adding Cells to GPU Buffers", true);
     // Update both cell buffers to keep them synchronized
     for (int i = 0; i < 2; i++)
     {
-        TimerGPU gpuTimer("Adding Cells to GPU Buffer", true);
         glNamedBufferSubData(cellBuffer[i],
                              cellCount * sizeof(ComputeCell),
                              newCellCount * sizeof(ComputeCell),
@@ -357,12 +371,6 @@ void CellManager::runCellCounter()
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure writes are visible
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint));
-
-    //void* ptr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint), GL_MAP_READ_BIT);
-    //if (ptr) {
-    //    memcpy(&cellCount, ptr, sizeof(GLuint));
-    //    glUnmapNamedBuffer(stagingCellCountBuffer);
-    //}
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera)
