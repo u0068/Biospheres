@@ -42,7 +42,7 @@ void glfwErrorCallback(int error, const char *description)
 
 int main()
 {
-	{
+	{ // This scope is used to ensure the opengl elements are destroyed before the opengl context
 		// Set up error callback before initializing GLFW
 		glfwSetErrorCallback(glfwErrorCallback);
 		initGLFW();
@@ -62,9 +62,8 @@ int main()
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
 		cellManager.addGenomeToBuffer(uiManager.currentGenome);
-		//cellManager.spawnCells(200000);
+		//cellManager.spawnCells(config::MAX_CELLS);
 		cellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
-		
 
 		AudioEngine audioEngine;
 		audioEngine.init();

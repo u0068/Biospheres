@@ -19,12 +19,12 @@ struct ComputeCell {
     glm::vec4 positionAndMass{ glm::vec4(0, 0, 0, 1) };       // x, y, z, mass
     glm::vec4 velocity{};
     glm::vec4 acceleration{};
-    glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
-    glm::vec4 angularVelocity{};
-    glm::vec4 angularAcceleration{};
+    //glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
+    //glm::vec4 angularVelocity{};
+    //glm::vec4 angularAcceleration{};
 
     // Internal:
-    glm::vec4 signallingSubstances{}; // 4 substances for now
+    //glm::vec4 signallingSubstances{}; // 4 substances for now
     int modeIndex{ 0 };
     float age{ 0 };                      // also used for split timer
     float toxins{ 0 };
@@ -41,13 +41,17 @@ struct CellManager
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates    // GPU buffer objects - Double buffered for performance
-    GLuint cellBuffer[2] = {0, 0};     // SSBO for compute cell data (double buffered)
-    GLuint instanceBuffer[2] = {0, 0}; // VBO for instance rendering data (double buffered)
-    int currentBufferIndex = 0;        // Index of current buffer (0 or 1)
-    int previousBufferIndex = 1;       // Index of previous buffer (1 or 0)
+    GLuint cellBuffer[2]{0, 0};     // SSBO for compute cell data (double buffered)
+    GLuint instanceBuffer[2]{0, 0}; // VBO for instance rendering data (double buffered)
+    int currentBufferIndex{ 0 };        // Index of current buffer (0 or 1)
+    int previousBufferIndex{ 1 };       // Index of previous buffer (1 or 0)
+
+    // Keeps track of how many cells there are in the simulation
+    GLuint gpuCellCountBuffer{ 0 };     // Ensures the gpu has quick access to the cell count
+    GLuint stagingCellCountBuffer{ 0 }; // Ensures the cpu has quick access to the cell count without causing sync-stalls
 
     // Genome buffer, no need for double buffering as, ironically, genomes are immutable
-    GLuint genomeBuffer = 0;
+    GLuint genomeBuffer{ 0 };
 
     // Spatial partitioning buffers - Double buffered
     GLuint gridBuffer[2] = {0, 0};       // SSBO for grid cell data (stores cell indices)
@@ -67,7 +71,8 @@ struct CellManager
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
     Shader* extractShader = nullptr; // For extracting instance data efficiently
-    Shader* internalUpdateShader = nullptr; // For extracting instance data efficiently
+    Shader* internalUpdateShader = nullptr;
+    Shader* cellCounterShader = nullptr;
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -182,6 +187,7 @@ private:
     void runPhysicsCompute(float deltaTime);
     void runUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
+    void runCellCounter();
 
     // Spatial grid helper functions
     void runGridClear();

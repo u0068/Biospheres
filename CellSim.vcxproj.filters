@@ -199,5 +199,8 @@
     <None Include="shaders\cell_update.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\cell_counter.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

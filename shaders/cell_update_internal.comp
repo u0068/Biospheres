@@ -42,7 +42,13 @@ layout(std430, binding = 2) restrict buffer CellOutputBuffer {
     ComputeCell outputCells[];  // Current frame cell data (write-only)
 };
 
+// Uniforms
+uniform float u_deltaTime;
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     GPUMode mode = modes[inputCells[index].modeIndex];
+
+    outputCells[index].age = inputCells[index].age + u_deltaTime;
+
 };

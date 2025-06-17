@@ -22,14 +22,16 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         glm::vec3 position = glm::vec3(selectedCell.cellData.positionAndMass);
         glm::vec3 velocity = glm::vec3(selectedCell.cellData.velocity);
         float mass = selectedCell.cellData.positionAndMass.w;
-        float radius = selectedCell.cellData.getRadius();
+        //float radius = selectedCell.cellData.getRadius();
         int modeIndex = selectedCell.cellData.modeIndex;
+        float age = selectedCell.cellData.age;
 
         ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
         ImGui::Text("Velocity: (%.2f, %.2f, %.2f)", velocity.x, velocity.y, velocity.z);
         ImGui::Text("Mass: %.2f", mass);
-        ImGui::Text("Radius: %.2f", radius);
+        //ImGui::Text("Radius: %.2f", radius);
         ImGui::Text("Absolute Mode Index: %i", modeIndex);
+        ImGui::Text("Age: %.2f", age);
 
         ImGui::Separator();
 

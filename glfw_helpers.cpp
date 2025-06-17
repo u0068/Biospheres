@@ -35,6 +35,24 @@ void setupGLFWDebugFlags()
         glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
     }
 #endif
+
+    // Suppress low-severity performance messages
+    glDebugMessageControl(
+        GL_DEBUG_SOURCE_API,         // Source
+        GL_DEBUG_TYPE_PERFORMANCE,   // Type
+        GL_DEBUG_SEVERITY_LOW,       // Severity
+        0, nullptr,                  // IDs (0 = all)
+        GL_FALSE                     // Don't enable (i.e., suppress)
+    );
+
+    // Suppress medium-severity performance messages
+    glDebugMessageControl(
+        GL_DEBUG_SOURCE_API,
+        GL_DEBUG_TYPE_PERFORMANCE,
+        GL_DEBUG_SEVERITY_MEDIUM,
+        0, nullptr,
+        GL_FALSE
+    );
 }
 
 GLFWwindow *createWindow()
