@@ -323,12 +323,10 @@ void CellManager::updateCells(float deltaTime)
     // Run physics computation on GPU (reads from previous, writes to current)
     runPhysicsCompute(deltaTime);
 
-
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Run cells' internal calculations
     runInternalUpdateCompute(deltaTime);
-
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
