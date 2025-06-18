@@ -199,7 +199,7 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = cells.size();
 
-    std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount + newCellCount << "\n";
+    std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount << " -> " << cellCount + newCellCount << "\n";
 
     if (cellCount + newCellCount > config::MAX_CELLS)
     {
@@ -335,17 +335,22 @@ void CellManager::updateCells(float deltaTime)
     if (cpuPendingCellCount > 0)
     {
         addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
-    }
+    }    //runCellCounter(); // will be made redundant soon by counting during cell addition
 
-    //runCellCounter(); // will be made redundant soon by counting during cell addition
-
+    unsigned int previousCellCount = cellCount;
+    
     if (gpuPendingCellCount)
     {
         applyCellAdditions();
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
-
+    
     cellCount = countPtr[0];
+
+    // Only log if cells were added (split event occurred)
+    if (cellCount > previousCellCount) {
+        std::cout << "Split event occurred! Cell count increased from " << previousCellCount << " to " << cellCount << "\n";
+    }
 
     if (cellCount == 0) // Don't update cells if there are no cells to update
         return;
@@ -575,16 +580,16 @@ void CellManager::applyCellAdditions()
     GLuint numGroups = (gpuPendingCellCount + 63) / 64; // Round up division
     cellAdditionShader->dispatch(numGroups, 1, 1);
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    std::cout << "Added " << gpuPendingCellCount << " cells from cellAdditionBuffer to cellBuffer\n";
+    std::cout << "Processed " << gpuPendingCellCount << " cell additions on GPU\n";
 
     GLuint zero = 0;    // This looks silly but I need a pointer to 0 to reset the pending cell counter
     glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    
+    std::cout << "GPU cell count after additions: " << countPtr[0] << "\n";
 }
 
 void CellManager::resetSimulation()
