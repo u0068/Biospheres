@@ -197,7 +197,7 @@ void CellManager::initializeGPUBuffers()
 
 void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
-    int newCellCount = cells.size();
+    int newCellCount = static_cast<int>(cells.size());
 
     std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount << " -> " << cellCount + newCellCount << "\n";
 
@@ -262,7 +262,7 @@ void CellManager::addStagedCellsToGPUBuffer()
 
 void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     int genomeBaseOffset = 0; // Later make it add to the end of the buffer
-    int modeCount = genomeData.modes.size();
+    int modeCount = static_cast<int>(genomeData.modes.size());
 
     std::vector<GPUMode> gpuModes;
     gpuModes.reserve(modeCount);
@@ -337,7 +337,7 @@ void CellManager::updateCells(float deltaTime)
         addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
     }
 
-    unsigned int previousCellCount = cellCount;
+    int previousCellCount = cellCount;
     
     // Apply any pending additions from previous frame first
     if (gpuPendingCellCount)
@@ -583,6 +583,10 @@ void CellManager::applyCellAdditions()
 
     // Set uniforms
     cellAdditionShader->setInt("u_maxCells", config::MAX_CELLS);
+
+    // Debug: Print initial state
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    std::cout << "Before additions: cellCount=" << countPtr[0] << ", pendingCellCount=" << countPtr[1] << "\n";
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());

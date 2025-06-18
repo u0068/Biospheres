@@ -28,11 +28,9 @@ struct ComputeCell {
     int modeIndex{ 0 };
     float age{ 0 };                      // also used for split timer
     float toxins{ 0 };
-    float nitrates{ 1 };
-
-    float getRadius() const
+    float nitrates{ 1 };    float getRadius() const
     {
-        return pow(positionAndMass.w, 1./3.);
+        return static_cast<float>(pow(positionAndMass.w, 1.0f/3.0f));
     }
 };
 

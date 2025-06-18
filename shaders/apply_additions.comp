@@ -38,13 +38,21 @@ uniform int u_maxCells;
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= uint(pendingCellCount)) return;
-    if (cellCount + 1 > u_maxCells) return;
 
     ComputeCell queuedCell = newCells[index];
 
     // Atomically reserve a slot at the end of the output cell buffer
     uint targetIndex = atomicAdd(cellCount, 1);
+    
+    // Check if we exceeded the maximum after the atomic operation
+    // Note: targetIndex is the index we got, so if it's >= u_maxCells, we're out of bounds
+    if (targetIndex >= uint(u_maxCells)) {
+        // If we exceeded, decrement back and exit without writing
+        atomicAdd(cellCount, uint(-1));
+        return;
+    }
 
+    // Safe to write to the buffers
     inputCells[targetIndex] = queuedCell;
     outputCells[targetIndex] = queuedCell;
 }

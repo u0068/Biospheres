@@ -65,11 +65,20 @@ void main() {
     }    ComputeCell cell = cells[index]; // Read from current buffer
     GPUMode mode = modes[cell.modeIndex];
 
-    cell.age += u_deltaTime;
-
-    if (cell.age >= mode.splitInterval && cellCount + pendingCellCount < u_maxCells) { // Split when old enough unless there are too many cells
-        // Split logic
-        vec3 offset = splitOffset(mode.splitOrientation, 0.5); // Small offset, might make it a fraction of the radius later
+    cell.age += u_deltaTime;    if (cell.age >= mode.splitInterval) {
+        // Use atomic operation to safely reserve a slot for division
+        uint potentialNewCount = atomicAdd(pendingCellCount, 1);
+        
+        // Check if adding this cell would exceed the limit
+        if (cellCount + potentialNewCount >= u_maxCells) {
+            // Revert the atomic add and don't divide
+            atomicAdd(pendingCellCount, uint(-1));
+            cells[index] = cell; // Just age the cell without division
+            return;
+        }
+        
+        // Safe to proceed with division
+        vec3 offset = splitOffset(mode.splitOrientation, 0.5);
 
         // Child A (replaces parent)
         ComputeCell childA = cell;
@@ -86,8 +95,7 @@ void main() {
         // Write child A back to the same position (in-place update)
         cells[index] = childA;
 
-        uint queueIdx = atomicAdd(pendingCellCount, 1);
-        newCells[queueIdx] = childB;
+        newCells[potentialNewCount] = childB;
     } else {
         // Update the cell in-place with incremented age
         cells[index] = cell;
