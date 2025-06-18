@@ -114,10 +114,10 @@ void main() {
                 }
                 
                 uint neighborGridIndex = gridToIndex(neighborGridPos);
-                uint cellCount = gridCounts[neighborGridIndex];
+                uint localCellCount = gridCounts[neighborGridIndex];
                 
                 // Check all cells in this neighboring grid cell
-                for (uint i = 0; i < cellCount && i < u_maxCellsPerGrid; i++) {
+                for (uint i = 0; i < localCellCount && i < u_maxCellsPerGrid; i++) {
                     uint gridBufferIndex = neighborGridIndex * u_maxCellsPerGrid + i;
                     uint otherIndex = gridCells[gridBufferIndex];
                     

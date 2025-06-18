@@ -140,7 +140,7 @@ void CellManager::initializeGPUBuffers()
         glCreateBuffers(1, &instanceBuffer[i]);
         glNamedBufferData(
             instanceBuffer[i],
-            config::MAX_CELLS * sizeof(glm::vec4),
+            config::MAX_CELLS * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
             nullptr,
             GL_DYNAMIC_DRAW
         );

@@ -59,7 +59,7 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
     indexCount = static_cast<int>(indices.size());
     
     std::cout << "Generated sphere with " << vertices.size() << " vertices and " 
-              << indices.size() << " indices" << std::endl;
+              << indices.size() << " indices\n";
 }
 
 void SphereMesh::setupBuffers() {
@@ -108,7 +108,7 @@ void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
 
 void SphereMesh::render(int instanceCount) const {
     if (VAO == 0 || indexCount == 0) {
-        std::cerr << "SphereMesh not properly initialized!" << std::endl;
+        std::cerr << "SphereMesh not properly initialized!\n";
         return;
     }
     
