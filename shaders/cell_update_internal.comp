@@ -29,12 +29,12 @@ layout(std430, binding = 0) restrict buffer modeBuffer {
     GPUMode modes[];
 };
 
-layout(std430, binding = 1) restrict buffer CellInputBuffer {
-    ComputeCell inputCells[];
+layout(std430, binding = 1) restrict buffer CellBuffer {
+    ComputeCell cells[];
 };
 
 layout(std430, binding = 2) restrict buffer CellOutputBuffer {
-    ComputeCell outputCells[];
+    ComputeCell outputCells[]; // For consistency, but points to same buffer as binding 1
 };
 
 layout(std430, binding = 3) buffer CellAdditionQueue {
@@ -62,9 +62,7 @@ void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= cellCount) {
         return;
-    }
-
-    ComputeCell cell = inputCells[index];
+    }    ComputeCell cell = cells[index]; // Read from current buffer
     GPUMode mode = modes[cell.modeIndex];
 
     cell.age += u_deltaTime;
@@ -85,12 +83,13 @@ void main() {
         childB.age = 0.0;
         childB.modeIndex = mode.childModes.y;
 
-        outputCells[index] = childA;
-        inputCells[index] = childA;
+        // Write child A back to the same position (in-place update)
+        cells[index] = childA;
 
         uint queueIdx = atomicAdd(pendingCellCount, 1);
         newCells[queueIdx] = childB;
     } else {
-        outputCells[index] = cell;
+        // Update the cell in-place with incremented age
+        cells[index] = cell;
     }
 }

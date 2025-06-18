@@ -544,11 +544,9 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
-    internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer());
+    internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentCellBuffer()); // Read from current buffer (has physics results)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer()); // Write to same buffer (in-place update)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
 
@@ -591,9 +589,44 @@ void CellManager::applyCellAdditions()
 
 void CellManager::resetSimulation()
 {
-    initializeGPUBuffers();
+    // Clear CPU-side data
+    cpuCells.clear();
+    cellStagingBuffer.clear();
     cellCount = 0;
-
+    cpuPendingCellCount = 0;
+    gpuPendingCellCount = 0;
+    
+    // Clear selection state
+    clearSelection();
+    
+    // Clear GPU buffers by setting them to zero
+    GLuint zero = 0;
+    
+    // Reset cell count buffers
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint), &zero); // cellCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // pendingCellCount = 0
+    
+    // Clear all cell buffers
+    for (int i = 0; i < 2; i++)
+    {
+        glClearNamedBufferData(cellBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glClearNamedBufferData(instanceBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    
+    // Clear addition buffer
+    glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    
+    // Clear spatial grid buffers
+    for (int i = 0; i < 2; i++)
+    {
+        glClearNamedBufferData(gridBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glClearNamedBufferData(gridCountBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glClearNamedBufferData(gridOffsetBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    
+    // Sync the staging buffer
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    
     std::cout << "Reset simulation\n";
 }
 
