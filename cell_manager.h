@@ -19,7 +19,7 @@ struct ComputeCell {
     glm::vec4 positionAndMass{ glm::vec4(0, 0, 0, 1) };       // x, y, z, mass
     glm::vec4 velocity{};
     glm::vec4 acceleration{};
-    glm::vec4 orientation{};          // angular stuff in quaternion to prevent gimbal lock
+    glm::vec4 orientation{};          // angular stuff in quaternions to prevent gimbal lock
     glm::vec4 angularVelocity{};
     glm::vec4 angularAcceleration{};
 
@@ -166,7 +166,7 @@ struct CellManager
     ComputeCell getCellData(int index) const;
     void updateCellData(int index, const ComputeCell &newData); // Needs refactoring
 
-    // Asynchronous readback functions for performance monitoring
+    // Asynchronous readback functions for performance monitoring // not actually implemented yet, maybe later if we need to
     void initializeReadbackSystem();
     void updateReadbackSystem(float deltaTime);
     void requestAsyncReadback();
