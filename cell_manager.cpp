@@ -386,17 +386,15 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
     if (resolution.x < 1 || resolution.y < 1)
     {
         return;
-    }
-
-    try
+    }    try
     { // Use compute shader to efficiently extract instance data
         extractShader->use();
-        extractShader->setInt("u_cellCount", cellCount);
 
         // Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, genomeBuffer);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentInstanceBuffer()); // Dispatch extract compute shader
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
         GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
         extractShader->dispatch(numGroups, 1, 1);
 
@@ -456,9 +454,7 @@ void CellManager::runPhysicsCompute(float deltaTime)
 
     physicsShader->use();
 
-    // Set uniforms
-    physicsShader->setFloat("u_deltaTime", deltaTime);
-    physicsShader->setInt("u_cellCount", cellCount);
+    // Set uniforms    physicsShader->setFloat("u_deltaTime", deltaTime);
     physicsShader->setFloat("u_damping", 0.98f);
 
     // Pass dragged cell index to skip its physics
@@ -476,6 +472,7 @@ void CellManager::runPhysicsCompute(float deltaTime)
 
     // Also bind current buffer as output for physics results
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCurrentCellBuffer()); // Write to current frame
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64; // Round up division
@@ -486,19 +483,17 @@ void CellManager::runPhysicsCompute(float deltaTime)
 
 void CellManager::runUpdateCompute(float deltaTime)
 {
-    TimerGPU timer("Cell Update Compute");
-
-    updateShader->use();
+    TimerGPU timer("Cell Update Compute");    updateShader->use();
 
     // Set uniforms
     updateShader->setFloat("u_deltaTime", deltaTime);
-    updateShader->setInt("u_cellCount", cellCount);
     updateShader->setFloat("u_damping", 0.98f);
 
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     updateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64; // Round up division
@@ -666,7 +661,6 @@ void CellManager::runGridAssign()
 {
     gridAssignShader->use();
 
-    gridAssignShader->setInt("u_cellCount", cellCount);
     gridAssignShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
     gridAssignShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     gridAssignShader->setFloat("u_worldSize", config::WORLD_SIZE);
@@ -674,6 +668,7 @@ void CellManager::runGridAssign()
     // Use previous buffer for spatial grid to match physics compute input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getPreviousCellBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridCountBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     GLuint numGroups = (cellCount + 63) / 64;
     gridAssignShader->dispatch(numGroups, 1, 1);
@@ -698,10 +693,7 @@ void CellManager::runGridPrefixSum()
 
 void CellManager::runGridInsert()
 {
-    gridInsertShader->use();
-
-    gridInsertShader->setInt("u_cellCount", cellCount);
-    gridInsertShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
+    gridInsertShader->use();    gridInsertShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
     gridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     gridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
     gridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID); // Use previous buffer for spatial grid to match physics compute input
@@ -709,6 +701,7 @@ void CellManager::runGridInsert()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentGridOffsetBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCurrentGridCountBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     GLuint numGroups = (cellCount + 63) / 64;
     gridInsertShader->dispatch(numGroups, 1, 1);
