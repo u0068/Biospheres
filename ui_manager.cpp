@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <cstdio>
 
+#include "audio_engine.h"
+
 void UIManager::renderCellInspector(CellManager &cellManager)
 {
     int flags = windowsLocked ? getWindowFlags() : getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize);
@@ -284,9 +286,10 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     ImGui::Separator();
 
     int cellCount = cellManager.getCellCount();
-    ImGui::Text("Active Cells: %d", cellCount);
-    ImGui::Text("Triangles: ~%d", 192 * cellCount);
-    ImGui::Text("Vertices: ~%d", 96 * cellCount); // Assuming sphere has ~96 vertices
+    ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
+    ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
+    ImGui::Text("Triangles: ~%i", 192 * cellCount);
+    ImGui::Text("Vertices: ~%i", 96 * cellCount); // Assuming sphere has ~96 vertices
 
     // Memory estimate
     float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
@@ -314,20 +317,20 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         ImGui::Text("Last Update: %.3f s ago", perfMonitor.lastPerfUpdate);
         ImGui::Text("History Size: %zu entries", perfMonitor.frameTimeHistory.size());
 
-        // Readback system status if available
-        if (cellManager.isReadbackSystemHealthy())
-        {
-            ImGui::TextColored(ImVec4(0, 1, 0, 1), "✓ GPU Readback: Healthy");
-            if (cellManager.isReadbackInProgress())
-            {
-                ImGui::Text("  Readback in progress...");
-            }
-            ImGui::Text("  Cooldown: %.2f s", cellManager.getReadbackCooldown());
-        }
-        else
-        {
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "✗ GPU Readback: Unavailable");
-        }
+        //// Readback system status if available
+        //if (cellManager.isReadbackSystemHealthy())
+        //{
+        //    ImGui::TextColored(ImVec4(0, 1, 0, 1), "✓ GPU Readback: Healthy");
+        //    if (cellManager.isReadbackInProgress())
+        //    {
+        //        ImGui::Text("  Readback in progress...");
+        //    }
+        //    ImGui::Text("  Cooldown: %.2f s", cellManager.getReadbackCooldown());
+        //}
+        //else
+        //{
+        //    ImGui::TextColored(ImVec4(1, 0, 0, 1), "✗ GPU Readback: Unavailable");
+        //}
     }
 
     ImGui::End();

@@ -213,6 +213,7 @@
     <ClInclude Include="sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\apply_additions.comp" />
     <None Include="shaders\cell_counter.comp" />
     <None Include="shaders\cell_physics_spatial.comp" />
     <None Include="shaders\cell_update.comp" />

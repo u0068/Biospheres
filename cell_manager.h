@@ -38,6 +38,8 @@ struct ComputeCell {
 
 struct CellManager
 {
+    // TO DO: organise all of this properly
+
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates    // GPU buffer objects - Double buffered for performance
@@ -50,8 +52,10 @@ struct CellManager
     GLuint gpuCellCountBuffer{ 0 };     // Ensures the gpu has quick access to the cell count
     GLuint stagingCellCountBuffer{ 0 }; // Ensures the cpu has quick access to the cell count without causing sync-stalls
 
+    GLuint cellAdditionBuffer{ 0 };     // Cell addition queue for the gpu
+
     // Genome buffer, no need for double buffering as, ironically, genomes are immutable
-    GLuint genomeBuffer{ 0 };
+    GLuint modeBuffer{ 0 };
 
     // Spatial partitioning buffers - Double buffered
     GLuint gridBuffer[2] = {0, 0};       // SSBO for grid cell data (stores cell indices)
@@ -62,10 +66,10 @@ struct CellManager
     SphereMesh sphereMesh;
 
     // Asynchronous readback system for performance monitoring
-    GLuint readbackBuffer = 0;      // Buffer for async GPU->CPU data transfer
-    GLsync readbackFence = nullptr; // Sync object for async operations
-    bool readbackInProgress = false;
-    float readbackCooldown = 0.0f; // Timer to limit readback frequency
+    //GLuint readbackBuffer = 0;      // Buffer for async GPU->CPU data transfer
+    //GLsync readbackFence = nullptr; // Sync object for async operations
+    //bool readbackInProgress = false;
+    //float readbackCooldown = 0.0f; // Timer to limit readback frequency
 
     // Compute shaders
     Shader* physicsShader = nullptr;
@@ -73,6 +77,7 @@ struct CellManager
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
     Shader* cellCounterShader = nullptr;
+	Shader* cellAdditionShader = nullptr;
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -83,13 +88,16 @@ struct CellManager
     // CPU-side storage for initialization and debugging
     std::vector<ComputeCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
     std::vector<ComputeCell> cellStagingBuffer;
-    int cellCount{0};        // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
-    int pendingCellCount{0}; // Number of cells pending addition
+    int cellCount{0};               // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
+    int cpuPendingCellCount{ 0 };   // Number of cells pending addition by cpu
+    int gpuPendingCellCount{ 0 };   // Number of cells pending addition by gpu
+    void* mappedPtr = nullptr;      // Points to the cell count staging buffer
+    GLuint* countPtr = 0;           // Holds the value of the mappedPtr
 
     // Configuration
     static constexpr int MAX_CELLS = config::MAX_CELLS;
     static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
-    float spawnRadius = config::DEFAULT_SPAWN_RADIUS; // Acts as both spawn area and containment barrier
+    float spawnRadius = config::DEFAULT_SPAWN_RADIUS;
 
     // Constructor and destructor
     CellManager();
@@ -122,9 +130,9 @@ struct CellManager
     float getSpawnRadius() const { return spawnRadius; }
 
     // GPU pipeline status getters
-    bool isReadbackInProgress() const { return readbackInProgress; }
-    bool isReadbackSystemHealthy() const { return readbackBuffer != 0; }
-    float getReadbackCooldown() const { return readbackCooldown; }
+    //bool isReadbackInProgress() const { return readbackInProgress; }
+    //bool isReadbackSystemHealthy() const { return readbackBuffer != 0; }
+    //float getReadbackCooldown() const { return readbackCooldown; }
 
     // Performance testing function
 	// Cell selection and interaction system
@@ -167,11 +175,11 @@ struct CellManager
     void updateCellData(int index, const ComputeCell &newData); // Needs refactoring
 
     // Asynchronous readback functions for performance monitoring // not actually implemented yet, maybe later if we need to
-    void initializeReadbackSystem();
-    void updateReadbackSystem(float deltaTime);
-    void requestAsyncReadback();
-    bool checkAsyncReadback(ComputeCell *outputData, int maxCells);
-    void cleanupReadbackSystem();
+    //void initializeReadbackSystem();
+    //void updateReadbackSystem(float deltaTime);
+    //void requestAsyncReadback();
+    //bool checkAsyncReadback(ComputeCell *outputData, int maxCells);
+    //void cleanupReadbackSystem();
 
     // Double buffering management functions
     void swapBuffers();
@@ -188,6 +196,7 @@ private:
     void runUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
     void runCellCounter();
+    void applyCellAdditions();
 
     // Spatial grid helper functions
     void runGridClear();

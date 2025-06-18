@@ -1,12 +1,10 @@
 #version 430
 
-// Local work group size
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// mode data structure for compute shader
 struct GPUMode {
     vec4 color;
-    vec2 splitOrientation;
+    vec2 splitOrientation; // pitch, yaw
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
@@ -14,41 +12,85 @@ struct GPUMode {
 };
 
 struct ComputeCell {
-  // Physics:
-  vec4 positionAndMass; // x, y, z, mass
-  vec3 velocity;
-  vec3 acceleration;
-  vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
-  vec4 angularVelocity;
-  vec4 angularAcceleration;
-  // Internal:
-  vec4 signallingSubstances; // 4 substances for now
-  int modeIndex;
-  float age; // also used for split timer
-  float toxins;
-  float nitrates;
+    vec4 positionAndMass;
+    vec3 velocity;
+    vec3 acceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
 };
 
-// Shader storage buffer objects
 layout(std430, binding = 0) restrict buffer modeBuffer {
     GPUMode modes[];
 };
 
 layout(std430, binding = 1) restrict buffer CellInputBuffer {
-    ComputeCell inputCells[];  // Previous frame cell data (read-only)
+    ComputeCell inputCells[];
 };
 
 layout(std430, binding = 2) restrict buffer CellOutputBuffer {
-    ComputeCell outputCells[];  // Current frame cell data (write-only)
+    ComputeCell outputCells[];
 };
 
-// Uniforms
+layout(std430, binding = 3) buffer CellAdditionQueue {
+    ComputeCell newCells[];
+};
+
+layout(std430, binding = 4) buffer CellCountBuffer {
+    uint cellCount;
+    uint pendingCellCount;
+};
+
 uniform float u_deltaTime;
+uniform int u_maxCells;
+
+vec3 splitOffset(vec2 angles, float distance) { // Convert pitch and yaw to a vector
+    float pitch = angles.x;
+    float yaw = angles.y;
+    float x = distance * cos(pitch) * sin(yaw);
+    float y = distance * sin(pitch);
+    float z = distance * cos(pitch) * cos(yaw);
+    return vec3(x, y, z);
+}
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    GPUMode mode = modes[inputCells[index].modeIndex];
+    if (index >= cellCount) {
+        return;
+    }
 
-    outputCells[index].age = inputCells[index].age + u_deltaTime;
+    ComputeCell cell = inputCells[index];
+    GPUMode mode = modes[cell.modeIndex];
 
-};
+    cell.age += u_deltaTime;
+
+    if (cell.age >= mode.splitInterval && cellCount + pendingCellCount < u_maxCells) { // Split when old enough unless there are too many cells
+        // Split logic
+        vec3 offset = splitOffset(mode.splitOrientation, 0.5); // Small offset, might make it a fraction of the radius later
+
+        // Child A (replaces parent)
+        ComputeCell childA = cell;
+        childA.positionAndMass.xyz += offset;
+        childA.age = 0.0;
+        childA.modeIndex = mode.childModes.x;
+
+        // Child B (pushed to queue)
+        ComputeCell childB = cell;
+        childB.positionAndMass.xyz -= offset;
+        childB.age = 0.0;
+        childB.modeIndex = mode.childModes.y;
+
+        outputCells[index] = childA;
+        inputCells[index] = childA;
+
+        uint queueIdx = atomicAdd(pendingCellCount, 1);
+        newCells[queueIdx] = childB;
+    } else {
+        outputCells[index] = cell;
+    }
+}

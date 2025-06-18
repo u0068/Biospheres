@@ -62,8 +62,8 @@ int main()
 		UIManager uiManager; // Initialise cells
 		CellManager cellManager;
 		cellManager.addGenomeToBuffer(uiManager.currentGenome);
-		cellManager.spawnCells(config::MAX_CELLS);
-		//cellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		//cellManager.spawnCells(config::MAX_CELLS);
+		cellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
 
 		AudioEngine audioEngine;
 		audioEngine.init();
@@ -85,7 +85,10 @@ int main()
 
 		// Main while loop
 		while (!glfwWindowShouldClose(window))
-		{ // Calculate delta time
+		{
+			//cellManager.spawnCells(1); // spawns 1 cell somewhere, for debugging
+
+			// Calculate delta time
 			float currentFrame = static_cast<float>(glfwGetTime());
 			deltaTime = currentFrame - lastFrame;
 			lastFrame = currentFrame;

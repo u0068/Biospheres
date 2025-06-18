@@ -19,8 +19,8 @@ namespace config
 	constexpr int MAX_CELLS{200000};
 	constexpr int MAX_COMMANDS{50000};
 	constexpr int DEFAULT_CELL_COUNT{100000};
-	constexpr float DEFAULT_SPAWN_RADIUS{15.0f};
-	constexpr float READBACK_INTERVAL{0.5f}; // Async readback every 0.5 seconds
+	constexpr float DEFAULT_SPAWN_RADIUS{50.0f};
+	//constexpr float READBACK_INTERVAL{0.5f}; // Async readback every 0.5 seconds
 
 	// Spatial partitioning configuration
 	constexpr float WORLD_SIZE{100.0f};							  // Size of the simulation world (cube from -50 to +50)

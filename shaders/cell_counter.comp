@@ -21,6 +21,7 @@ layout(std430, binding = 0) buffer CellBuffer {
 
 layout(std430, binding = 1) buffer CellCountBuffer {
     uint cellCount;
+    uint pendingCellCount;
 };
 
 uniform int u_maxCells; // At the moment we use the config::MAX_CELLS but in the future we could do something smarter, like previous cellCount + queuedCellCount

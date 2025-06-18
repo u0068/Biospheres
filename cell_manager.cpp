@@ -26,6 +26,7 @@ CellManager::CellManager()
     internalUpdateShader = new Shader("shaders/cell_update_internal.comp");
     extractShader = new Shader("shaders/extract_instances.comp");
     cellCounterShader = new Shader("shaders/cell_counter.comp");
+    cellAdditionShader = new Shader("shaders/apply_additions.comp");
 
     // Initialize spatial grid shaders
     gridClearShader = new Shader("shaders/grid_clear.comp");
@@ -55,10 +56,10 @@ void CellManager::cleanup()
             instanceBuffer[i] = 0;
         }
     }
-    if (genomeBuffer != 0)
+    if (modeBuffer != 0)
     {
-        glDeleteBuffers(1, &genomeBuffer);
-        genomeBuffer = 0;
+        glDeleteBuffers(1, &modeBuffer);
+        modeBuffer = 0;
     }
     if (gpuCellCountBuffer != 0)
     {
@@ -69,6 +70,11 @@ void CellManager::cleanup()
     {
         glDeleteBuffers(1, &stagingCellCountBuffer);
         stagingCellCountBuffer = 0;
+    }
+    if (cellAdditionBuffer != 0)
+    {
+        glDeleteBuffers(1, &cellAdditionBuffer);
+        cellAdditionBuffer = 0;
     }
 
     cleanupSpatialGrid();
@@ -147,8 +153,8 @@ void CellManager::initializeGPUBuffers()
     }
 
     // Create single buffered genome buffer
-    glCreateBuffers(1, &genomeBuffer);
-    glNamedBufferData(genomeBuffer,
+    glCreateBuffers(1, &modeBuffer);
+    glNamedBufferData(modeBuffer,
         config::MAX_CELLS * sizeof(GPUMode),
         nullptr,
         GL_DYNAMIC_DRAW
@@ -158,7 +164,7 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &gpuCellCountBuffer);
     glNamedBufferStorage(
         gpuCellCountBuffer,
-        sizeof(GLuint),
+        sizeof(GLuint) * 2, // stores current cell count and pending cell count, can be expanded later to also include other counts
         nullptr,
         GL_DYNAMIC_STORAGE_BIT
     );
@@ -166,13 +172,21 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &stagingCellCountBuffer);
     glNamedBufferStorage(
         stagingCellCountBuffer,
-        sizeof(GLuint),
+        sizeof(GLuint) * 2,
         nullptr,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
     );
-    void* ptr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(int),
+    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * 2,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
-    cellCount = *reinterpret_cast<int*>(ptr);
+    countPtr = static_cast<GLuint*>(mappedPtr);
+
+    // Cell addition queue buffer
+    glCreateBuffers(1, &cellAdditionBuffer);
+    glNamedBufferData(cellAdditionBuffer,
+        config::MAX_CELLS * sizeof(ComputeCell) / 2, // Worst case scenario
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
 
     // Setup the sphere mesh to use our current instance buffer
     sphereMesh.setupInstanceBuffer(getCurrentInstanceBuffer());
@@ -196,15 +210,24 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
 
     TimerGPU gpuTimer("Adding Cells to GPU Buffers", true);
     // Update both cell buffers to keep them synchronized
-    for (int i = 0; i < 2; i++)
-    {
-        glNamedBufferSubData(cellBuffer[i],
-                             cellCount * sizeof(ComputeCell),
-                             newCellCount * sizeof(ComputeCell),
-                             cells.data());
-    }
+    //for (int i = 0; i < 2; i++)
+    //{
+    //    glNamedBufferSubData(cellBuffer[i],
+    //                         cellCount * sizeof(ComputeCell),
+    //                         newCellCount * sizeof(ComputeCell),
+    //                         cells.data());
+    //}
 
-    cellCount += newCellCount;
+    glNamedBufferSubData(cellAdditionBuffer,
+        gpuPendingCellCount * sizeof(ComputeCell),
+        newCellCount * sizeof(ComputeCell),
+        cells.data());
+
+    gpuPendingCellCount += newCellCount;
+    glNamedBufferSubData(gpuCellCountBuffer, sizeof(int), sizeof(int), &gpuPendingCellCount);
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+
+    //cellCount += newCellCount;    // Cell count should be kept track of by the counter on the gpu
 }
 
 void CellManager::addCellToGPUBuffer(const ComputeCell &newCell)
@@ -227,14 +250,14 @@ void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
     // Add to CPU storage only (no immediate GPU sync)
     cellStagingBuffer.push_back(correctedCell);
     cpuCells.push_back(correctedCell);
-    pendingCellCount++;
+    cpuPendingCellCount++;
 }
 
 void CellManager::addStagedCellsToGPUBuffer()
 {
     addCellsToGPUBuffer(cellStagingBuffer);
     cellStagingBuffer.clear(); // Clear after adding to GPU buffer
-    pendingCellCount = 0;      // Reset pending count
+    cpuPendingCellCount = 0;      // Reset pending count
 }
 
 void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
@@ -262,7 +285,7 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     }
 
     glNamedBufferSubData(
-        genomeBuffer,
+        modeBuffer,
         genomeBaseOffset,
         modeCount * sizeof(GPUMode),
         gpuModes.data()
@@ -305,12 +328,24 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
 
 void CellManager::updateCells(float deltaTime)
 {
-    if (pendingCellCount > 0)
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+
+    gpuPendingCellCount = countPtr[1];
+
+    if (cpuPendingCellCount > 0)
     {
         addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
     }
 
-    runCellCounter();
+    //runCellCounter(); // will be made redundant soon by counting during cell addition
+
+    if (gpuPendingCellCount)
+    {
+        applyCellAdditions();
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+
+    cellCount = countPtr[0];
 
     if (cellCount == 0) // Don't update cells if there are no cells to update
         return;
@@ -333,14 +368,13 @@ void CellManager::updateCells(float deltaTime)
     // Run position/velocity update on GPU (still working on current buffer)
     runUpdateCompute(deltaTime);
 
-
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
     swapBuffers();
 }
 
-void CellManager::runCellCounter()
+void CellManager::runCellCounter()  // This only count active cells in the gpu, not cells pending addition
 {
     TimerGPU timer("Cell Counter");
 
@@ -392,7 +426,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
 
         // Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, genomeBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentInstanceBuffer()); // Dispatch extract compute shader
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
         GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
@@ -510,16 +544,49 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
+    internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);
 
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, genomeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellAdditionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64; // Round up division
     internalUpdateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::applyCellAdditions()
+{
+    TimerGPU timer("Cell Additions", true);
+
+    cellAdditionShader->use();
+
+    // Set uniforms
+    cellAdditionShader->setInt("u_maxCells", config::MAX_CELLS);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+
+    // Dispatch compute shader
+    GLuint numGroups = (gpuPendingCellCount + 63) / 64; // Round up division
+    cellAdditionShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    std::cout << "Added " << gpuPendingCellCount << " cells from cellAdditionBuffer to cellBuffer\n";
+
+    GLuint zero = 0;    // This looks silly but I need a pointer to 0 to reset the pending cell counter
+    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
+
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
 }
 
 void CellManager::resetSimulation()
