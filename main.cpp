@@ -40,6 +40,149 @@ void glfwErrorCallback(int error, const char *description)
 	std::cerr << "GLFW Error " << error << ": " << description << "\n";
 }
 
+// Window state management
+struct WindowState {
+	bool wasMinimized = false;
+	bool isCurrentlyMinimized = false;
+	int lastKnownWidth = 0;
+	int lastKnownHeight = 0;
+};
+
+bool handleWindowStateTransitions(GLFWwindow* window, WindowState& state)
+{
+	int currentWidth, currentHeight;
+	glfwGetFramebufferSize(window, &currentWidth, &currentHeight);
+	bool isMinimized = (currentWidth == 0 || currentHeight == 0) || glfwGetWindowAttrib(window, GLFW_ICONIFIED);
+
+	// Handle minimize/restore transitions
+	if (isMinimized && !state.wasMinimized)
+	{
+		std::cout << "Window minimized, suspending rendering\n";
+		state.wasMinimized = true;
+		state.isCurrentlyMinimized = true;
+	}
+	else if (!isMinimized && state.wasMinimized)
+	{
+		std::cout << "Window restored, resuming rendering\n";
+		state.wasMinimized = false;
+		state.isCurrentlyMinimized = false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+
+	// If minimized, do minimal processing
+	if (state.isCurrentlyMinimized || isMinimized)
+	{
+		glfwPollEvents();
+		glfwSwapBuffers(window);
+		std::this_thread::sleep_for(std::chrono::milliseconds(16));
+		return true; // Skip frame
+	}
+
+	// Store valid dimensions
+	if (currentWidth > 0 && currentHeight > 0)
+	{
+		state.lastKnownWidth = currentWidth;
+		state.lastKnownHeight = currentHeight;
+	}
+
+	return false; // Don't skip frame
+}
+
+// Performance monitoring update
+void updatePerformanceMonitoring(PerformanceMonitor& perfMonitor, UIManager& uiManager, float deltaTime, float currentFrame)
+{
+	perfMonitor.frameCount++;
+	perfMonitor.frameTimeAccumulator += deltaTime;
+	uiManager.updatePerformanceMetrics(perfMonitor, deltaTime);
+
+	if (currentFrame - perfMonitor.lastPerfUpdate >= perfMonitor.perfUpdateInterval)
+	{
+		perfMonitor.displayFPS = perfMonitor.frameCount / (currentFrame - perfMonitor.lastPerfUpdate);
+		perfMonitor.displayFrameTime = (perfMonitor.frameTimeAccumulator / perfMonitor.frameCount) * 1000.0f;
+
+		perfMonitor.frameCount = 0;
+		perfMonitor.frameTimeAccumulator = 0.0f;
+		perfMonitor.lastPerfUpdate = currentFrame;
+	}
+}
+
+// Input processing
+void processInput(Input& input, Camera& camera, CellManager& cellManager, float deltaTime, 
+				  int width, int height, SynthEngine& synthEngine)
+{
+	glfwPollEvents();
+	input.update();
+	
+	if (!ImGui::GetIO().WantCaptureMouse)
+	{
+		TimerCPU cpuTimer("Input Processing");
+		camera.processInput(input, deltaTime);
+		
+		glm::vec2 mousePos = input.getMousePosition(false);
+		bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
+		bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
+		float scrollDelta = input.getScrollDelta();
+
+		cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
+									 isLeftMousePressed, isLeftMouseDown, scrollDelta);
+	}
+	
+	synthEngine.generateSample();
+}
+
+// Rendering pipeline
+void renderFrame(CellManager& cellManager, UIManager& uiManager, Shader& sphereShader, 
+				 Camera& camera, PerformanceMonitor& perfMonitor, int width, int height)
+{
+	try
+	{
+		TimerGPU timer("Cell Rendering Update");
+		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
+		checkGLError("renderCells");
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << "Exception in cell rendering: " << e.what() << "\n";
+	}
+
+	// UI Rendering
+	uiManager.renderCellInspector(cellManager);
+	uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
+	uiManager.renderCameraControls(cellManager, camera);
+	uiManager.renderGenomeEditor();
+	uiManager.renderTimeScrubber(cellManager);
+
+	if (config::showDemoWindow)
+	{
+		ImGui::ShowDemoWindow();
+	}
+}
+
+// ImGui rendering
+void renderImGui(const ImGuiIO& io)
+{
+	try
+	{
+		ImGui::Render();
+		checkGLError("ImGui::Render");
+
+		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+		{
+			GLFWwindow *backup_current_context = glfwGetCurrentContext();
+			ImGui::UpdatePlatformWindows();
+			ImGui::RenderPlatformWindowsDefault();
+			glfwMakeContextCurrent(backup_current_context);
+		}
+		
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		checkGLError("ImGui_ImplOpenGL3_RenderDrawData");
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << "Exception in ImGui: " << e.what() << "\n";
+	}
+}
+
 int main()
 {
 	{ // This scope is used to ensure the opengl elements are destroyed before the opengl context
@@ -78,10 +221,7 @@ int main()
 		PerformanceMonitor perfMonitor{};
 
 		// Window state tracking
-		bool wasMinimized = false;
-		bool isCurrentlyMinimized = false;
-		int lastKnownWidth = 0;
-		int lastKnownHeight = 0;
+		WindowState windowState;
 
 		// Main while loop
 		while (!glfwWindowShouldClose(window))
@@ -94,63 +234,18 @@ int main()
 			lastFrame = currentFrame;
 
 			// Check window state first - before any OpenGL operations
-			int currentWidth, currentHeight;
-			glfwGetFramebufferSize(window, &currentWidth, &currentHeight);
-			bool isMinimized = (currentWidth == 0 || currentHeight == 0) || glfwGetWindowAttrib(window, GLFW_ICONIFIED);
-
-			// Handle minimize/restore transitions
-			if (isMinimized && !wasMinimized)
+			if (handleWindowStateTransitions(window, windowState))
 			{
-				// Just became minimized
-				std::cout << "Window minimized, suspending rendering\n";
-				wasMinimized = true;
-				isCurrentlyMinimized = true;
-			}
-			else if (!isMinimized && wasMinimized)
-			{
-				// Just restored from minimize
-				std::cout << "Window restored, resuming rendering\n";
-				wasMinimized = false;
-				isCurrentlyMinimized = false;
-				// Give the driver a moment to stabilize
-				std::this_thread::sleep_for(std::chrono::milliseconds(10));
-			}
-
-			// If minimized, do minimal processing and skip to next frame
-			if (isCurrentlyMinimized || isMinimized)
-			{
-				glfwPollEvents();
-				glfwSwapBuffers(window);
-				std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60fps limit when minimized
+				// If the window state handling function indicates to skip the frame, continue to the next iteration
 				continue;
 			}
 
-			// Store valid dimensions
-			if (currentWidth > 0 && currentHeight > 0)
-			{
-				lastKnownWidth = currentWidth;
-				lastKnownHeight = currentHeight;
-			} // Update performance monitoring
-			perfMonitor.frameCount++;
-			perfMonitor.frameTimeAccumulator += deltaTime;
-
 			// Update performance metrics for min/avg/max calculations and history
-			uiManager.updatePerformanceMetrics(perfMonitor, deltaTime);
-
-			// Update performance display every 250ms
-			if (currentFrame - perfMonitor.lastPerfUpdate >= perfMonitor.perfUpdateInterval)
-			{
-				perfMonitor.displayFPS = perfMonitor.frameCount / (currentFrame - perfMonitor.lastPerfUpdate);
-				perfMonitor.displayFrameTime = (perfMonitor.frameTimeAccumulator / perfMonitor.frameCount) * 1000.0f; // Convert to ms
-
-				perfMonitor.frameCount = 0;
-				perfMonitor.frameTimeAccumulator = 0.0f;
-				perfMonitor.lastPerfUpdate = currentFrame;
-			}
+			updatePerformanceMonitoring(perfMonitor, uiManager, deltaTime, currentFrame);
 
 			// Use the valid dimensions we stored
-			int width = lastKnownWidth;
-			int height = lastKnownHeight;
+			int width = windowState.lastKnownWidth;
+			int height = windowState.lastKnownHeight;
 
 			// Final safety check - if we still don't have valid dimensions, skip this frame
 			if (width <= 0 || height <= 0)
@@ -184,22 +279,8 @@ int main()
 			/// Then we handle input
 			/// I should probably put this stuff in a separate function instead of having it in the main loop
 			// Take care of all GLFW events
-			glfwPollEvents();
-			input.update();
-			if (!ImGui::GetIO().WantCaptureMouse)
-			{
-				TimerCPU cpuTimer("Input Processing"); // Start CPU timer for input processing
-				// Handle camera input
-				camera.processInput(input, deltaTime);				// Handle cell selection and dragging
-				glm::vec2 mousePos = input.getMousePosition(false); // Get raw screen coordinates
-				bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
-				bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
-				float scrollDelta = input.getScrollDelta();
+			processInput(input, camera, cellManager, deltaTime, width, height, synthEngine);
 
-				cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
-											 isLeftMousePressed, isLeftMouseDown, scrollDelta);
-			}
-			synthEngine.generateSample();
 			//// Then we handle cell simulation
 			try
 			{
@@ -218,67 +299,10 @@ int main()
 			}
 
 			//// Then we handle rendering
-			try
-			{
-				TimerGPU timer("Cell Rendering Update");
-				cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
-				checkGLError("renderCells");
-			}
-			catch (const std::exception &e)
-			{
-				std::cerr << "Exception in cell rendering: " << e.what() << "\n";
-			}
-			catch (...)
-			{
-				std::cerr << "Unknown exception in cell rendering\n";
-			} //// Then we handle ImGUI
-			// ui.renderUI();
-			//  Cell Inspector and Selection UI
-			uiManager.renderCellInspector(cellManager);
+			renderFrame(cellManager, uiManager, sphereShader, camera, perfMonitor, width, height);
 
-			// Performance Monitor with readable update rate
-			uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
-
-			// Camera Controls
-			uiManager.renderCameraControls(cellManager, camera);
-
-			// Genome Editor
-			uiManager.renderGenomeEditor();
-
-			// Time Scrubber
-			uiManager.renderTimeScrubber(cellManager);
-
-			// Render the demo window if enabled
-			if (config::showDemoWindow)
-			{
-				ImGui::ShowDemoWindow();
-			}
-
-			// Renders the ImGUI elements last, so that they are on top of everything else
-			try
-			{
-				ImGui::Render();
-				checkGLError("ImGui::Render");
-
-				// Update and Render additional Platform Windows
-				if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-				{
-					GLFWwindow *backup_current_context = glfwGetCurrentContext();
-					ImGui::UpdatePlatformWindows();
-					ImGui::RenderPlatformWindowsDefault();
-					glfwMakeContextCurrent(backup_current_context);
-				}
-				ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-				checkGLError("ImGui_ImplOpenGL3_RenderDrawData");
-			}
-			catch (const std::exception &e)
-			{
-				std::cerr << "Exception in ImGui: " << e.what() << "\n";
-			}
-			catch (...)
-			{
-				std::cerr << "Unknown exception in ImGui\n";
-			}
+			// ImGui rendering
+			renderImGui(io);
 
 			try
 			{

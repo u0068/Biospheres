@@ -1,6 +1,6 @@
 #include "shader_class.h"
-#include<fstream>
-#include<cerrno>
+#include <fstream>
+#include <cerrno>
 #include <glm/vec2.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -11,18 +11,18 @@ std::string get_file_contents(const char* filename)
 	if (file)
 	{
 		// Get the size of the file and read its contents into a string
-		// I don't remember the details of this code, but it works, and we will probably never need to change it
 		std::string contents;
 		file.seekg(0, std::ios::end);
 		contents.resize(file.tellg());
 		file.seekg(0, std::ios::beg);
 		file.read(&contents[0], contents.size());
 		file.close();
-		return(contents);
+		return contents;
 	}
-	// If this point is reached, then the file could not be opened, so we throw an error
-	std::cout << "ERROR::SHADER::READING_FILE_FAILED: " << filename << "\n";
-	std::cout << "Make sure that the file path is correct!";
+	
+	// If this point is reached, then the file could not be opened
+	std::cout << "ERROR::SHADER::FILE_NOT_FOUND: " << filename << "\n";
+	std::cout << "Make sure that the file path is correct!\n";
 	throw(errno);
 }
 

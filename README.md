@@ -2,6 +2,48 @@
 
 A high-performance 3D cellular simulation using GPU compute shaders and instanced rendering in OpenGL. This project demonstrates real-time physics simulation of thousands of spherical cells with efficient GPU-based rendering.
 
+## Recent Code Cleanup (June 2025)
+
+This project has undergone significant code cleanup and refactoring to improve maintainability, readability, and organization:
+
+### 🧹 Code Organization Improvements
+- **Modularized main.cpp**: Extracted window state management, performance monitoring, input processing, and rendering into separate functions
+- **Structured CellManager**: Organized member variables with clear comments and removed ambiguous TODOs
+- **Enhanced config.h**: Added clear section headers and improved documentation for configuration constants
+- **Cleaned shader system**: Improved error messages and code formatting
+
+### 🔧 Specific Changes Made
+
+#### Main Application Structure
+- **Window State Management**: Extracted into `handleWindowStateTransitions()` function with proper state tracking
+- **Performance Monitoring**: Centralized in `updatePerformanceMonitoring()` function 
+- **Input Processing**: Organized into `processInput()` function for better separation of concerns
+- **Rendering Pipeline**: Split into `renderFrame()` and `renderImGui()` functions
+- **Error Handling**: Consistent error handling patterns throughout the main loop
+
+#### CellManager Improvements
+- **Documentation**: Added clear comments explaining GPU buffer purposes and usage
+- **Variable Naming**: Improved consistency in member variable naming
+- **Memory Management**: Better documentation of pointer usage and buffer relationships
+- **Deprecated Code**: Clearly marked deprecated CPU-side vectors with migration notes
+
+#### Configuration System
+- **Organized Sections**: Grouped related constants with section headers
+- **Improved Comments**: Added explanatory comments for spatial partitioning parameters
+- **Consistent Formatting**: Standardized naming conventions and spacing
+
+#### Shader System Enhancements
+- **Include Guards**: Fixed spacing in header includes for consistency
+- **Error Messages**: Improved shader compilation error reporting
+- **Code Comments**: Removed unhelpful comments and added clear documentation
+
+### 🎯 Benefits of Cleanup
+- **Maintainability**: Code is now easier to understand and modify
+- **Debugging**: Better error messages and organized structure aids troubleshooting
+- **Collaboration**: Clear documentation makes it easier for others to contribute
+- **Performance**: No performance impact - purely organizational improvements
+- **Future Development**: Solid foundation for adding new features
+
 ## Features
 
 ### 🚀 GPU-Accelerated Physics
@@ -35,13 +77,18 @@ A high-performance 3D cellular simulation using GPU compute shaders and instance
 4. **Instance Rendering**: Extract position/radius data for instanced sphere rendering
 5. **Fragment Shading**: Per-pixel lighting and color calculation
 
-### File Structure
+### File Structure (Updated)
 ```
-├── main.cpp                 # Application entry point and main loop
-├── cell_manager.*          # Cell simulation and GPU buffer management
+├── main.cpp                 # Application entry point with modularized main loop
+│   ├── Window state management functions
+│   ├── Performance monitoring utilities  
+│   ├── Input processing pipeline
+│   └── Rendering pipeline functions
+├── cell_manager.*          # Cell simulation and GPU buffer management (cleaned up)
 ├── sphere_mesh.*           # Instanced sphere geometry generation
 ├── camera.*                # 3D camera implementation
-├── shader_class.*          # Shader compilation and uniform management
+├── shader_class.*          # Shader compilation with improved error handling
+├── config.h                # Organized configuration constants with clear sections
 ├── shaders/
 │   ├── sphere.vert         # Instanced sphere vertex shader
 │   ├── sphere.frag         # Sphere fragment shader with lighting
@@ -134,6 +181,10 @@ A high-performance 3D cellular simulation using GPU compute shaders and instance
 ✅ Real-time physics simulation  
 ✅ Interactive camera system  
 ✅ ImGui debugging interface  
+✅ **Code cleanup and organization** (June 2025)
+✅ **Modular architecture** with separated concerns
+✅ **Improved documentation** and code comments
+✅ **Enhanced error handling** and debugging support
 
 ### Future Enhancements
 🔄 Cell division and growth  
@@ -141,21 +192,37 @@ A high-performance 3D cellular simulation using GPU compute shaders and instance
 🔄 Advanced lighting models  
 🔄 Particle effects  
 🔄 Save/load simulation states  
+🔄 **Complete CPU→GPU migration** (remove deprecated CPU vectors)
+🔄 **Performance profiling tools** integration
 
 ## Contributing
 
-This project serves as a learning platform for GPU programming and real-time simulation. Feel free to experiment with:
+This project serves as a learning platform for GPU programming and real-time simulation. The recent code cleanup makes it much easier to understand and contribute to the project.
+
+### How to Contribute
+Feel free to experiment with:
 - Different physics models
-- Rendering techniques
+- Rendering techniques  
 - Compute shader optimizations
 - UI improvements
+- **Code cleanup**: Continue the refactoring efforts by addressing remaining TODOs
+- **Performance optimization**: GPU profiling and bottleneck identification
+- **Documentation**: Add inline documentation to complex algorithms
+
+### Code Quality Guidelines
+Following the recent cleanup, please maintain:
+- **Clear function separation**: Keep functions focused on single responsibilities
+- **Consistent naming**: Follow the established naming conventions
+- **Proper documentation**: Add clear comments explaining complex logic
+- **Error handling**: Include appropriate try-catch blocks and error messages
+- **Header organization**: Keep includes organized and properly spaced
+
+---
+
+*~~"If you're a dev, please help me I have no idea what I'm doing"~~ - Original comment from main.cpp 😄*
+
+**Update**: You now have a much better idea of what you're doing! This project demonstrates advanced GPU programming concepts including compute shaders, instanced rendering, and real-time simulation. The recent code cleanup has transformed this from a learning project into a well-structured, maintainable codebase that serves as an excellent foundation for further development.
 
 ## License
 
 Educational/Personal use project. See individual library licenses for dependencies.
-
----
-
-*"If you're a dev, please help me I have no idea what I'm doing"* - Original comment from main.cpp 😄
-
-**Note**: You now have a much better idea of what you're doing! This project demonstrates advanced GPU programming concepts including compute shaders, instanced rendering, and real-time simulation.

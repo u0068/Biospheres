@@ -38,24 +38,23 @@ struct ComputeCell {
 
 struct CellManager
 {
-    // TO DO: organise all of this properly
-
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
-    // The compute shaders handle physics calculations and position updates    // GPU buffer objects - Double buffered for performance
+    // The compute shaders handle physics calculations and position updates
+
+    // GPU buffer objects - Double buffered for performance
     GLuint cellBuffer[2]{0, 0};     // SSBO for compute cell data (double buffered)
     GLuint instanceBuffer[2]{0, 0}; // VBO for instance rendering data (double buffered)
-    int currentBufferIndex{ 0 };        // Index of current buffer (0 or 1)
-    int previousBufferIndex{ 1 };       // Index of previous buffer (1 or 0)
+    int currentBufferIndex{0};      // Index of current buffer (0 or 1)
+    int previousBufferIndex{1};     // Index of previous buffer (1 or 0)
 
-    // Keeps track of how many cells there are in the simulation
-    GLuint gpuCellCountBuffer{ 0 };     // Ensures the gpu has quick access to the cell count
-    GLuint stagingCellCountBuffer{ 0 }; // Ensures the cpu has quick access to the cell count without causing sync-stalls
+    // Cell count management
+    GLuint gpuCellCountBuffer{0};     // GPU-accessible cell count buffer
+    GLuint stagingCellCountBuffer{0}; // CPU-accessible cell count buffer (no sync stalls)
+    GLuint cellAdditionBuffer{0};     // Cell addition queue for GPU
 
-    GLuint cellAdditionBuffer{ 0 };     // Cell addition queue for the gpu
-
-    // Genome buffer, no need for double buffering as, ironically, genomes are immutable
-    GLuint modeBuffer{ 0 };
+    // Genome buffer (immutable, no need for double buffering)
+    GLuint modeBuffer{0};
 
     // Spatial partitioning buffers - Double buffered
     GLuint gridBuffer[2] = {0, 0};       // SSBO for grid cell data (stores cell indices)
@@ -83,16 +82,17 @@ struct CellManager
     Shader* gridClearShader = nullptr;     // Clear grid counts
     Shader* gridAssignShader = nullptr;    // Assign cells to grid
     Shader* gridPrefixSumShader = nullptr; // Calculate grid offsets
-    Shader* gridInsertShader = nullptr;    // Insert cells into grid
-
-    // CPU-side storage for initialization and debugging
-    std::vector<ComputeCell> cpuCells; // Deprecated, since we use GPU buffers now. Get rid of this after refactoring.
+    Shader* gridInsertShader = nullptr;    // Insert cells into grid    // CPU-side storage for initialization and debugging
+    // Note: cpuCells is deprecated in favor of GPU buffers, should be removed after refactoring
+    std::vector<ComputeCell> cpuCells;
     std::vector<ComputeCell> cellStagingBuffer;
-    int cellCount{0};               // Not sure if this is accurately representative of the GPU state, im gonna need to work on it
-    int cpuPendingCellCount{ 0 };   // Number of cells pending addition by cpu
-    int gpuPendingCellCount{ 0 };   // Number of cells pending addition by gpu
-    void* mappedPtr = nullptr;      // Points to the cell count staging buffer
-    GLuint* countPtr = 0;           // Holds the value of the mappedPtr
+    
+    // Cell count tracking (CPU-side approximation of GPU state)
+    int cellCount{0};               // Approximate cell count, may not reflect exact GPU state
+    int cpuPendingCellCount{0};     // Number of cells pending addition by CPU
+    int gpuPendingCellCount{0};     // Number of cells pending addition by GPU
+    void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
+    GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
 
     // Configuration
     static constexpr int MAX_CELLS = config::MAX_CELLS;
