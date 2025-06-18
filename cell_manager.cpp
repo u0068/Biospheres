@@ -1017,12 +1017,19 @@ void CellManager::syncCellPositionsFromGPU()
 
     if (gpuData)
     {
+        cpuCells.reserve(cellCount);
         // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
         for (int i = 0; i < cellCount; i++)
         {
             // Only sync position and radius, preserve velocity and mass from CPU
             //cpuCells[i].positionAndMass = gpuData[i].positionAndMass;
-            cpuCells[i] = gpuData[i]; // im syncing all of the data which is quite wasteful
+            if (i < cpuCells.size())
+            {
+                cpuCells[i] = gpuData[i]; // im syncing all of the data which is quite wasteful
+            } else
+            {
+                cpuCells.push_back(gpuData[i]);
+            }
             // if youre reading this and want to optimise this function please i beg of you
             // move cell selection to the gpu and only return the data of the selected cell
         }
