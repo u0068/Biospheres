@@ -335,21 +335,16 @@ void CellManager::updateCells(float deltaTime)
     if (cpuPendingCellCount > 0)
     {
         addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
-    }    //runCellCounter(); // will be made redundant soon by counting during cell addition
+    }
 
     unsigned int previousCellCount = cellCount;
     
+    // Apply any pending additions from previous frame first
     if (gpuPendingCellCount)
     {
         applyCellAdditions();
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    }
-    
-    cellCount = countPtr[0];
-
-    // Only log if cells were added (split event occurred)
-    if (cellCount > previousCellCount) {
-        std::cout << "Split event occurred! Cell count increased from " << previousCellCount << " to " << cellCount << "\n";
+        cellCount = countPtr[0]; // Update count after additions
     }
 
     if (cellCount == 0) // Don't update cells if there are no cells to update
@@ -365,10 +360,28 @@ void CellManager::updateCells(float deltaTime)
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    // Run cells' internal calculations
+    // Run cells' internal calculations (this creates new pending cells from mitosis)
     runInternalUpdateCompute(deltaTime);
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Immediately apply any new cell divisions that occurred this frame
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    gpuPendingCellCount = countPtr[1];
+    
+    if (gpuPendingCellCount > 0)
+    {
+        applyCellAdditions(); // Apply mitosis results immediately
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+    
+    // Update final cell count after all additions
+    cellCount = countPtr[0];
+
+    // Log if cells were added (split event occurred)
+    if (cellCount > previousCellCount) {
+        std::cout << "Split event occurred! Cell count increased from " << previousCellCount << " to " << cellCount << "\n";
+    }
 
     // Run position/velocity update on GPU (still working on current buffer)
     runUpdateCompute(deltaTime);
