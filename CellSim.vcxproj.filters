@@ -202,5 +202,8 @@
     <None Include="shaders\cell_counter.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\apply_additions.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

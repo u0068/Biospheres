@@ -86,9 +86,10 @@ struct CellManager
     std::vector<ComputeCell> cellStagingBuffer;
     
     // Cell count tracking (CPU-side approximation of GPU state)
-    int cellCount{0};               // Approximate cell count, may not reflect exact GPU state
+    int cellCount{0};               // Approximate cell count, may not reflect exact GPU state due to being a frame behind
     int cpuPendingCellCount{0};     // Number of cells pending addition by CPU
-    int gpuPendingCellCount{0};     // Number of cells pending addition by GPU
+    int gpuPendingCellCount{0};     // Approx number of cells pending addition by GPU
+	// Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
 

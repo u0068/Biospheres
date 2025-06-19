@@ -1,4 +1,4 @@
-#version 430
+#version 430 core
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -33,15 +33,11 @@ layout(std430, binding = 1) restrict buffer CellBuffer {
     ComputeCell cells[];
 };
 
-layout(std430, binding = 2) restrict buffer CellOutputBuffer {
-    ComputeCell outputCells[]; // For consistency, but points to same buffer as binding 1
-};
-
-layout(std430, binding = 3) buffer CellAdditionQueue {
+layout(std430, binding = 2) buffer CellAdditionQueue {
     ComputeCell newCells[];
 };
 
-layout(std430, binding = 4) buffer CellCountBuffer {
+layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
 };
@@ -65,39 +61,37 @@ void main() {
     }    ComputeCell cell = cells[index]; // Read from current buffer
     GPUMode mode = modes[cell.modeIndex];
 
-    cell.age += u_deltaTime;    if (cell.age >= mode.splitInterval) {
-        // Use atomic operation to safely reserve a slot for division
-        uint potentialNewCount = atomicAdd(pendingCellCount, 1);
-        
-        // Check if adding this cell would exceed the limit
-        if (cellCount + potentialNewCount >= u_maxCells) {
-            // Revert the atomic add and don't divide
-            atomicAdd(pendingCellCount, uint(-1));
-            cells[index] = cell; // Just age the cell without division
-            return;
+    cell.age += u_deltaTime;
+    if (cell.age >= mode.splitInterval) {
+        // Estimate new total number of cells
+        uint currentTotal = atomicAdd(pendingCellCount, 0); // Read current pending count
+        if (cellCount + currentTotal < u_maxCells) {
+            // Atomically reserve a slot in the addition queue
+            uint queueIdx = atomicAdd(pendingCellCount, 1);
+
+            vec3 offset = splitOffset(mode.splitOrientation, 0.5);
+
+            // Child A (replaces parent)
+            ComputeCell childA = cell;
+            childA.positionAndMass.xyz += offset;
+            childA.age = 0.0;
+            childA.modeIndex = mode.childModes.x;
+
+            // Child B (goes in addition queue)
+            ComputeCell childB = cell;
+            childB.positionAndMass.xyz -= offset;
+            childB.age = 0.0;
+            childB.modeIndex = mode.childModes.y;
+
+            // Store new cells
+            cells[index] = childA;
+            newCells[queueIdx] = childB;
+        } else {
+            // Can't divide — just continue aging
+            cells[index] = cell;
         }
-        
-        // Safe to proceed with division
-        vec3 offset = splitOffset(mode.splitOrientation, 0.5);
-
-        // Child A (replaces parent)
-        ComputeCell childA = cell;
-        childA.positionAndMass.xyz += offset;
-        childA.age = 0.0;
-        childA.modeIndex = mode.childModes.x;
-
-        // Child B (pushed to queue)
-        ComputeCell childB = cell;
-        childB.positionAndMass.xyz -= offset;
-        childB.age = 0.0;
-        childB.modeIndex = mode.childModes.y;
-
-        // Write child A back to the same position (in-place update)
-        cells[index] = childA;
-
-        newCells[potentialNewCount] = childB;
     } else {
-        // Update the cell in-place with incremented age
+        // Not ready to divide — age normally
         cells[index] = cell;
     }
 }

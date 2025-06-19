@@ -331,14 +331,13 @@ void CellManager::updateCells(float deltaTime)
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
 
     cellCount = countPtr[0];
-    gpuPendingCellCount = countPtr[1];
+    gpuPendingCellCount = countPtr[1]; // This is effectively more of a bool than an int due to its horrific inaccuracy, but that's good enough for us
+    int previousCellCount = cellCount;
 
     if (cpuPendingCellCount > 0)
     {
         addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
     }
-
-    int previousCellCount = cellCount;
 
     if (cellCount > 0) // Don't update cells if there are no cells to update
     {
@@ -555,11 +554,11 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
-    internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
+    internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentCellBuffer()); // Read from current buffer (has physics results)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer()); // Write to same buffer (in-place update)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellAdditionBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64; // Round up division
@@ -577,29 +576,21 @@ void CellManager::applyCellAdditions()
     // Set uniforms
     cellAdditionShader->setInt("u_maxCells", config::MAX_CELLS);
 
-    // Debug: Print initial state
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-    std::cout << "Before additions: cellCount=" << countPtr[0] << ", pendingCellCount=" << countPtr[1] << "\n";
-
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
-    GLuint numGroups = (gpuPendingCellCount + 63) / 64; // Round up division
+    GLuint numGroups = (config::MAX_CELLS / 2 + 63) / 64; // Horrific over-dispatch but it's better than under-dispatch and surprisingly doesn't hurt performance
     cellAdditionShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    std::cout << "Processed " << gpuPendingCellCount << " cell additions on GPU\n";
 
     GLuint zero = 0;    // This looks silly but I need a pointer to 0 to reset the pending cell counter
     glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-    
-    std::cout << "GPU cell count after additions: " << countPtr[0] << "\n";
 }
 
 void CellManager::resetSimulation()
