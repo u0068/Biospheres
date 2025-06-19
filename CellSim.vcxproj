@@ -169,7 +169,6 @@
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
     <ClCompile Include="glfw_helpers.cpp" />
-    <ClCompile Include="multibuffer.cpp" />
     <ClCompile Include="synthesizer.cpp" />
     <ClCompile Include="timer.cpp" />
     <ClCompile Include="ui_manager.cpp" />
@@ -194,7 +193,6 @@
     <ClInclude Include="genome.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
-    <ClInclude Include="multibuffer.h" />
     <ClInclude Include="synthesizer.h" />
     <ClInclude Include="timer.h" />
     <ClInclude Include="ui_manager.h" />

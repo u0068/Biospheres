@@ -157,6 +157,25 @@ void renderFrame(CellManager& cellManager, UIManager& uiManager, Shader& sphereS
 	}
 }
 
+void updateSimulation(CellManager& cellManager)
+{
+	try
+	{
+		// Update cell simulation with the delta time
+		// GPU timer was moved inside the function because it has multiple elements that need individual timing
+		cellManager.updateCells(config::physicsTimeStep);
+		checkGLError("updateCells");
+	}
+	catch (const std::exception& e)
+	{
+		std::cerr << "Exception in cell simulation: " << e.what() << "\n";
+	}
+	catch (...)
+	{
+		std::cerr << "Unknown exception in cell simulation\n";
+	}
+}
+
 // ImGui rendering
 void renderImGui(const ImGuiIO& io)
 {
@@ -215,6 +234,7 @@ int main()
 		// Timing variables
 		float deltaTime = 0.0f;
 		float lastFrame = 0.0f;
+		float accumulator = 0.0f;
 
 		// Performance monitoring struct
 		PerformanceMonitor perfMonitor{};
@@ -231,6 +251,10 @@ int main()
 			float currentFrame = static_cast<float>(glfwGetTime());
 			deltaTime = currentFrame - lastFrame;
 			lastFrame = currentFrame;
+			deltaTime = std::clamp(deltaTime, 0.0f, config::maxDeltaTime);
+			accumulator += deltaTime;
+			accumulator = std::clamp(accumulator, 0.0f, config::maxAccumulatorTime);
+			float tickPeriod = deltaTime / config::physicsSpeed;
 
 			// Check window state first - before any OpenGL operations
 			if (handleWindowStateTransitions(window, windowState))
@@ -281,20 +305,11 @@ int main()
 			processInput(input, camera, cellManager, deltaTime, width, height, synthEngine);
 
 			//// Then we handle cell simulation
-			try
+
+			while (accumulator >= tickPeriod)
 			{
-				// Update cell simulation with the delta time
-				// GPU timer was moved inside the function because it has multiple elements that need individual timing
-				cellManager.updateCells(deltaTime);
-				checkGLError("updateCells");
-			}
-			catch (const std::exception &e)
-			{
-				std::cerr << "Exception in cell simulation: " << e.what() << "\n";
-			}
-			catch (...)
-			{
-				std::cerr << "Unknown exception in cell simulation\n";
+				updateSimulation(cellManager);
+				accumulator -= tickPeriod;
 			}
 
 			//// Then we handle rendering

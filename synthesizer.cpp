@@ -16,7 +16,7 @@ float SynthEngine::generateSample() {
     {
         return 0.0;
     }
-    if (!config::playStartupJingle)
+    if (!config::PLAY_STARTUP_JINGLE)
     {
         return 0.0;
     }

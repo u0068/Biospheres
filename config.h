@@ -14,10 +14,10 @@ namespace config
 	constexpr int OPENGL_VERSION_MINOR{6};
 	constexpr const char* GLSL_VERSION{"#version 460"};
 	constexpr const char* APPLICATION_NAME{"Biospheres 2"};
+	constexpr bool PLAY_STARTUP_JINGLE{false};
 
 	// ========== Cell Simulation Configuration ==========
-	constexpr int MAX_CELLS{200000};
-	constexpr int MAX_COMMANDS{50000};
+	constexpr int MAX_CELLS{100000};
 	constexpr int DEFAULT_CELL_COUNT{100000};
 	constexpr float DEFAULT_SPAWN_RADIUS{50.0f};
 
@@ -30,6 +30,9 @@ namespace config
 
 	// ========== Runtime Configuration Variables ==========
 	// These can be modified at runtime
-	inline bool showDemoWindow = true;
-	inline bool playStartupJingle = false;
+	inline bool showDemoWindow{true};
+	inline float physicsTimeStep{ 0.02f };	// The size of a physics time step, in simulation time
+	inline float physicsSpeed{ 1.0f };		// A multiplier on the physics tickrate. Physics tickrate = physicsSpeed / physicsTimeStep
+	inline float maxAccumulatorTime{ 0.01 };// Maximum amount of time spent on simulating physics per frame. Max physics tpf = maxAccumulatorTime * tickrate
+	inline float maxDeltaTime{ 0.1 };		// The maximum amount of time that can be accumulated by 1 frame
 }
