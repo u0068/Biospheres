@@ -330,6 +330,7 @@ void CellManager::updateCells(float deltaTime)
 {
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
 
+    cellCount = countPtr[0];
     gpuPendingCellCount = countPtr[1];
 
     if (cpuPendingCellCount > 0)
@@ -338,32 +339,29 @@ void CellManager::updateCells(float deltaTime)
     }
 
     int previousCellCount = cellCount;
-    
-    // Apply any pending additions from previous frame first
-    if (gpuPendingCellCount)
+
+    if (cellCount > 0) // Don't update cells if there are no cells to update
     {
-        applyCellAdditions();
+	    // Update spatial grid before physics
+    	updateSpatialGrid();
+
+    	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    	// Run physics computation on GPU (reads from previous, writes to current)
+    	runPhysicsCompute(deltaTime);
+
+    	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+        // Run position/velocity update on GPU (still working on current buffer)
+        runUpdateCompute(deltaTime);
+
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        cellCount = countPtr[0]; // Update count after additions
+
+    	// Run cells' internal calculations (this creates new pending cells from mitosis)
+    	runInternalUpdateCompute(deltaTime);
+
+    	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
-
-    if (cellCount == 0) // Don't update cells if there are no cells to update
-        return;
-
-	// Update spatial grid before physics
-    updateSpatialGrid();
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Run physics computation on GPU (reads from previous, writes to current)
-    runPhysicsCompute(deltaTime);
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Run cells' internal calculations (this creates new pending cells from mitosis)
-    runInternalUpdateCompute(deltaTime);
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Immediately apply any new cell divisions that occurred this frame
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
@@ -382,11 +380,6 @@ void CellManager::updateCells(float deltaTime)
     if (cellCount > previousCellCount) {
         std::cout << "Split event occurred! Cell count increased from " << previousCellCount << " to " << cellCount << "\n";
     }
-
-    // Run position/velocity update on GPU (still working on current buffer)
-    runUpdateCompute(deltaTime);
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
     swapBuffers();

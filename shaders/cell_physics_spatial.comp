@@ -84,9 +84,9 @@ void main() {
       // Skip physics for dragged cell - it will be positioned directly
     if (int(index) == u_draggedCellIndex) {
         // Copy input to output but clear velocity and acceleration for dragged cell
-        outputCells[index] = inputCells[index];
-        outputCells[index].velocity.xyz = vec3(0.0);
-        outputCells[index].acceleration = vec3(0.0);
+        //outputCells[index] = inputCells[index];
+        //outputCells[index].velocity.xyz = vec3(0.0);
+        //outputCells[index].acceleration = vec3(0.0);
         return;
     }    
     // Copy input cell data to output and reset acceleration
