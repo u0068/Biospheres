@@ -136,7 +136,6 @@ void renderFrame(CellManager& cellManager, UIManager& uiManager, Shader& sphereS
 {
 	try
 	{
-		TimerGPU timer("Cell Rendering Update");
 		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
 		checkGLError("renderCells");
 	}
@@ -312,7 +311,7 @@ int main()
 			}
 			catch (const std::exception &e)
 			{
-				std::cerr << "Exception in buffer swap: " << e.what() << "\n";
+				std::cerr << "Exception in framebuffer swap: " << e.what() << "\n";
 				// Try to recover by just swapping buffers
 				try
 				{
@@ -325,7 +324,7 @@ int main()
 			}
 			catch (...)
 			{
-				std::cerr << "Unknown exception in buffer swap\n";
+				std::cerr << "Unknown exception in framebuffer swap\n";
 				// Try to recover by just swapping buffers
 				try
 				{

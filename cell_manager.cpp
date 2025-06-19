@@ -42,19 +42,19 @@ CellManager::~CellManager()
 
 void CellManager::cleanup()
 {
-    // Clean up double buffered cell buffers
-    for (int i = 0; i < 2; i++)
+    // Clean up triple buffered cell buffers
+    for (int i = 0; i < 3; i++)
     {
         if (cellBuffer[i] != 0)
         {
             glDeleteBuffers(1, &cellBuffer[i]);
             cellBuffer[i] = 0;
         }
-        if (instanceBuffer[i] != 0)
-        {
-            glDeleteBuffers(1, &instanceBuffer[i]);
-            instanceBuffer[i] = 0;
-        }
+    }
+    if (instanceBuffer != 0)
+    {
+        glDeleteBuffers(1, &instanceBuffer);
+        instanceBuffer = 0;
     }
     if (modeBuffer != 0)
     {
@@ -131,8 +131,8 @@ void CellManager::cleanup()
 
 void CellManager::initializeGPUBuffers()
 {
-    // Create double buffered compute buffers for cell data
-    for (int i = 0; i < 2; i++)
+    // Create triple buffered compute buffers for cell data
+    for (int i = 0; i < 3; i++)
     {
         glCreateBuffers(1, &cellBuffer[i]);
         glNamedBufferData(
@@ -142,15 +142,16 @@ void CellManager::initializeGPUBuffers()
             GL_DYNAMIC_DRAW
         );
 
-        // Create double buffered instance buffers for rendering (contains position + radius)
-        glCreateBuffers(1, &instanceBuffer[i]);
-        glNamedBufferData(
-            instanceBuffer[i],
-            config::MAX_CELLS * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
-            nullptr,
-            GL_DYNAMIC_DRAW
-        );
     }
+
+    // Create instance buffer for rendering (contains position + radius)
+    glCreateBuffers(1, &instanceBuffer);
+    glNamedBufferData(
+        instanceBuffer,
+        config::MAX_CELLS * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
 
     // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
@@ -189,7 +190,7 @@ void CellManager::initializeGPUBuffers()
     );
 
     // Setup the sphere mesh to use our current instance buffer
-    sphereMesh.setupInstanceBuffer(getCurrentInstanceBuffer());
+    sphereMesh.setupInstanceBuffer(instanceBuffer);
 
     // Reserve CPU storage
     cpuCells.reserve(config::MAX_CELLS);
@@ -381,7 +382,7 @@ void CellManager::updateCells(float deltaTime)
     }
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
-    swapBuffers();
+    rotateBuffers();
 }
 
 void CellManager::runCellCounter()  // This only count active cells in the gpu, not cells pending addition
@@ -402,7 +403,7 @@ void CellManager::runCellCounter()  // This only count active cells in the gpu, 
     // Set uniforms
     cellCounterShader->setInt("u_maxCells", config::MAX_CELLS);
 
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
 
     // Dispatch compute shader
@@ -432,15 +433,21 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         return;
     }    try
     { // Use compute shader to efficiently extract instance data
-        extractShader->use();
+	    {
+		    TimerGPU timer("Instance extraction");
 
-        // Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentInstanceBuffer()); // Dispatch extract compute shader
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
-        GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
-        extractShader->dispatch(numGroups, 1, 1);
+	    	extractShader->use();
+
+	    	// Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
+	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, instanceBuffer); // Dispatch extract compute shader
+	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
+	    	GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
+	    	extractShader->dispatch(numGroups, 1, 1);
+	    }
+
+        TimerGPU timer("Cell Rendering");
 
         // Use the sphere shader
         cellShader.use(); // Set up camera matrices (only calculate once per frame, not per cell)
@@ -510,12 +517,12 @@ void CellManager::runPhysicsCompute(float deltaTime)
     physicsShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     physicsShader->setFloat("u_worldSize", config::WORLD_SIZE);
     physicsShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID); // Bind buffers (read from previous buffer, write to current buffer for stable simulation)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getPreviousCellBuffer()); // Read from previous frame
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentGridCountBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Read from previous frame
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridCountBuffer);
 
     // Also bind current buffer as output for physics results
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCurrentCellBuffer()); // Write to current frame
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCellWriteBuffer()); // Write to current frame
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader
@@ -536,7 +543,7 @@ void CellManager::runUpdateCompute(float deltaTime)
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     updateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader
@@ -556,7 +563,7 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
     internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentCellBuffer()); // Read from current buffer (has physics results)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Read from current buffer (has physics results)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
@@ -577,8 +584,8 @@ void CellManager::applyCellAdditions()
     cellAdditionShader->setInt("u_maxCells", config::MAX_CELLS);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getPreviousCellBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentCellBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
@@ -613,22 +620,20 @@ void CellManager::resetSimulation()
     glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // pendingCellCount = 0
     
     // Clear all cell buffers
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
     {
         glClearNamedBufferData(cellBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-        glClearNamedBufferData(instanceBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
+
+    glClearNamedBufferData(instanceBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     
     // Clear addition buffer
     glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     
     // Clear spatial grid buffers
-    for (int i = 0; i < 2; i++)
-    {
-        glClearNamedBufferData(gridBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-        glClearNamedBufferData(gridCountBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-        glClearNamedBufferData(gridOffsetBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
+    glClearNamedBufferData(gridBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glClearNamedBufferData(gridCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glClearNamedBufferData(gridOffsetBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     
     // Sync the staging buffer
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
@@ -673,25 +678,23 @@ void CellManager::spawnCells(int count) // no longer functional, needs to be upd
 void CellManager::initializeSpatialGrid()
 {
     // Create double buffered grid buffers to store cell indices
-    for (int i = 0; i < 2; i++)
-    {
-        glCreateBuffers(1, &gridBuffer[i]);
-        glNamedBufferData(gridBuffer[i],
-                          config::TOTAL_GRID_CELLS * config::MAX_CELLS_PER_GRID * sizeof(GLuint),
-                          nullptr, GL_DYNAMIC_DRAW);
 
-        // Create double buffered grid count buffers to store number of cells per grid cell
-        glCreateBuffers(1, &gridCountBuffer[i]);
-        glNamedBufferData(gridCountBuffer[i],
-                          config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                          nullptr, GL_DYNAMIC_DRAW);
+    glCreateBuffers(1, &gridBuffer);
+    glNamedBufferData(gridBuffer,
+                      config::TOTAL_GRID_CELLS * config::MAX_CELLS_PER_GRID * sizeof(GLuint),
+                      nullptr, GL_DYNAMIC_DRAW);
 
-        // Create double buffered grid offset buffers for prefix sum calculations
-        glCreateBuffers(1, &gridOffsetBuffer[i]);
-        glNamedBufferData(gridOffsetBuffer[i],
-                          config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                          nullptr, GL_DYNAMIC_DRAW);
-    }
+    // Create double buffered grid count buffers to store number of cells per grid cell
+    glCreateBuffers(1, &gridCountBuffer);
+    glNamedBufferData(gridCountBuffer,
+                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
+                      nullptr, GL_DYNAMIC_DRAW);
+
+    // Create double buffered grid offset buffers for prefix sum calculations
+    glCreateBuffers(1, &gridOffsetBuffer);
+    glNamedBufferData(gridOffsetBuffer,
+                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
+                      nullptr, GL_DYNAMIC_DRAW);
 
     std::cout << "Initialized double buffered spatial grid with " << config::TOTAL_GRID_CELLS
               << " grid cells (" << config::GRID_RESOLUTION << "^3)\n";
@@ -729,23 +732,21 @@ void CellManager::updateSpatialGrid()
 void CellManager::cleanupSpatialGrid()
 {
     // Clean up double buffered spatial grid buffers
-    for (int i = 0; i < 2; i++)
+
+    if (gridBuffer != 0)
     {
-        if (gridBuffer[i] != 0)
-        {
-            glDeleteBuffers(1, &gridBuffer[i]);
-            gridBuffer[i] = 0;
-        }
-        if (gridCountBuffer[i] != 0)
-        {
-            glDeleteBuffers(1, &gridCountBuffer[i]);
-            gridCountBuffer[i] = 0;
-        }
-        if (gridOffsetBuffer[i] != 0)
-        {
-            glDeleteBuffers(1, &gridOffsetBuffer[i]);
-            gridOffsetBuffer[i] = 0;
-        }
+        glDeleteBuffers(1, &gridBuffer);
+        gridBuffer = 0;
+    }
+    if (gridCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridCountBuffer);
+        gridCountBuffer = 0;
+    }
+    if (gridOffsetBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridOffsetBuffer);
+        gridOffsetBuffer = 0;
     }
 }
 
@@ -755,7 +756,7 @@ void CellManager::runGridClear()
 
     gridClearShader->setInt("u_totalGridCells", config::TOTAL_GRID_CELLS);
 
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentGridCountBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
 
     GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
     gridClearShader->dispatch(numGroups, 1, 1);
@@ -772,8 +773,8 @@ void CellManager::runGridAssign()
     gridAssignShader->setFloat("u_worldSize", config::WORLD_SIZE);
 
     // Use previous buffer for spatial grid to match physics compute input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getPreviousCellBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridCountBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridCountBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     GLuint numGroups = (cellCount + 63) / 64;
@@ -788,8 +789,8 @@ void CellManager::runGridPrefixSum()
 
     gridPrefixSumShader->setInt("u_totalGridCells", config::TOTAL_GRID_CELLS);
 
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCurrentGridCountBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridOffsetBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffsetBuffer);
 
     GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
     gridPrefixSumShader->dispatch(numGroups, 1, 1);
@@ -803,10 +804,10 @@ void CellManager::runGridInsert()
     gridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     gridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
     gridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID); // Use previous buffer for spatial grid to match physics compute input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getPreviousCellBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCurrentGridBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCurrentGridOffsetBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCurrentGridCountBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridOffsetBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     GLuint numGroups = (cellCount + 63) / 64;
@@ -955,7 +956,7 @@ void CellManager::dragSelectedCell(const glm::vec3 &newWorldPosition)
     selectedCell.cellData = cpuCells[selectedCell.cellIndex];
 
     // Update GPU buffers immediately to ensure compute shaders see the new position
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
     {
         glNamedBufferSubData(cellBuffer[i],
                              selectedCell.cellIndex * sizeof(ComputeCell),
@@ -979,7 +980,7 @@ void CellManager::endDrag()
         cpuCells[selectedCell.cellIndex].velocity.x = 0.0f;
         cpuCells[selectedCell.cellIndex].velocity.y = 0.0f;
         cpuCells[selectedCell.cellIndex].velocity.z = 0.0f; // Update the GPU buffers with the final state
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < 3; i++)
         {
             glNamedBufferSubData(cellBuffer[i],
                                  selectedCell.cellIndex * sizeof(ComputeCell),
@@ -997,7 +998,7 @@ void CellManager::syncCellPositionsFromGPU()
         return;
 
     // Use glMapBuffer for efficient GPU->CPU data transfer from current buffer
-    ComputeCell *gpuData = static_cast<ComputeCell *>(glMapNamedBuffer(getCurrentCellBuffer(), GL_READ_ONLY));
+    ComputeCell *gpuData = static_cast<ComputeCell *>(glMapNamedBuffer(getCellReadBuffer(), GL_READ_ONLY));
 
     if (gpuData)
     {
@@ -1018,7 +1019,7 @@ void CellManager::syncCellPositionsFromGPU()
             // move cell selection to the gpu and only return the data of the selected cell
         }
 
-        glUnmapNamedBuffer(getCurrentCellBuffer());
+        glUnmapNamedBuffer(getCellReadBuffer());
 
         std::cout << "Synced " << cellCount << " cell positions from GPU" << std::endl;
     }
@@ -1143,14 +1144,4 @@ bool CellManager::raySphereIntersection(const glm::vec3 &rayOrigin, const glm::v
     }
 
     return false; // Both intersections are behind the ray origin or too close
-}
-
-void CellManager::swapBuffers()
-{
-    // Swap buffer indices for double buffering
-    currentBufferIndex = 1 - currentBufferIndex;
-    previousBufferIndex = 1 - previousBufferIndex;
-
-    // Update the sphere mesh to use the new current instance buffer
-    sphereMesh.setupInstanceBuffer(getCurrentInstanceBuffer());
 }
