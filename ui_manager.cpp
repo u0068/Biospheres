@@ -8,11 +8,23 @@
 #include <cstdio>
 
 #include "audio_engine.h"
+#include "scene_manager.h"
 
-void UIManager::renderCellInspector(CellManager &cellManager)
+// Ensure std::min and std::max are available
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
+void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& sceneManager)
 {
-    int flags = windowsLocked ? getWindowFlags() : getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Begin("Cell Inspector", nullptr, flags);
+    ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+      int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    if (ImGui::Begin("Cell Inspector", nullptr, flags))
+    {
 
     if (cellManager.hasSelectedCell())
     {
@@ -98,11 +110,11 @@ void UIManager::renderCellInspector(CellManager &cellManager)
         ImGui::Text("Instructions:");
         ImGui::BulletText("Left-click on a cell to select it");
         ImGui::BulletText("Drag to move selected cell");
-        ImGui::BulletText("Scroll wheel to adjust distance");
-        ImGui::BulletText("Selected cell moves in a plane");
+        ImGui::BulletText("Scroll wheel to adjust distance");        ImGui::BulletText("Selected cell moves in a plane");
         ImGui::BulletText("parallel to the camera");
     }
 
+    }
     ImGui::End();
 }
 
@@ -131,9 +143,13 @@ void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
     }
 }
 
-void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor)
+void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager)
 {
-    ImGui::Begin("Advanced Performance Monitor", nullptr, getWindowFlags());
+    ImGui::SetNextWindowPos(ImVec2(420, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+      int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    if (ImGui::Begin("Advanced Performance Monitor", nullptr, flags))
+    {
 
     // === FPS and Frame Time Section ===
     ImGui::Text("Performance Overview");
@@ -324,8 +340,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         //    if (cellManager.isReadbackInProgress())
         //    {
         //        ImGui::Text("  Readback in progress...");
-        //    }
-        //    ImGui::Text("  Cooldown: %.2f s", cellManager.getReadbackCooldown());
+        //    }        //    ImGui::Text("  Cooldown: %.2f s", cellManager.getReadbackCooldown());
         //}
         //else
         //{
@@ -333,13 +348,17 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         //}
     }
 
+    }
     ImGui::End();
 }
 
-void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
+void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, SceneManager& sceneManager)
 {
-    int flags = windowsLocked ? getWindowFlags() : getWindowFlags(ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Begin("Camera & Controls", nullptr, flags);
+    ImGui::SetNextWindowPos(ImVec2(50, 470), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
+      int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    if (ImGui::Begin("Camera & Controls", nullptr, flags))
+    {
     glm::vec3 camPos = camera.getPosition();
     ImGui::Text("Position: (%.2f, %.2f, %.2f)", camPos.x, camPos.y, camPos.z);
     ImGui::Separator();
@@ -370,12 +389,12 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera)
     ImGui::BulletText("Scroll Wheel - Adjust drag distance");
 
     // Show current selection info
-    if (cellManager.hasSelectedCell())
-    {
+    if (cellManager.hasSelectedCell())    {
         ImGui::Separator();
         const auto &selection = cellManager.getSelectedCell();
         ImGui::Text("Selected: Cell #%d", selection.cellIndex);
         ImGui::Text("Drag Distance: %.1f", selection.dragDistance);
+    }
     }
     ImGui::End();
 }
@@ -392,11 +411,15 @@ int UIManager::getWindowFlags(int baseFlags) const
     return baseFlags;
 }
 
-void UIManager::renderGenomeEditor()
+void UIManager::renderGenomeEditor(SceneManager& sceneManager)
 {
+    ImGui::SetNextWindowPos(ImVec2(840, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    
     // Set minimum window size constraints
-    ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::Begin("Genome Editor", nullptr, getWindowFlags());    // Genome Name and Save/Load Section
+    ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));    int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    if (ImGui::Begin("Genome Editor", nullptr, flags))
+    {
     ImGui::Text("Genome Name:");
     addTooltip("The name identifier for this genome configuration");
     
@@ -591,11 +614,11 @@ void UIManager::renderGenomeEditor()
     // Mode Settings Panel
     if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
     {
-        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);
-        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
+        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
         ImGui::EndChild();
     }
 
+    }
     ImGui::End();
 }
 
@@ -893,27 +916,17 @@ void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float 
     }
 }
 
-void UIManager::renderTimeScrubber(CellManager& cellManager)
+void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager)
 {
     // Set window size and position for a long horizontal resizable window
+    ImGui::SetNextWindowPos(ImVec2(50, 680), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
-    
-    if (ImGui::Begin("Time Scrubber", nullptr, getWindowFlags(ImGuiWindowFlags_None)))
+      int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
+    if (ImGui::Begin("Time Scrubber", nullptr, flags))
     {
         // Get available width for responsive layout
-        float available_width = ImGui::GetContentRegionAvail().x;
-          // Title and main slider on one line
+        float available_width = ImGui::GetContentRegionAvail().x;          // Title and main slider on one line
         ImGui::Text("Time Scrubber");
-        ImGui::SameLine();
-        if (ImGui::Button("Re-simulate!")) // Get rid of this later when re-simulation is automatic
-        {
-            cellManager.resetSimulation();
-            cellManager.addGenomeToBuffer(currentGenome);
-            ComputeCell newCell{};
-            newCell.modeIndex = currentGenome.initialMode;
-            cellManager.addCellToStagingBuffer(newCell);
-        }
         
         // Calculate available width for slider (reserve space for input field)
         float input_width = 80.0f;
@@ -958,6 +971,124 @@ void UIManager::renderTimeScrubber(CellManager& cellManager)
                 snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             }
         }
+    }
+    ImGui::End();
+}
+
+void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager)
+{
+    // Set window position on first use - top center
+    ImGui::SetNextWindowPos(ImVec2(400, 20), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_FirstUseEver);
+      int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);    if (ImGui::Begin("Scene Manager", nullptr, flags))
+    {
+        // Get current scene for use throughout the function
+        Scene currentScene = sceneManager.getCurrentScene();
+        
+        // === CURRENT SCENE SECTION ===
+        ImGui::Text("Current Scene: %s", sceneManager.getCurrentSceneName());
+        ImGui::Separator();
+          // === SIMULATION CONTROLS SECTION ===
+        ImGui::Text("Simulation Controls");
+        
+        // Pause/Resume button
+        bool isPaused = sceneManager.isPaused();
+        if (isPaused)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f)); // Green for resume
+            if (ImGui::Button("Resume Simulation", ImVec2(150, 30)))
+            {
+                sceneManager.setPaused(false);
+            }
+            ImGui::PopStyleColor();
+        }
+        else
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.7f, 0.2f, 1.0f)); // Yellow for pause
+            if (ImGui::Button("Pause Simulation", ImVec2(150, 30)))
+            {
+                sceneManager.setPaused(true);
+            }
+            ImGui::PopStyleColor();
+        }
+          // Reset button next to pause/resume
+        ImGui::SameLine();
+        if (currentScene == Scene::PreviewSimulation)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
+            if (ImGui::Button("Reset Preview", ImVec2(150, 30)))
+            {
+                previewCellManager.resetSimulation();
+                previewCellManager.addGenomeToBuffer(currentGenome);
+                ComputeCell newCell{};
+                newCell.modeIndex = currentGenome.initialMode;
+                previewCellManager.addCellToStagingBuffer(newCell);
+            }
+            ImGui::PopStyleColor();
+        }
+        else if (currentScene == Scene::MainSimulation)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
+            if (ImGui::Button("Reset Main", ImVec2(150, 30)))
+            {
+                mainCellManager.resetSimulation();
+                mainCellManager.addGenomeToBuffer(currentGenome);
+                ComputeCell newCell{};
+                newCell.modeIndex = currentGenome.initialMode;
+                mainCellManager.addCellToStagingBuffer(newCell);
+            }
+            ImGui::PopStyleColor();
+        }
+        
+        // Speed controls
+        float currentSpeed = sceneManager.getSimulationSpeed();
+        ImGui::Text("Speed: %.1fx", currentSpeed);
+        
+        // Speed slider
+        if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 5.0f, "%.1fx"))
+        {
+            sceneManager.setSimulationSpeed(currentSpeed);
+        }
+        
+        // Quick speed buttons
+        ImGui::Text("Quick Speed:");
+        if (ImGui::Button("0.25x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.25f);
+        ImGui::SameLine();
+        if (ImGui::Button("0.5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.5f);
+        ImGui::SameLine();
+        if (ImGui::Button("1x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(1.0f);
+        ImGui::SameLine();
+        if (ImGui::Button("2x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(2.0f);
+        ImGui::SameLine();
+        if (ImGui::Button("5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(5.0f);
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+          // === SCENE SWITCHING SECTION ===
+        ImGui::Text("Scene Switching");
+        
+        if (currentScene == Scene::PreviewSimulation)
+        {
+            if (ImGui::Button("Switch to Main Simulation", ImVec2(200, 30)))
+            {
+                sceneManager.switchToScene(Scene::MainSimulation);
+            }
+        }
+        else if (currentScene == Scene::MainSimulation)
+        {
+            if (ImGui::Button("Switch to Preview Simulation", ImVec2(200, 30)))
+            {
+                sceneManager.switchToScene(Scene::PreviewSimulation);
+            }
+        }
+        
+        ImGui::Spacing();
+        ImGui::Separator();        
+        // Status info
+        ImGui::Spacing();
+        ImGui::TextDisabled("Status: %s | Speed: %.1fx", 
+            isPaused ? "PAUSED" : "RUNNING", 
+            sceneManager.getSimulationSpeed());
     }
     ImGui::End();
 }

@@ -7,6 +7,7 @@
 #include "genome.h"
 
 struct CellManager; // Forward declaration to avoid circular dependency
+class SceneManager; // Forward declaration for scene management
 
 enum class ToolType : std::uint8_t
 {
@@ -63,18 +64,21 @@ struct PerformanceMonitor
 class UIManager
 {
 public:
-    void renderCellInspector(CellManager &cellManager);
-    void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor);
-    void renderCameraControls(CellManager &cellmanager, Camera &camera);
-    void renderGenomeEditor();
-    void renderTimeScrubber(CellManager& cellManager); // New time scrubber window
+    void renderCellInspector(CellManager &cellManager, SceneManager& sceneManager);
+    void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager);
+    void renderCameraControls(CellManager &cellmanager, Camera &camera, SceneManager& sceneManager);
+    void renderGenomeEditor(SceneManager& sceneManager);
+    void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager); // New time scrubber window
+    void renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager); // Scene switcher window
 
     // Performance monitoring helpers
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
     GenomeData currentGenome;
 
-private:
-    // Helper to get window flags based on lock state
+    // Scene management
+    void switchToScene(int sceneIndex); // Method to switch scenes
+
+private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;
     
     void drawToolSelector(ToolState &toolState);

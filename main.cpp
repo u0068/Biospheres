@@ -23,6 +23,7 @@
 #include "camera.h"
 #include "timer.h"
 #include "synthesizer.h"
+#include "scene_manager.h"
 
 // Simple OpenGL error checking function
 void checkGLError(const char *operation)
@@ -107,49 +108,95 @@ void updatePerformanceMonitoring(PerformanceMonitor& perfMonitor, UIManager& uiM
 }
 
 // Input processing
-void processInput(Input& input, Camera& camera, CellManager& cellManager, float deltaTime, 
-				  int width, int height, SynthEngine& synthEngine)
+void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellManager& previewCellManager, CellManager& mainCellManager, 
+				  SceneManager& sceneManager, float deltaTime, int width, int height, SynthEngine& synthEngine)
 {
 	glfwPollEvents();
 	input.update();
 	
-	if (!ImGui::GetIO().WantCaptureMouse)
+	// Determine which camera and cell manager to use for input based on current scene
+	Camera* activeCamera = nullptr;
+	CellManager* activeCellManager = nullptr;
+	Scene currentScene = sceneManager.getCurrentScene();
+	
+	if (currentScene == Scene::PreviewSimulation)
+	{
+		activeCamera = &previewCamera;
+		activeCellManager = &previewCellManager;
+	}
+	else if (currentScene == Scene::MainSimulation)
+	{
+		activeCamera = &mainCamera;
+		activeCellManager = &mainCellManager;
+	}
+	
+	if (!ImGui::GetIO().WantCaptureMouse && activeCamera && activeCellManager)
 	{
 		TimerCPU cpuTimer("Input Processing");
-		camera.processInput(input, deltaTime);
+		activeCamera->processInput(input, deltaTime);
 		
 		glm::vec2 mousePos = input.getMousePosition(false);
 		bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
 		bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
 		float scrollDelta = input.getScrollDelta();
 
-		cellManager.handleMouseInput(mousePos, glm::vec2(width, height), camera,
-									 isLeftMousePressed, isLeftMouseDown, scrollDelta);
+		activeCellManager->handleMouseInput(mousePos, glm::vec2(width, height), *activeCamera,
+											isLeftMousePressed, isLeftMouseDown, scrollDelta);
 	}
 	
 	synthEngine.generateSample();
 }
 
 // Rendering pipeline
-void renderFrame(CellManager& cellManager, UIManager& uiManager, Shader& sphereShader, 
-				 Camera& camera, PerformanceMonitor& perfMonitor, int width, int height)
+void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, Camera& previewCamera, Camera& mainCamera,
+				 UIManager& uiManager, Shader& sphereShader, PerformanceMonitor& perfMonitor, SceneManager& sceneManager, int width, int height)
 {
-	try
+	Scene currentScene = sceneManager.getCurrentScene();
+	CellManager* activeCellManager = nullptr;
+	Camera* activeCamera = nullptr;
+	
+	// Select which simulation and camera to render and interact with
+	if (currentScene == Scene::PreviewSimulation)
 	{
-		cellManager.renderCells(glm::vec2(width, height), sphereShader, camera);
-		checkGLError("renderCells");
+		activeCellManager = &previewCellManager;
+		activeCamera = &previewCamera;
 	}
-	catch (const std::exception &e)
+	else if (currentScene == Scene::MainSimulation)
 	{
-		std::cerr << "Exception in cell rendering: " << e.what() << "\n";
+		activeCellManager = &mainCellManager;
+		activeCamera = &mainCamera;
 	}
-
-	// UI Rendering
-	uiManager.renderCellInspector(cellManager);
-	uiManager.renderPerformanceMonitor(cellManager, perfMonitor);
-	uiManager.renderCameraControls(cellManager, camera);
-	uiManager.renderGenomeEditor();
-	uiManager.renderTimeScrubber(cellManager);
+	
+	if (activeCellManager && activeCamera)
+	{
+		// Render the active simulation with its camera
+		try
+		{
+			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera);
+			checkGLError("renderCells");
+		}
+		catch (const std::exception &e)
+		{
+			std::cerr << "Exception in cell rendering: " << e.what() << "\n";
+		}		// Show the full detailed UI for the active simulation
+		uiManager.renderCellInspector(*activeCellManager, sceneManager);
+		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
+		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
+		
+		// Only show genome editor in Preview Simulation
+		if (currentScene == Scene::PreviewSimulation)
+		{
+			uiManager.renderGenomeEditor(sceneManager);
+		}
+		
+		// Only show time scrubber in Preview Simulation
+		if (currentScene == Scene::PreviewSimulation)
+		{
+			uiManager.renderTimeScrubber(*activeCellManager, sceneManager);
+		}
+		
+		uiManager.renderSceneSwitcher(sceneManager, previewCellManager, mainCellManager);
+	}
 
 	if (config::showDemoWindow)
 	{
@@ -157,22 +204,32 @@ void renderFrame(CellManager& cellManager, UIManager& uiManager, Shader& sphereS
 	}
 }
 
-void updateSimulation(CellManager& cellManager)
+void updateSimulation(CellManager& previewCellManager, CellManager& mainCellManager, SceneManager& sceneManager)
 {
-	try
+	// Only update simulations if not paused
+	if (!sceneManager.isPaused())
 	{
-		// Update cell simulation with the delta time
-		// GPU timer was moved inside the function because it has multiple elements that need individual timing
-		cellManager.updateCells(config::physicsTimeStep);
-		checkGLError("updateCells");
-	}
-	catch (const std::exception& e)
-	{
-		std::cerr << "Exception in cell simulation: " << e.what() << "\n";
-	}
-	catch (...)
-	{
-		std::cerr << "Unknown exception in cell simulation\n";
+		// Update both simulations with speed multiplier
+		float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
+		
+		try
+		{
+			// Update Preview Simulation
+			previewCellManager.updateCells(timeStep);
+			checkGLError("updateCells - preview");
+			
+			// Update Main Simulation
+			mainCellManager.updateCells(timeStep);
+			checkGLError("updateCells - main");
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << "Exception in simulation: " << e.what() << "\n";
+		}
+		catch (...)
+		{
+			std::cerr << "Unknown exception in simulation\n";
+		}
 	}
 }
 
@@ -215,16 +272,22 @@ int main()
 
 		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
 		Input input;
-		input.init(window);
-		// Initialise the camera
-		Camera camera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
+		input.init(window);		// Initialise the cameras - separate camera for each scene
+		Camera previewCamera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
+		Camera mainCamera(glm::vec3(5.0f, 5.0f, 15.0f)); // Start at different position for main scene
 		// Initialise the UI manager // We dont have any ui to manage yet
 		ToolState toolState;
-		UIManager uiManager; // Initialise cells
-		CellManager cellManager;
-		cellManager.addGenomeToBuffer(uiManager.currentGenome);
-		//cellManager.spawnCells(config::MAX_CELLS);
-		cellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
+		CellManager previewCellManager;
+		CellManager mainCellManager;
+		
+		// Initialize Preview Simulation
+		previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
+		previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		
+		// Initialize Main Simulation
+		mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
+		mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
 
 		AudioEngine audioEngine;
 		audioEngine.init();
@@ -235,9 +298,11 @@ int main()
 		float deltaTime = 0.0f;
 		float lastFrame = 0.0f;
 		float accumulator = 0.0f;
-
 		// Performance monitoring struct
 		PerformanceMonitor perfMonitor{};
+
+		// Scene management
+		SceneManager sceneManager;
 
 		// Window state tracking
 		WindowState windowState;
@@ -261,9 +326,7 @@ int main()
 			{
 				// If the window state handling function indicates to skip the frame, continue to the next iteration
 				continue;
-			}
-
-			// Update performance metrics for min/avg/max calculations and history
+			}			// Update performance metrics for min/avg/max calculations and history
 			updatePerformanceMonitoring(perfMonitor, uiManager, deltaTime, currentFrame);
 
 			// Use the valid dimensions we stored
@@ -299,23 +362,16 @@ int main()
 				glfwPollEvents();
 				continue;
 			}
-			/// Then we handle input
-			/// I should probably put this stuff in a separate function instead of having it in the main loop
+			/// Then we handle input			/// I should probably put this stuff in a separate function instead of having it in the main loop
 			// Take care of all GLFW events
-			processInput(input, camera, cellManager, deltaTime, width, height, synthEngine);
+			processInput(input, previewCamera, mainCamera, previewCellManager, mainCellManager, sceneManager, deltaTime, width, height, synthEngine);
 
-			//// Then we handle cell simulation
-
-			while (accumulator >= tickPeriod)
+			//// Then we handle cell simulation			while (accumulator >= tickPeriod)
 			{
-				updateSimulation(cellManager);
+				updateSimulation(previewCellManager, mainCellManager, sceneManager);
 				accumulator -= tickPeriod;
-			}
-
-			//// Then we handle rendering
-			renderFrame(cellManager, uiManager, sphereShader, camera, perfMonitor, width, height);
-
-			// ImGui rendering
+			}//// Then we handle rendering
+			renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height);// ImGui rendering
 			renderImGui(io);
 
 			try
