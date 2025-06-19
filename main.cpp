@@ -254,7 +254,7 @@ int main()
 			deltaTime = std::clamp(deltaTime, 0.0f, config::maxDeltaTime);
 			accumulator += deltaTime;
 			accumulator = std::clamp(accumulator, 0.0f, config::maxAccumulatorTime);
-			float tickPeriod = deltaTime / config::physicsSpeed;
+			float tickPeriod = config::physicsTimeStep / config::physicsSpeed;
 
 			// Check window state first - before any OpenGL operations
 			if (handleWindowStateTransitions(window, windowState))
