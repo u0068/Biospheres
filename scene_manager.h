@@ -10,15 +10,34 @@ enum class Scene
 class SceneManager
 {
 public:
-    SceneManager() : currentScene(Scene::PreviewSimulation), sceneChanged(false), paused(false), simulationSpeed(1.0f) {}
-    
-    Scene getCurrentScene() const { return currentScene; }
+    SceneManager() : currentScene(Scene::PreviewSimulation), sceneChanged(false), paused(true), simulationSpeed(1.0f), previewPaused(true), mainPaused(false) {}
+      Scene getCurrentScene() const { return currentScene; }
     void switchToScene(Scene newScene) 
     { 
         if (currentScene != newScene)
         {
+            // Store pause state for current scene
+            if (currentScene == Scene::PreviewSimulation)
+            {
+                previewPaused = paused;
+            }
+            else if (currentScene == Scene::MainSimulation)
+            {
+                mainPaused = paused;
+            }
+            
             currentScene = newScene;
             sceneChanged = true;
+            
+            // Restore pause state for new scene
+            if (currentScene == Scene::PreviewSimulation)
+            {
+                paused = previewPaused;
+            }
+            else if (currentScene == Scene::MainSimulation)
+            {
+                paused = mainPaused;
+            }
         }
     }
     
@@ -41,6 +60,18 @@ public:
         if (speed > 5.0f) speed = 5.0f;
         simulationSpeed = speed;
     }    void resetSpeed() { simulationSpeed = 1.0f; }
+    
+    // Preview simulation time tracking
+    float getPreviewSimulationTime() const { return previewSimulationTime; }
+    void setPreviewSimulationTime(float time) { previewSimulationTime = time; }
+    void updatePreviewSimulationTime(float deltaTime) 
+    { 
+        if (!paused && currentScene == Scene::PreviewSimulation) 
+        {
+            previewSimulationTime += deltaTime * simulationSpeed;
+        }
+    }
+    void resetPreviewSimulationTime() { previewSimulationTime = 0.0f; }
 
     const char* getSceneName(Scene scene) const
     {
@@ -57,8 +88,14 @@ public:
         return getSceneName(currentScene);
     }
 
-private:    Scene currentScene;
+private:
+    Scene currentScene;
     bool sceneChanged = false;
     bool paused = false;
     float simulationSpeed = 1.0f;
+    float previewSimulationTime = 0.0f;  // Track time in preview simulation
+    
+    // Per-scene pause states
+    bool previewPaused = true;   // Preview starts paused
+    bool mainPaused = false;     // Main starts unpaused
 };

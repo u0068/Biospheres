@@ -209,18 +209,27 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 	// Only update simulations if not paused
 	if (!sceneManager.isPaused())
 	{
-		// Update both simulations with speed multiplier
+		// Update only the active scene simulation
 		float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
+		Scene currentScene = sceneManager.getCurrentScene();
 		
 		try
 		{
-			// Update Preview Simulation
-			previewCellManager.updateCells(timeStep);
-			checkGLError("updateCells - preview");
-			
-			// Update Main Simulation
-			mainCellManager.updateCells(timeStep);
-			checkGLError("updateCells - main");
+			if (currentScene == Scene::PreviewSimulation)
+			{
+				// Update only Preview Simulation
+				previewCellManager.updateCells(timeStep);
+				checkGLError("updateCells - preview");
+				
+				// Update preview simulation time tracking
+				sceneManager.updatePreviewSimulationTime(timeStep);
+			}
+			else if (currentScene == Scene::MainSimulation)
+			{
+				// Update only Main Simulation
+				mainCellManager.updateCells(timeStep);
+				checkGLError("updateCells - main");
+			}
 		}
 		catch (const std::exception& e)
 		{

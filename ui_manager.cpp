@@ -922,17 +922,30 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
     // Set window size and position for a long horizontal resizable window
     ImGui::SetNextWindowPos(ImVec2(50, 680), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
-      int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
+    
+    int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
     if (ImGui::Begin("Time Scrubber", nullptr, flags))
     {
+        // Update current simulation time from scene manager
+        simulatedTime = sceneManager.getPreviewSimulationTime();
+        
         // Get available width for responsive layout
-        float available_width = ImGui::GetContentRegionAvail().x;          // Title and main slider on one line
-        ImGui::Text("Time Scrubber");
+        float available_width = ImGui::GetContentRegionAvail().x;
+        
+        // Title and main slider on one line
+        ImGui::Text("Time Scrubber - Current Time: %.2fs", simulatedTime);
         
         // Calculate available width for slider (reserve space for input field)
         float input_width = 80.0f;
         float spacing = ImGui::GetStyle().ItemSpacing.x;
         float slider_width = available_width - input_width - spacing;
+        
+        // Update currentTime to match actual simulation time if not actively scrubbing
+        if (!isScrubbingTime)
+        {
+            currentTime = simulatedTime;
+            snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+        }
         
         // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
@@ -940,8 +953,12 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         {
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+            targetTime = currentTime;
+            needsSimulationReset = true;
+            isScrubbingTime = true;
         }
-          // Time input and controls on the same line
+        
+        // Time input and controls on the same line
         ImGui::SameLine();
         ImGui::SetNextItemWidth(input_width);
         if (ImGui::InputText("##TimeInput", timeInputBuffer, sizeof(timeInputBuffer), ImGuiInputTextFlags_EnterReturnsTrue))
@@ -951,6 +968,9 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             if (inputTime >= 0.0f && inputTime <= maxTime)
             {
                 currentTime = inputTime;
+                targetTime = currentTime;
+                needsSimulationReset = true;
+                isScrubbingTime = true;
             }
             else
             {
@@ -972,6 +992,48 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             }
         }
+          // Handle time scrubbing
+        if (needsSimulationReset && isScrubbingTime)
+        {
+            // Reset the simulation
+            cellManager.resetSimulation();
+            cellManager.addGenomeToBuffer(currentGenome);
+            ComputeCell newCell{};
+            newCell.modeIndex = currentGenome.initialMode;
+            cellManager.addCellToStagingBuffer(newCell);
+            
+            // Reset simulation time
+            sceneManager.resetPreviewSimulationTime();
+            
+            // If target time is greater than 0, fast-forward to that time
+            if (targetTime > 0.0f)
+            {
+                // Temporarily pause to prevent normal time updates during fast-forward
+                bool wasPaused = sceneManager.isPaused();
+                sceneManager.setPaused(true);
+                
+                // Fast-forward simulation in small steps
+                float timeStep = config::physicsTimeStep;
+                float timeRemaining = targetTime;
+                int maxSteps = (int)(targetTime / timeStep) + 1;
+                
+                for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                {
+                    float stepTime = (timeRemaining > timeStep) ? timeStep : timeRemaining;
+                    cellManager.updateCells(stepTime);
+                    timeRemaining -= stepTime;
+                    
+                    // Update simulation time manually during fast-forward
+                    sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
+                }
+                
+                // Restore original pause state after fast-forward
+                sceneManager.setPaused(wasPaused);
+            }
+            
+            needsSimulationReset = false;
+            isScrubbingTime = false;
+        }
     }
     ImGui::End();
 }
@@ -988,8 +1050,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
         
         // === CURRENT SCENE SECTION ===
         ImGui::Text("Current Scene: %s", sceneManager.getCurrentSceneName());
-        ImGui::Separator();
-          // === SIMULATION CONTROLS SECTION ===
+        ImGui::Separator();        // === SIMULATION CONTROLS SECTION ===
         ImGui::Text("Simulation Controls");
         
         // Pause/Resume button
@@ -1012,10 +1073,12 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
             }
             ImGui::PopStyleColor();
         }
-          // Reset button next to pause/resume
+        
+        // Reset button next to pause/resume
         ImGui::SameLine();
         if (currentScene == Scene::PreviewSimulation)
-        {            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
             if (ImGui::Button("Reset Preview", ImVec2(150, 30)))
             {
                 previewCellManager.resetSimulation();
@@ -1024,13 +1087,17 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 newCell.modeIndex = currentGenome.initialMode;
                 previewCellManager.addCellToStagingBuffer(newCell);
                 
+                // Reset preview simulation time
+                sceneManager.resetPreviewSimulationTime();
+                
                 // Advance simulation by one frame after reset
                 previewCellManager.updateCells(config::physicsTimeStep);
             }
             ImGui::PopStyleColor();
         }
         else if (currentScene == Scene::MainSimulation)
-        {            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
+        {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
             if (ImGui::Button("Reset Main", ImVec2(150, 30)))
             {
                 mainCellManager.resetSimulation();
@@ -1045,27 +1112,35 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
             ImGui::PopStyleColor();
         }
         
-        // Speed controls
-        float currentSpeed = sceneManager.getSimulationSpeed();
-        ImGui::Text("Speed: %.1fx", currentSpeed);
-        
-        // Speed slider
-        if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 5.0f, "%.1fx"))
+        // Speed controls - only show for Main Simulation
+        // Preview Simulation uses the Time Scrubber for time control
+        if (currentScene == Scene::MainSimulation)
         {
-            sceneManager.setSimulationSpeed(currentSpeed);
+            float currentSpeed = sceneManager.getSimulationSpeed();
+            ImGui::Text("Speed: %.1fx", currentSpeed);
+            
+            // Speed slider
+            if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 5.0f, "%.1fx"))
+            {
+                sceneManager.setSimulationSpeed(currentSpeed);
+            }
+            
+            // Quick speed buttons
+            ImGui::Text("Quick Speed:");
+            if (ImGui::Button("0.25x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.25f);
+            ImGui::SameLine();
+            if (ImGui::Button("0.5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.5f);
+            ImGui::SameLine();
+            if (ImGui::Button("1x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(1.0f);
+            ImGui::SameLine();
+            if (ImGui::Button("2x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(2.0f);
+            ImGui::SameLine();
+            if (ImGui::Button("5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(5.0f);
         }
-        
-        // Quick speed buttons
-        ImGui::Text("Quick Speed:");
-        if (ImGui::Button("0.25x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.25f);
-        ImGui::SameLine();
-        if (ImGui::Button("0.5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.5f);
-        ImGui::SameLine();
-        if (ImGui::Button("1x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(1.0f);
-        ImGui::SameLine();
-        if (ImGui::Button("2x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(2.0f);
-        ImGui::SameLine();
-        if (ImGui::Button("5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(5.0f);
+        else if (currentScene == Scene::PreviewSimulation)
+        {
+            ImGui::TextDisabled("Time control available in Time Scrubber window");
+        }
         
         ImGui::Spacing();
         ImGui::Separator();
@@ -1088,12 +1163,20 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
         }
         
         ImGui::Spacing();
-        ImGui::Separator();        
-        // Status info
+        ImGui::Separator();          // Status info
         ImGui::Spacing();
-        ImGui::TextDisabled("Status: %s | Speed: %.1fx", 
-            isPaused ? "PAUSED" : "RUNNING", 
-            sceneManager.getSimulationSpeed());
+        if (currentScene == Scene::PreviewSimulation)
+        {
+            ImGui::TextDisabled("Status: %s | Time: %.2fs (controlled by Time Scrubber)", 
+                isPaused ? "PAUSED" : "RUNNING",
+                sceneManager.getPreviewSimulationTime());
+        }
+        else
+        {
+            ImGui::TextDisabled("Status: %s | Speed: %.1fx", 
+                isPaused ? "PAUSED" : "RUNNING", 
+                sceneManager.getSimulationSpeed());
+        }
     }
     ImGui::End();
 }
