@@ -209,7 +209,7 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
     }
 
 
-    TimerGPU gpuTimer("Adding Cells to GPU Buffers", true);
+    TimerGPU gpuTimer("Adding Cells to GPU Buffers");
     // Update both cell buffers to keep them synchronized
     //for (int i = 0; i < 2; i++)
     //{
@@ -578,7 +578,7 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
 void CellManager::applyCellAdditions()
 {
-    TimerGPU timer("Cell Additions", true);
+    TimerGPU timer("Cell Additions");
 
     cellAdditionShader->use();
 
@@ -645,7 +645,7 @@ void CellManager::resetSimulation()
 
 void CellManager::spawnCells(int count) // no longer functional, needs to be updated for the new cell struct
 {
-    TimerCPU cpuTimer("Spawning Cells", true);
+    TimerCPU cpuTimer("Spawning Cells");
 
     for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i)
     {

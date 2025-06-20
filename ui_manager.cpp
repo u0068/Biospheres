@@ -1268,7 +1268,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
             ImGui::Text("Speed: %.1fx", currentSpeed);
             
             // Speed slider
-            if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 5.0f, "%.1fx"))
+            if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 10.0f, "%.1fx"))
             {
                 sceneManager.setSimulationSpeed(currentSpeed);
             }

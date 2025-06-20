@@ -57,7 +57,7 @@ public:
     { 
         // Clamp between 0.1x and 5.0x manually to avoid Windows macro conflicts
         if (speed < 0.1f) speed = 0.1f;
-        if (speed > 5.0f) speed = 5.0f;
+        if (speed > 10.0f) speed = 10.0f;
         simulationSpeed = speed;
     }    void resetSpeed() { simulationSpeed = 1.0f; }
     

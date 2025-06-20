@@ -208,36 +208,37 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 	// Only update simulations if not paused
 	if (sceneManager.isPaused())
 	{
-		// Update only the active scene simulation
-		float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
-		Scene currentScene = sceneManager.getCurrentScene();
-		
-		try
+		return;
+	}
+	// Update only the active scene simulation
+	float timeStep = config::physicsTimeStep;// *sceneManager.getSimulationSpeed();
+	Scene currentScene = sceneManager.getCurrentScene();
+	
+	try
+	{
+		if (currentScene == Scene::PreviewSimulation)
 		{
-			if (currentScene == Scene::PreviewSimulation)
-			{
-				// Update only Preview Simulation
-				previewCellManager.updateCells(timeStep);
-				checkGLError("updateCells - preview");
-				
-				// Update preview simulation time tracking
-				sceneManager.updatePreviewSimulationTime(timeStep);
-			}
-			else if (currentScene == Scene::MainSimulation)
-			{
-				// Update only Main Simulation
-				mainCellManager.updateCells(timeStep);
-				checkGLError("updateCells - main");
-			}
+			// Update only Preview Simulation
+			previewCellManager.updateCells(timeStep);
+			checkGLError("updateCells - preview");
+			
+			// Update preview simulation time tracking
+			sceneManager.updatePreviewSimulationTime(timeStep);
 		}
-		catch (const std::exception& e)
+		else if (currentScene == Scene::MainSimulation)
 		{
-			std::cerr << "Exception in simulation: " << e.what() << "\n";
+			// Update only Main Simulation
+			mainCellManager.updateCells(timeStep);
+			checkGLError("updateCells - main");
 		}
-		catch (...)
-		{
-			std::cerr << "Unknown exception in simulation\n";
-		}
+	}
+	catch (const std::exception& e)
+	{
+		std::cerr << "Exception in simulation: " << e.what() << "\n";
+	}
+	catch (...)
+	{
+		std::cerr << "Unknown exception in simulation\n";
 	}
 }
 
@@ -333,7 +334,7 @@ int main()
 		deltaTime = std::clamp(deltaTime, 0.0f, config::maxDeltaTime);
 		accumulator += deltaTime;
 		accumulator = std::clamp(accumulator, 0.0f, config::maxAccumulatorTime);
-		float tickPeriod = config::physicsTimeStep / config::physicsSpeed;
+		float tickPeriod = config::physicsTimeStep / sceneManager.getSimulationSpeed();//config::physicsSpeed;
 
 		// Check window state first - before any OpenGL operations
 		if (handleWindowStateTransitions(window, windowState))
@@ -390,7 +391,12 @@ int main()
 			accumulator -= tickPeriod;
 		}
 		/// Then we handle rendering
-		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height);// ImGui rendering
+		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height);
+
+		// Update all the timers
+		TimerManager::instance().finalizeFrame();
+		TimerManager::instance().drawImGui();
+		// ImGui rendering
 		renderImGui(io);
 
 		try
