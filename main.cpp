@@ -182,11 +182,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		uiManager.renderCellInspector(*activeCellManager, sceneManager);
 		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
 		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
-		
-		// Only show genome editor in Preview Simulation
+				// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
 		{
-			uiManager.renderGenomeEditor(sceneManager);
+			uiManager.renderGenomeEditor(previewCellManager, sceneManager);
 		}
 		
 		// Only show time scrubber in Preview Simulation

@@ -412,7 +412,7 @@ int UIManager::getWindowFlags(int baseFlags) const
     return baseFlags;
 }
 
-void UIManager::renderGenomeEditor(SceneManager& sceneManager)
+void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager)
 {
     ImGui::SetNextWindowPos(ImVec2(840, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
@@ -473,8 +473,7 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
     ImGui::Text("Initial Mode:");
     addTooltip("The starting mode for new cells in this genome");
     
-    ImGui::SameLine();
-    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
+    ImGui::SameLine();    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
                      {
             GenomeData* genome = (GenomeData*)data;
             if (idx >= 0 && idx < genome->modes.size()) {
@@ -484,6 +483,7 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
             return false; }, &currentGenome, currentGenome.modes.size()))
     {
         // Initial mode changed
+        genomeChanged = true;
     }
 
     ImGui::Separator();
@@ -492,23 +492,23 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
     ImGui::Text("Modes:");
     addTooltip("Manage the different behavioral modes available in this genome");
     
-    ImGui::SameLine();
-    if (ImGui::Button("Add Mode"))
+    ImGui::SameLine();    if (ImGui::Button("Add Mode"))
     {
         ModeSettings newMode;
         newMode.name = "Mode " + std::to_string(currentGenome.modes.size());
         currentGenome.modes.push_back(newMode);
+        genomeChanged = true;
     }
     addTooltip("Add a new mode to the genome");
     
-    ImGui::SameLine();
-    if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
+    ImGui::SameLine();    if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
     {
         if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
         {
             currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
             if (selectedModeIndex >= currentGenome.modes.size())
                 selectedModeIndex = currentGenome.modes.size() - 1;
+            genomeChanged = true;
         }
     }
     addTooltip("Remove the currently selected mode from the genome");
@@ -614,9 +614,57 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
 
     // Mode Settings Panel
     if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
-    {
-        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
+    {        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
         ImGui::EndChild();
+    }    // Handle genome changes - trigger instant resimulation
+    if (genomeChanged)
+    {
+        // Reset the simulation with the new genome
+        cellManager.resetSimulation();
+        cellManager.addGenomeToBuffer(currentGenome);
+        ComputeCell newCell{};
+        newCell.modeIndex = currentGenome.initialMode;
+        cellManager.addCellToStagingBuffer(newCell);
+        cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+        
+        // Reset simulation time
+        sceneManager.resetPreviewSimulationTime();
+        
+        // If time scrubber is at a specific time, fast-forward to that time
+        if (currentTime > 0.0f)
+        {
+            // Temporarily pause to prevent normal time updates during fast-forward
+            bool wasPaused = sceneManager.isPaused();
+            sceneManager.setPaused(true);
+            
+            // Use a coarser time step for scrubbing to make it more responsive
+            float scrubTimeStep = config::scrubTimeStep;
+            float timeRemaining = currentTime;
+            int maxSteps = (int)(currentTime / scrubTimeStep) + 1;
+            
+            for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+            {
+                float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                cellManager.updateCells(stepTime);
+                timeRemaining -= stepTime;
+                
+                // Update simulation time manually during fast-forward
+                sceneManager.setPreviewSimulationTime(currentTime - timeRemaining);
+            }
+            
+            // Restore original pause state after fast-forward
+            sceneManager.setPaused(wasPaused);
+        }
+        else
+        {
+            // If at time 0, just advance simulation by one frame after reset
+            cellManager.updateCells(config::physicsTimeStep);
+        }
+        
+        // Clear the flag
+        genomeChanged = false;
+        
+        std::cout << "Genome changed - triggered instant resimulation to time " << currentTime << "s\n";
     }
 
     }
@@ -628,10 +676,10 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
     ImGui::Text("Mode %d Settings", modeIndex);
     ImGui::Separator();    // Mode Name
     char nameBuffer[256];
-    strcpy_s(nameBuffer, mode.name.c_str());
-    if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
+    strcpy_s(nameBuffer, mode.name.c_str());    if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
     {
         mode.name = std::string(nameBuffer);
+        genomeChanged = true;
     }
     addTooltip("The display name for this cell mode");
 
@@ -711,9 +759,10 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     // Add divider before Parent Make Adhesion checkbox
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
+    ImGui::Spacing();    if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
+    {
+        genomeChanged = true;
+    }
     addTooltip("Whether the parent cell creates adhesive connections with its children");
 }
 
@@ -722,8 +771,7 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     // Mode selection dropdown
     ImGui::Text("Mode:");
     addTooltip("The cell mode that this child will switch to after splitting");
-    
-    if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
+      if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
                      {
                          UIManager* uiManager = (UIManager*)data;
                          if (idx >= 0 && idx < uiManager->currentGenome.modes.size()) {
@@ -741,6 +789,7 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
         {
             child.modeNumber = 0;
         }
+        genomeChanged = true;
     }
 
     // Add some spacing before orientation controls
@@ -814,6 +863,7 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
     // Label on its own line
     ImGui::Text("%s", label); // Slider with calculated width and step support
     ImGui::PushItemWidth(sliderWidth);
+    bool changed = false;
     if (step > 0.0f)
     {
         // For stepped sliders, use float slider but with restricted stepping
@@ -821,12 +871,16 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         {
             // Round to nearest step
             *value = min + step * round((*value - min) / step);
+            changed = true;
         }
     }
     else
     {
         // Use regular float slider for continuous values
-        ImGui::SliderFloat("##slider", value, min, max, format);
+        if (ImGui::SliderFloat("##slider", value, min, max, format))
+        {
+            changed = true;
+        }
     }
     ImGui::PopItemWidth();
     ImGui::SameLine();
@@ -840,11 +894,15 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         {
             // Round to nearest step
             *value = min + step * round((*value - min) / step);
+            changed = true;
         }
     }
     else
     {
-        ImGui::InputFloat("##input", value, 0.0f, 0.0f, format);
+        if (ImGui::InputFloat("##input", value, 0.0f, 0.0f, format))
+        {
+            changed = true;
+        }
     }
     ImGui::PopItemWidth();
 
@@ -853,6 +911,12 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         *value = min;
     if (*value > max)
         *value = max;
+
+    // Trigger genome change if any control was modified
+    if (changed)
+    {
+        genomeChanged = true;
+    }
 
     ImGui::PopID();
 }
@@ -865,6 +929,7 @@ void UIManager::drawColorPicker(const char *label, glm::vec3 *color)
         color->r = colorArray[0];
         color->g = colorArray[1];
         color->b = colorArray[2];
+        genomeChanged = true;
     }
 }
 
@@ -1005,22 +1070,20 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             
             // Reset simulation time
             sceneManager.resetPreviewSimulationTime();
-            
-            // If target time is greater than 0, fast-forward to that time
+              // If target time is greater than 0, fast-forward to that time
             if (targetTime > 0.0f)
             {
                 // Temporarily pause to prevent normal time updates during fast-forward
                 bool wasPaused = sceneManager.isPaused();
                 sceneManager.setPaused(true);
-                
-                // Fast-forward simulation in small steps
-                float timeStep = config::physicsTimeStep;
+                  // Use a coarser time step for scrubbing to make it more responsive
+                float scrubTimeStep = config::scrubTimeStep;
                 float timeRemaining = targetTime;
-                int maxSteps = (int)(targetTime / timeStep) + 1;
+                int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
                 
                 for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
                 {
-                    float stepTime = (timeRemaining > timeStep) ? timeStep : timeRemaining;
+                    float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
                     cellManager.updateCells(stepTime);
                     timeRemaining -= stepTime;
                     
