@@ -369,11 +369,11 @@ void CellManager::updateCells(float deltaTime)
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     gpuPendingCellCount = countPtr[1];
     
-    if (gpuPendingCellCount > 0)
-    {
-        applyCellAdditions(); // Apply mitosis results immediately
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    }
+    //if (gpuPendingCellCount > 0)
+    //{
+    applyCellAdditions(); // Apply mitosis results immediately
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    //}
     
     // Update final cell count after all additions
     cellCount = countPtr[0];
