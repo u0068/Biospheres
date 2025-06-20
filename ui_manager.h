@@ -6,8 +6,10 @@
 #include "camera.h"
 #include "genome.h"
 
+// Forward declarations
 struct CellManager; // Forward declaration to avoid circular dependency
 class SceneManager; // Forward declaration for scene management
+struct ComputeCell; // Forward declaration for keyframe system
 
 enum class ToolType : std::uint8_t
 {
@@ -66,10 +68,12 @@ class UIManager
 public:
     void renderCellInspector(CellManager &cellManager, SceneManager& sceneManager);
     void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager);
-    void renderCameraControls(CellManager &cellmanager, Camera &camera, SceneManager& sceneManager);
-    void renderGenomeEditor(SceneManager& sceneManager);
+    void renderCameraControls(CellManager &cellmanager, Camera &camera, SceneManager& sceneManager);    void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager);
     void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager); // New time scrubber window
     void renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager); // Scene switcher window
+
+    // Preview simulation time control
+    void updatePreviewSimulation(CellManager& previewCellManager);
 
     // Performance monitoring helpers
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
@@ -92,11 +96,35 @@ private:    // Helper to get window flags based on lock state
     void drawColorPicker(const char *label, glm::vec3 *color);
     void addTooltip(const char* tooltip); // Helper to add question mark tooltips
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
-    int selectedModeIndex = 0;
-      // Time Scrubber Data
+    int selectedModeIndex = 0;    // Time Scrubber Data
     float currentTime = 0.0f;
     float maxTime = 100.0f;
-    char timeInputBuffer[32] = "0.00";
+    char timeInputBuffer[32] = "0.00";    float simulatedTime = 0.0f;  // Actual simulated time in preview
+    float targetTime = 0.0f;     // Target time we want to scrub to
+    bool needsSimulationReset = false;  // Flag to reset simulation when scrubber changes
+    bool isScrubbingTime = false;       // Flag to indicate we're scrubbing to a specific time
+    
+    // Keyframe system for efficient time scrubbing
+    struct SimulationKeyframe {
+        float time = 0.0f;
+        std::vector<ComputeCell> cellStates;
+        GenomeData genome;
+        int cellCount = 0;
+        bool isValid = false;
+    };
+    
+    static constexpr int MAX_KEYFRAMES = 50;
+    std::vector<SimulationKeyframe> keyframes;
+    bool keyframesInitialized = false;
+    
+    void initializeKeyframes(CellManager& cellManager);
+    void updateKeyframes(CellManager& cellManager, float newMaxTime);
+    int findNearestKeyframe(float targetTime) const;
+    void restoreFromKeyframe(CellManager& cellManager, int keyframeIndex);
+    void captureKeyframe(CellManager& cellManager, float time, int keyframeIndex);
+    
+    // Genome change tracking
+    bool genomeChanged = false;          // Flag to indicate genome was modified
     
     // Window management
     bool windowsLocked = true;

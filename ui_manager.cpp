@@ -1,11 +1,13 @@
 #include "ui_manager.h"
 #include "cell_manager.h"
+#include "config.h"
 #include "imgui.h"
 #include <algorithm>
 #include <string>
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <iostream>
 
 #include "audio_engine.h"
 #include "scene_manager.h"
@@ -411,7 +413,7 @@ int UIManager::getWindowFlags(int baseFlags) const
     return baseFlags;
 }
 
-void UIManager::renderGenomeEditor(SceneManager& sceneManager)
+void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager)
 {
     ImGui::SetNextWindowPos(ImVec2(840, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
@@ -472,8 +474,7 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
     ImGui::Text("Initial Mode:");
     addTooltip("The starting mode for new cells in this genome");
     
-    ImGui::SameLine();
-    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
+    ImGui::SameLine();    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
                      {
             GenomeData* genome = (GenomeData*)data;
             if (idx >= 0 && idx < genome->modes.size()) {
@@ -483,6 +484,7 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
             return false; }, &currentGenome, currentGenome.modes.size()))
     {
         // Initial mode changed
+        genomeChanged = true;
     }
 
     ImGui::Separator();
@@ -491,23 +493,23 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
     ImGui::Text("Modes:");
     addTooltip("Manage the different behavioral modes available in this genome");
     
-    ImGui::SameLine();
-    if (ImGui::Button("Add Mode"))
+    ImGui::SameLine();    if (ImGui::Button("Add Mode"))
     {
         ModeSettings newMode;
         newMode.name = "Mode " + std::to_string(currentGenome.modes.size());
         currentGenome.modes.push_back(newMode);
+        genomeChanged = true;
     }
     addTooltip("Add a new mode to the genome");
     
-    ImGui::SameLine();
-    if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
+    ImGui::SameLine();    if (ImGui::Button("Remove Mode") && currentGenome.modes.size() > 1)
     {
         if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
         {
             currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
             if (selectedModeIndex >= currentGenome.modes.size())
                 selectedModeIndex = currentGenome.modes.size() - 1;
+            genomeChanged = true;
         }
     }
     addTooltip("Remove the currently selected mode from the genome");
@@ -613,9 +615,61 @@ void UIManager::renderGenomeEditor(SceneManager& sceneManager)
 
     // Mode Settings Panel
     if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
-    {
-        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
+    {        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
         ImGui::EndChild();
+    }    // Handle genome changes - trigger instant resimulation
+    if (genomeChanged)
+    {
+        // Invalidate keyframes when genome changes
+        keyframesInitialized = false;
+        std::cout << "Genome changed - keyframes invalidated\n";
+        
+        // Reset the simulation with the new genome
+        cellManager.resetSimulation();
+        cellManager.addGenomeToBuffer(currentGenome);
+        ComputeCell newCell{};
+        newCell.modeIndex = currentGenome.initialMode;
+        cellManager.addCellToStagingBuffer(newCell);
+        cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+        
+        // Reset simulation time
+        sceneManager.resetPreviewSimulationTime();
+        
+        // If time scrubber is at a specific time, fast-forward to that time
+        if (currentTime > 0.0f)
+        {
+            // Temporarily pause to prevent normal time updates during fast-forward
+            bool wasPaused = sceneManager.isPaused();
+            sceneManager.setPaused(true);
+            
+            // Use a coarser time step for scrubbing to make it more responsive
+            float scrubTimeStep = config::scrubTimeStep;
+            float timeRemaining = currentTime;
+            int maxSteps = (int)(currentTime / scrubTimeStep) + 1;
+            
+            for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+            {
+                float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                cellManager.updateCells(stepTime);
+                timeRemaining -= stepTime;
+                
+                // Update simulation time manually during fast-forward
+                sceneManager.setPreviewSimulationTime(currentTime - timeRemaining);
+            }
+            
+            // Restore original pause state after fast-forward
+            sceneManager.setPaused(wasPaused);
+        }
+        else
+        {
+            // If at time 0, just advance simulation by one frame after reset
+            cellManager.updateCells(config::physicsTimeStep);
+        }
+        
+        // Clear the flag
+        genomeChanged = false;
+        
+        std::cout << "Genome changed - triggered instant resimulation to time " << currentTime << "s\n";
     }
 
     }
@@ -627,10 +681,10 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
     ImGui::Text("Mode %d Settings", modeIndex);
     ImGui::Separator();    // Mode Name
     char nameBuffer[256];
-    strcpy_s(nameBuffer, mode.name.c_str());
-    if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
+    strcpy_s(nameBuffer, mode.name.c_str());    if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
     {
         mode.name = std::string(nameBuffer);
+        genomeChanged = true;
     }
     addTooltip("The display name for this cell mode");
 
@@ -710,9 +764,10 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     // Add divider before Parent Make Adhesion checkbox
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion);
+    ImGui::Spacing();    if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
+    {
+        genomeChanged = true;
+    }
     addTooltip("Whether the parent cell creates adhesive connections with its children");
 }
 
@@ -721,8 +776,7 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     // Mode selection dropdown
     ImGui::Text("Mode:");
     addTooltip("The cell mode that this child will switch to after splitting");
-    
-    if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
+      if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
                      {
                          UIManager* uiManager = (UIManager*)data;
                          if (idx >= 0 && idx < uiManager->currentGenome.modes.size()) {
@@ -740,6 +794,7 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
         {
             child.modeNumber = 0;
         }
+        genomeChanged = true;
     }
 
     // Add some spacing before orientation controls
@@ -813,6 +868,7 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
     // Label on its own line
     ImGui::Text("%s", label); // Slider with calculated width and step support
     ImGui::PushItemWidth(sliderWidth);
+    bool changed = false;
     if (step > 0.0f)
     {
         // For stepped sliders, use float slider but with restricted stepping
@@ -820,12 +876,16 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         {
             // Round to nearest step
             *value = min + step * round((*value - min) / step);
+            changed = true;
         }
     }
     else
     {
         // Use regular float slider for continuous values
-        ImGui::SliderFloat("##slider", value, min, max, format);
+        if (ImGui::SliderFloat("##slider", value, min, max, format))
+        {
+            changed = true;
+        }
     }
     ImGui::PopItemWidth();
     ImGui::SameLine();
@@ -839,11 +899,15 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         {
             // Round to nearest step
             *value = min + step * round((*value - min) / step);
+            changed = true;
         }
     }
     else
     {
-        ImGui::InputFloat("##input", value, 0.0f, 0.0f, format);
+        if (ImGui::InputFloat("##input", value, 0.0f, 0.0f, format))
+        {
+            changed = true;
+        }
     }
     ImGui::PopItemWidth();
 
@@ -852,6 +916,12 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
         *value = min;
     if (*value > max)
         *value = max;
+
+    // Trigger genome change if any control was modified
+    if (changed)
+    {
+        genomeChanged = true;
+    }
 
     ImGui::PopID();
 }
@@ -864,6 +934,7 @@ void UIManager::drawColorPicker(const char *label, glm::vec3 *color)
         color->r = colorArray[0];
         color->g = colorArray[1];
         color->b = colorArray[2];
+        genomeChanged = true;
     }
 }
 
@@ -921,26 +992,65 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
     // Set window size and position for a long horizontal resizable window
     ImGui::SetNextWindowPos(ImVec2(50, 680), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
-      int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
+    
+    int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
     if (ImGui::Begin("Time Scrubber", nullptr, flags))
     {
+        // Update current simulation time from scene manager
+        simulatedTime = sceneManager.getPreviewSimulationTime();
+        
         // Get available width for responsive layout
-        float available_width = ImGui::GetContentRegionAvail().x;          // Title and main slider on one line
-        ImGui::Text("Time Scrubber");
+        float available_width = ImGui::GetContentRegionAvail().x;
+        
+        // Title and main slider on one line
+        ImGui::Text("Time Scrubber - Current Time: %.2fs", simulatedTime);
         
         // Calculate available width for slider (reserve space for input field)
         float input_width = 80.0f;
         float spacing = ImGui::GetStyle().ItemSpacing.x;
         float slider_width = available_width - input_width - spacing;
         
-        // Make the slider take almost all available width
+        // Update currentTime to match actual simulation time if not actively scrubbing
+        if (!isScrubbingTime)
+        {
+            currentTime = simulatedTime;
+            snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+        }
+          // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
         if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
         {
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
+            targetTime = currentTime;
+            needsSimulationReset = true;
+            isScrubbingTime = true;
         }
-          // Time input and controls on the same line
+        
+        // Draw keyframe indicators on the slider
+        if (keyframesInitialized)
+        {
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 slider_min = ImGui::GetItemRectMin();
+            ImVec2 slider_max = ImGui::GetItemRectMax();
+            
+            // Draw keyframe markers
+            for (int i = 0; i < MAX_KEYFRAMES && i < keyframes.size(); i++)
+            {
+                if (keyframes[i].isValid)
+                {
+                    float keyframe_time = keyframes[i].time;
+                    float t = (keyframe_time / maxTime);
+                    float x = slider_min.x + t * (slider_max.x - slider_min.x);
+                    
+                    // Draw a small vertical line to indicate keyframe position
+                    ImU32 color = IM_COL32(255, 255, 0, 180); // Yellow with transparency
+                    draw_list->AddLine(ImVec2(x, slider_min.y), ImVec2(x, slider_max.y), color, 2.0f);
+                }
+            }
+        }
+        
+        // Time input and controls on the same line
         ImGui::SameLine();
         ImGui::SetNextItemWidth(input_width);
         if (ImGui::InputText("##TimeInput", timeInputBuffer, sizeof(timeInputBuffer), ImGuiInputTextFlags_EnterReturnsTrue))
@@ -950,6 +1060,9 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             if (inputTime >= 0.0f && inputTime <= maxTime)
             {
                 currentTime = inputTime;
+                targetTime = currentTime;
+                needsSimulationReset = true;
+                isScrubbingTime = true;
             }
             else
             {
@@ -957,11 +1070,11 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             }
         }
-        
-        // Max time control on a separate line but compact
+          // Max time control on a separate line but compact
         ImGui::Text("Max Time:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(100.0f);
+        float oldMaxTime = maxTime;
         if (ImGui::DragFloat("##MaxTime", &maxTime, 1.0f, 1.0f, 10000.0f, "%.2f"))
         {
             // Ensure current time doesn't exceed max time
@@ -970,6 +1083,117 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 currentTime = maxTime;
                 snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             }
+            
+            // If max time changed significantly, update keyframes
+            if (abs(maxTime - oldMaxTime) > 0.1f)
+            {
+                updateKeyframes(cellManager, maxTime);
+            }
+        }
+        
+        // Keyframe initialization button and status
+        ImGui::SameLine();
+        if (ImGui::Button("Rebuild Keyframes"))
+        {
+            initializeKeyframes(cellManager);
+        }
+        
+        // Show keyframe status
+        ImGui::Text("Keyframes: %s (%d/50)", 
+                   keyframesInitialized ? "Ready" : "Not Ready", 
+                   keyframesInitialized ? MAX_KEYFRAMES : 0);
+        
+        // Initialize keyframes if not done yet
+        if (!keyframesInitialized)
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Click 'Rebuild Keyframes' to enable efficient scrubbing");
+        }        // Handle time scrubbing
+        if (needsSimulationReset && isScrubbingTime)
+        {
+            if (keyframesInitialized)
+            {
+                // Use keyframe system for efficient scrubbing
+                int nearestKeyframeIndex = findNearestKeyframe(targetTime);
+                const SimulationKeyframe& nearestKeyframe = keyframes[nearestKeyframeIndex];
+                
+                std::cout << "Scrubbing to time " << targetTime << "s using keyframe " 
+                          << nearestKeyframeIndex << " (keyframe time: " << nearestKeyframe.time << "s)\n";
+                
+                // Restore from nearest keyframe
+                restoreFromKeyframe(cellManager, nearestKeyframeIndex);
+                
+                // Reset scene manager time to keyframe time
+                sceneManager.resetPreviewSimulationTime();
+                sceneManager.setPreviewSimulationTime(nearestKeyframe.time);
+                
+                // If target time is after the keyframe, simulate forward
+                if (targetTime > nearestKeyframe.time)
+                {
+                    // Temporarily pause to prevent normal time updates during fast-forward
+                    bool wasPaused = sceneManager.isPaused();
+                    sceneManager.setPaused(true);
+                    
+                    float timeRemaining = targetTime - nearestKeyframe.time;
+                    float scrubTimeStep = config::scrubTimeStep;
+                    int maxSteps = (int)(timeRemaining / scrubTimeStep) + 1;
+                    
+                    for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                    {
+                        float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                        cellManager.updateCells(stepTime);
+                        timeRemaining -= stepTime;
+                        
+                        // Update simulation time manually during fast-forward
+                        sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
+                    }
+                    
+                    // Restore original pause state after fast-forward
+                    sceneManager.setPaused(wasPaused);
+                }
+            }
+            else
+            {
+                // Fallback to old method if keyframes not available
+                std::cout << "Keyframes not available, using full resimulation to time " << targetTime << "s\n";
+                
+                // Reset the simulation
+                cellManager.resetSimulation();
+                cellManager.addGenomeToBuffer(currentGenome);
+                ComputeCell newCell{};
+                newCell.modeIndex = currentGenome.initialMode;
+                cellManager.addCellToStagingBuffer(newCell);
+                cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+                
+                // Reset simulation time
+                sceneManager.resetPreviewSimulationTime();
+                  // If target time is greater than 0, fast-forward to that time
+                if (targetTime > 0.0f)
+                {
+                    // Temporarily pause to prevent normal time updates during fast-forward
+                    bool wasPaused = sceneManager.isPaused();
+                    sceneManager.setPaused(true);
+                      // Use a coarser time step for scrubbing to make it more responsive
+                    float scrubTimeStep = config::scrubTimeStep;
+                    float timeRemaining = targetTime;
+                    int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
+                    
+                    for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                    {
+                        float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                        cellManager.updateCells(stepTime);
+                        timeRemaining -= stepTime;
+                        
+                        // Update simulation time manually during fast-forward
+                        sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
+                    }
+                    
+                    // Restore original pause state after fast-forward
+                    sceneManager.setPaused(wasPaused);
+                }
+            }
+            
+            needsSimulationReset = false;
+            isScrubbingTime = false;
         }
     }
     ImGui::End();
@@ -987,47 +1211,36 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
         
         // === CURRENT SCENE SECTION ===
         ImGui::Text("Current Scene: %s", sceneManager.getCurrentSceneName());
-        ImGui::Separator();
-          // === SIMULATION CONTROLS SECTION ===
-        ImGui::Text("Simulation Controls");
-        
-        // Pause/Resume button
-        bool isPaused = sceneManager.isPaused();
-        if (isPaused)
+        ImGui::Separator();        // === SIMULATION CONTROLS SECTION ===
+        // Only show simulation controls for Main Simulation
+        // Preview Simulation uses Time Scrubber for time control
+        if (currentScene == Scene::MainSimulation)
         {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f)); // Green for resume
-            if (ImGui::Button("Resume Simulation", ImVec2(150, 30)))
+            ImGui::Text("Simulation Controls");
+            
+            // Pause/Resume button
+            bool isPaused = sceneManager.isPaused();
+            if (isPaused)
             {
-                sceneManager.setPaused(false);
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f)); // Green for resume
+                if (ImGui::Button("Resume Simulation", ImVec2(150, 30)))
+                {
+                    sceneManager.setPaused(false);
+                }
+                ImGui::PopStyleColor();
             }
-            ImGui::PopStyleColor();
-        }
-        else
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.7f, 0.2f, 1.0f)); // Yellow for pause
-            if (ImGui::Button("Pause Simulation", ImVec2(150, 30)))
+            else
             {
-                sceneManager.setPaused(true);
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.7f, 0.2f, 1.0f)); // Yellow for pause
+                if (ImGui::Button("Pause Simulation", ImVec2(150, 30)))
+                {
+                    sceneManager.setPaused(true);
+                }
+                ImGui::PopStyleColor();
             }
-            ImGui::PopStyleColor();
-        }
-          // Reset button next to pause/resume
-        ImGui::SameLine();
-        if (currentScene == Scene::PreviewSimulation)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
-            if (ImGui::Button("Reset Preview", ImVec2(150, 30)))
-            {
-                previewCellManager.resetSimulation();
-                previewCellManager.addGenomeToBuffer(currentGenome);
-                ComputeCell newCell{};
-                newCell.modeIndex = currentGenome.initialMode;
-                previewCellManager.addCellToStagingBuffer(newCell);
-            }
-            ImGui::PopStyleColor();
-        }
-        else if (currentScene == Scene::MainSimulation)
-        {
+            
+            // Reset button next to pause/resume
+            ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
             if (ImGui::Button("Reset Main", ImVec2(150, 30)))
             {
@@ -1036,31 +1249,42 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 mainCellManager.addCellToStagingBuffer(newCell);
+                mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+                
+                // Advance simulation by one frame after reset
+                mainCellManager.updateCells(config::physicsTimeStep);
             }
             ImGui::PopStyleColor();
         }
-        
-        // Speed controls
-        float currentSpeed = sceneManager.getSimulationSpeed();
-        ImGui::Text("Speed: %.1fx", currentSpeed);
-        
-        // Speed slider
-        if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 5.0f, "%.1fx"))
+        else if (currentScene == Scene::PreviewSimulation)
         {
-            sceneManager.setSimulationSpeed(currentSpeed);
+            ImGui::Text("Simulation Controls");
+            ImGui::TextDisabled("Time control available in Time Scrubber window");
+        }        
+        // Speed controls - only show for Main Simulation
+        if (currentScene == Scene::MainSimulation)
+        {
+            float currentSpeed = sceneManager.getSimulationSpeed();
+            ImGui::Text("Speed: %.1fx", currentSpeed);
+            
+            // Speed slider
+            if (ImGui::SliderFloat("##Speed", &currentSpeed, 0.1f, 5.0f, "%.1fx"))
+            {
+                sceneManager.setSimulationSpeed(currentSpeed);
+            }
+            
+            // Quick speed buttons
+            ImGui::Text("Quick Speed:");
+            if (ImGui::Button("0.25x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.25f);
+            ImGui::SameLine();
+            if (ImGui::Button("0.5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.5f);
+            ImGui::SameLine();
+            if (ImGui::Button("1x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(1.0f);
+            ImGui::SameLine();
+            if (ImGui::Button("2x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(2.0f);
+            ImGui::SameLine();
+            if (ImGui::Button("5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(5.0f);
         }
-        
-        // Quick speed buttons
-        ImGui::Text("Quick Speed:");
-        if (ImGui::Button("0.25x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.25f);
-        ImGui::SameLine();
-        if (ImGui::Button("0.5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(0.5f);
-        ImGui::SameLine();
-        if (ImGui::Button("1x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(1.0f);
-        ImGui::SameLine();
-        if (ImGui::Button("2x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(2.0f);
-        ImGui::SameLine();
-        if (ImGui::Button("5x", ImVec2(50, 25))) sceneManager.setSimulationSpeed(5.0f);
         
         ImGui::Spacing();
         ImGui::Separator();
@@ -1083,12 +1307,168 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
         }
         
         ImGui::Spacing();
-        ImGui::Separator();        
-        // Status info
+        ImGui::Separator();        // Status info
         ImGui::Spacing();
-        ImGui::TextDisabled("Status: %s | Speed: %.1fx", 
-            isPaused ? "PAUSED" : "RUNNING", 
-            sceneManager.getSimulationSpeed());
+        if (currentScene == Scene::PreviewSimulation)
+        {
+            ImGui::TextDisabled("Time: %.2fs (controlled by Time Scrubber)", 
+                sceneManager.getPreviewSimulationTime());
+        }
+        else
+        {
+            bool isPaused = sceneManager.isPaused();
+            ImGui::TextDisabled("Status: %s | Speed: %.1fx", 
+                isPaused ? "PAUSED" : "RUNNING", 
+                sceneManager.getSimulationSpeed());
+        }
     }
     ImGui::End();
+}
+
+void UIManager::initializeKeyframes(CellManager& cellManager)
+{
+    std::cout << "Initializing keyframes for time scrubber...\n";
+    
+    // Clear existing keyframes
+    keyframes.clear();
+    keyframes.resize(MAX_KEYFRAMES);
+    
+    // Reset simulation to initial state
+    cellManager.resetSimulation();
+    cellManager.addGenomeToBuffer(currentGenome);
+    ComputeCell newCell{};
+    newCell.modeIndex = currentGenome.initialMode;
+    cellManager.addCellToStagingBuffer(newCell);
+    cellManager.addStagedCellsToGPUBuffer();
+    
+    // Capture initial keyframe at time 0
+    captureKeyframe(cellManager, 0.0f, 0);
+    std::cout << "Captured initial keyframe at time 0.0s\n";
+    
+    // Calculate time interval between keyframes
+    float timeInterval = maxTime / (MAX_KEYFRAMES - 1);
+    
+    // Simulate and capture keyframes
+    for (int i = 1; i < MAX_KEYFRAMES; i++)
+    {
+        float targetTime = i * timeInterval;
+        float currentSimTime = (i - 1) * timeInterval;
+        
+        // Simulate from previous keyframe to current keyframe
+        float timeToSimulate = targetTime - currentSimTime;
+        float scrubTimeStep = config::scrubTimeStep;
+        
+        while (timeToSimulate > 0.0f)
+        {
+            float stepTime = (timeToSimulate > scrubTimeStep) ? scrubTimeStep : timeToSimulate;
+            cellManager.updateCells(stepTime);
+            timeToSimulate -= stepTime;
+        }
+        
+        // Capture keyframe
+        captureKeyframe(cellManager, targetTime, i);
+        
+        // Progress feedback
+        if (i % 10 == 0 || i == MAX_KEYFRAMES - 1)
+        {
+            std::cout << "Captured keyframe " << i << "/" << (MAX_KEYFRAMES - 1) 
+                      << " at time " << targetTime << "s\n";
+        }
+    }
+    
+    keyframesInitialized = true;
+    std::cout << "Keyframe initialization complete!\n";
+}
+
+void UIManager::updateKeyframes(CellManager& cellManager, float newMaxTime)
+{
+    std::cout << "Updating keyframes for new max time: " << newMaxTime << "s\n";
+    maxTime = newMaxTime;
+    keyframesInitialized = false;
+    initializeKeyframes(cellManager);
+}
+
+int UIManager::findNearestKeyframe(float targetTime) const
+{
+    if (!keyframesInitialized || keyframes.empty())
+        return 0;
+    
+    // Clamp target time to valid range
+    targetTime = std::max(0.0f, std::min(targetTime, maxTime));
+    
+    // Calculate which keyframe index should contain this time
+    float timeInterval = maxTime / (MAX_KEYFRAMES - 1);
+    int idealIndex = static_cast<int>(targetTime / timeInterval);
+    
+    // Clamp to valid keyframe range
+    idealIndex = std::max(0, std::min(idealIndex, MAX_KEYFRAMES - 1));
+    
+    // Find the nearest valid keyframe at or before the ideal index
+    for (int i = idealIndex; i >= 0; i--)
+    {
+        if (i < keyframes.size() && keyframes[i].isValid)
+        {
+            return i;
+        }
+    }
+    
+    // Fallback to keyframe 0 if nothing found
+    return 0;
+}
+
+void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
+{
+    if (keyframeIndex < 0 || keyframeIndex >= keyframes.size() || !keyframes[keyframeIndex].isValid)
+        return;
+    
+    // Reset simulation
+    cellManager.resetSimulation();
+    
+    // Restore genome (make a non-const copy)
+    GenomeData genomeCopy = keyframes[keyframeIndex].genome;
+    cellManager.addGenomeToBuffer(genomeCopy);
+    
+    // Restore cell states
+    for (int i = 0; i < keyframes[keyframeIndex].cellCount && i < keyframes[keyframeIndex].cellStates.size(); i++)
+    {
+        cellManager.addCellToStagingBuffer(keyframes[keyframeIndex].cellStates[i]);
+    }
+    cellManager.addStagedCellsToGPUBuffer();
+    // ... any other state restoration ...
+}
+
+void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyframeIndex)
+{
+    if (keyframeIndex < 0 || keyframeIndex >= MAX_KEYFRAMES)
+    {
+        std::cerr << "Invalid keyframe index for capture: " << keyframeIndex << "\n";
+        return;
+    }
+    
+    // Ensure keyframes vector is large enough
+    if (keyframeIndex >= keyframes.size())
+    {
+        keyframes.resize(keyframeIndex + 1);
+    }
+    
+    SimulationKeyframe& keyframe = keyframes[keyframeIndex];
+    
+    // Capture current simulation state
+    keyframe.time = time;
+    keyframe.genome = currentGenome;
+    keyframe.cellCount = cellManager.getCellCount();
+    
+    // Sync cell data from GPU to CPU to ensure we have latest state
+    cellManager.syncCellPositionsFromGPU();
+    
+    // Copy cell states
+    keyframe.cellStates.clear();
+    keyframe.cellStates.reserve(keyframe.cellCount);
+    
+    for (int i = 0; i < keyframe.cellCount; i++)
+    {
+        keyframe.cellStates.push_back(cellManager.getCellData(i));
+    }
+    
+    keyframe.isValid = true;
 }

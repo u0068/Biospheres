@@ -256,9 +256,11 @@ void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
 
 void CellManager::addStagedCellsToGPUBuffer()
 {
-    addCellsToGPUBuffer(cellStagingBuffer);
-    cellStagingBuffer.clear(); // Clear after adding to GPU buffer
-    cpuPendingCellCount = 0;      // Reset pending count
+    if (!cellStagingBuffer.empty()) {
+        addCellsToGPUBuffer(cellStagingBuffer);
+        cellStagingBuffer.clear(); // Clear after adding to GPU buffer
+        cpuPendingCellCount = 0;      // Reset pending count
+    }
 }
 
 void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {

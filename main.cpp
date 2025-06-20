@@ -182,11 +182,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		uiManager.renderCellInspector(*activeCellManager, sceneManager);
 		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
 		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
-		
-		// Only show genome editor in Preview Simulation
+				// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
 		{
-			uiManager.renderGenomeEditor(sceneManager);
+			uiManager.renderGenomeEditor(previewCellManager, sceneManager);
 		}
 		
 		// Only show time scrubber in Preview Simulation
@@ -209,29 +208,36 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 	// Only update simulations if not paused
 	if (sceneManager.isPaused())
 	{
-		return;
-	}
-
-	// Update both simulations with speed multiplier
-	float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
-	
-	try
-	{
-		// Update Preview Simulation
-		previewCellManager.updateCells(timeStep);
-		checkGLError("updateCells - preview");
+		// Update only the active scene simulation
+		float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
+		Scene currentScene = sceneManager.getCurrentScene();
 		
-		// Update Main Simulation
-		mainCellManager.updateCells(timeStep);
-		checkGLError("updateCells - main");
-	}
-	catch (const std::exception& e)
-	{
-		std::cerr << "Exception in simulation: " << e.what() << "\n";
-	}
-	catch (...)
-	{
-		std::cerr << "Unknown exception in simulation\n";
+		try
+		{
+			if (currentScene == Scene::PreviewSimulation)
+			{
+				// Update only Preview Simulation
+				previewCellManager.updateCells(timeStep);
+				checkGLError("updateCells - preview");
+				
+				// Update preview simulation time tracking
+				sceneManager.updatePreviewSimulationTime(timeStep);
+			}
+			else if (currentScene == Scene::MainSimulation)
+			{
+				// Update only Main Simulation
+				mainCellManager.updateCells(timeStep);
+				checkGLError("updateCells - main");
+			}
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << "Exception in simulation: " << e.what() << "\n";
+		}
+		catch (...)
+		{
+			std::cerr << "Unknown exception in simulation\n";
+		}
 	}
 }
 
@@ -272,25 +278,29 @@ int main()
 	// Load the sphere shader for instanced rendering
 	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 
-	const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
-	Input input;
-	input.init(window);
-	// Initialise the cameras - separate camera for each scene
-	Camera previewCamera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
-	Camera mainCamera(glm::vec3(5.0f, 5.0f, 15.0f)); // Start at different position for main scene
-	// Initialise the UI manager
-	UIManager uiManager;
-	// Initialise cells - create separate cell managers for each scene
-	CellManager previewCellManager;
-	CellManager mainCellManager;
-	
-	// Initialize Preview Simulation
-	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
-	previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
-	
-	// Initialize Main Simulation
-	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
-	mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
+		Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene
+		Camera previewCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start further back to see more cells
+		Camera mainCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start at same position for consistent view
+		// Initialise the UI manager // We dont have any ui to manage yet
+		ToolState toolState;
+		UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
+		CellManager previewCellManager;
+		CellManager mainCellManager;
+		
+		// Initialize Preview Simulation
+		previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
+		previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+		
+		// Initialize Main Simulation
+		mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
+		mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+		
+		// Ensure both simulations have proper initial state by running one update cycle
+		previewCellManager.updateCells(config::physicsTimeStep);
+		mainCellManager.updateCells(config::physicsTimeStep);
 
 	AudioEngine audioEngine;
 	audioEngine.init();
