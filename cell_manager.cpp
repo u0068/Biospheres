@@ -1502,13 +1502,13 @@ void CellManager::renderRingGizmos(glm::vec2 resolution, const Camera &camera, c
                 // Create transformation matrix for this cell's ring
                 glm::mat4 modelMatrix = glm::mat4(1.0f);
                 modelMatrix = glm::translate(modelMatrix, position);
-                
-                // Orient the ring to represent the splitting plane (perpendicular to split direction)
+                  // Orient the ring to represent the splitting plane (perpendicular to split direction)
                 // The ring should show where the cell will divide, so it's rotated 90 degrees from the split direction
                 // First apply the yaw rotation
                 modelMatrix = glm::rotate(modelMatrix, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
                 // Then apply pitch rotation + 90 degrees to make ring perpendicular to split direction
-                modelMatrix = glm::rotate(modelMatrix, pitch + (float)M_PI * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+                // Negate pitch to correct rotation direction
+                modelMatrix = glm::rotate(modelMatrix, -pitch + (float)M_PI * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
                 
                 modelMatrix = glm::scale(modelMatrix, glm::vec3(ringScale));
                 

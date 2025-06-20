@@ -168,19 +168,20 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 	}
 	
 	if (activeCellManager && activeCamera)
-	{
-		// Render the active simulation with its camera
+	{		// Render the active simulation with its camera
 		try
 		{
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera);
 			checkGLError("renderCells");
-					// Render orientation gizmos after cells (requires depth testing)
-			activeCellManager->renderOrientationGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-			checkGLError("renderOrientationGizmos");
 			
-			// Render ring gizmos only in Preview Simulation
+			// Render gizmos only in Preview Simulation
 			if (currentScene == Scene::PreviewSimulation)
 			{
+				// Render orientation gizmos after cells (requires depth testing)
+				activeCellManager->renderOrientationGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+				checkGLError("renderOrientationGizmos");
+				
+				// Render ring gizmos
 				activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
 				checkGLError("renderRingGizmos");
 			}
