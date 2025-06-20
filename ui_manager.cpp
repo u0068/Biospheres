@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <iostream>
 
 #include "audio_engine.h"
 #include "scene_manager.h"
@@ -619,6 +620,10 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     }    // Handle genome changes - trigger instant resimulation
     if (genomeChanged)
     {
+        // Invalidate keyframes when genome changes
+        keyframesInitialized = false;
+        std::cout << "Genome changed - keyframes invalidated\n";
+        
         // Reset the simulation with the new genome
         cellManager.resetSimulation();
         cellManager.addGenomeToBuffer(currentGenome);
@@ -1011,8 +1016,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             currentTime = simulatedTime;
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
         }
-        
-        // Make the slider take almost all available width
+          // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
         if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
         {
@@ -1021,6 +1025,29 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             targetTime = currentTime;
             needsSimulationReset = true;
             isScrubbingTime = true;
+        }
+        
+        // Draw keyframe indicators on the slider
+        if (keyframesInitialized)
+        {
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 slider_min = ImGui::GetItemRectMin();
+            ImVec2 slider_max = ImGui::GetItemRectMax();
+            
+            // Draw keyframe markers
+            for (int i = 0; i < MAX_KEYFRAMES && i < keyframes.size(); i++)
+            {
+                if (keyframes[i].isValid)
+                {
+                    float keyframe_time = keyframes[i].time;
+                    float t = (keyframe_time / maxTime);
+                    float x = slider_min.x + t * (slider_max.x - slider_min.x);
+                    
+                    // Draw a small vertical line to indicate keyframe position
+                    ImU32 color = IM_COL32(255, 255, 0, 180); // Yellow with transparency
+                    draw_list->AddLine(ImVec2(x, slider_min.y), ImVec2(x, slider_max.y), color, 2.0f);
+                }
+            }
         }
         
         // Time input and controls on the same line
@@ -1043,11 +1070,11 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             }
         }
-        
-        // Max time control on a separate line but compact
+          // Max time control on a separate line but compact
         ImGui::Text("Max Time:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(100.0f);
+        float oldMaxTime = maxTime;
         if (ImGui::DragFloat("##MaxTime", &maxTime, 1.0f, 1.0f, 10000.0f, "%.2f"))
         {
             // Ensure current time doesn't exceed max time
@@ -1056,43 +1083,113 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 currentTime = maxTime;
                 snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             }
+            
+            // If max time changed significantly, update keyframes
+            if (abs(maxTime - oldMaxTime) > 0.1f)
+            {
+                updateKeyframes(cellManager, maxTime);
+            }
         }
-          // Handle time scrubbing
+        
+        // Keyframe initialization button and status
+        ImGui::SameLine();
+        if (ImGui::Button("Rebuild Keyframes"))
+        {
+            initializeKeyframes(cellManager);
+        }
+        
+        // Show keyframe status
+        ImGui::Text("Keyframes: %s (%d/50)", 
+                   keyframesInitialized ? "Ready" : "Not Ready", 
+                   keyframesInitialized ? MAX_KEYFRAMES : 0);
+        
+        // Initialize keyframes if not done yet
+        if (!keyframesInitialized)
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Click 'Rebuild Keyframes' to enable efficient scrubbing");
+        }        // Handle time scrubbing
         if (needsSimulationReset && isScrubbingTime)
         {
-            // Reset the simulation
-            cellManager.resetSimulation();
-            cellManager.addGenomeToBuffer(currentGenome);
-            ComputeCell newCell{};
-            newCell.modeIndex = currentGenome.initialMode;
-            cellManager.addCellToStagingBuffer(newCell);
-            cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
-            
-            // Reset simulation time
-            sceneManager.resetPreviewSimulationTime();
-              // If target time is greater than 0, fast-forward to that time
-            if (targetTime > 0.0f)
+            if (keyframesInitialized)
             {
-                // Temporarily pause to prevent normal time updates during fast-forward
-                bool wasPaused = sceneManager.isPaused();
-                sceneManager.setPaused(true);
-                  // Use a coarser time step for scrubbing to make it more responsive
-                float scrubTimeStep = config::scrubTimeStep;
-                float timeRemaining = targetTime;
-                int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
+                // Use keyframe system for efficient scrubbing
+                int nearestKeyframeIndex = findNearestKeyframe(targetTime);
+                const SimulationKeyframe& nearestKeyframe = keyframes[nearestKeyframeIndex];
                 
-                for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                std::cout << "Scrubbing to time " << targetTime << "s using keyframe " 
+                          << nearestKeyframeIndex << " (keyframe time: " << nearestKeyframe.time << "s)\n";
+                
+                // Restore from nearest keyframe
+                restoreFromKeyframe(cellManager, nearestKeyframeIndex);
+                
+                // Reset scene manager time to keyframe time
+                sceneManager.resetPreviewSimulationTime();
+                sceneManager.setPreviewSimulationTime(nearestKeyframe.time);
+                
+                // If target time is after the keyframe, simulate forward
+                if (targetTime > nearestKeyframe.time)
                 {
-                    float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
-                    cellManager.updateCells(stepTime);
-                    timeRemaining -= stepTime;
+                    // Temporarily pause to prevent normal time updates during fast-forward
+                    bool wasPaused = sceneManager.isPaused();
+                    sceneManager.setPaused(true);
                     
-                    // Update simulation time manually during fast-forward
-                    sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
+                    float timeRemaining = targetTime - nearestKeyframe.time;
+                    float scrubTimeStep = config::scrubTimeStep;
+                    int maxSteps = (int)(timeRemaining / scrubTimeStep) + 1;
+                    
+                    for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                    {
+                        float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                        cellManager.updateCells(stepTime);
+                        timeRemaining -= stepTime;
+                        
+                        // Update simulation time manually during fast-forward
+                        sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
+                    }
+                    
+                    // Restore original pause state after fast-forward
+                    sceneManager.setPaused(wasPaused);
                 }
+            }
+            else
+            {
+                // Fallback to old method if keyframes not available
+                std::cout << "Keyframes not available, using full resimulation to time " << targetTime << "s\n";
                 
-                // Restore original pause state after fast-forward
-                sceneManager.setPaused(wasPaused);
+                // Reset the simulation
+                cellManager.resetSimulation();
+                cellManager.addGenomeToBuffer(currentGenome);
+                ComputeCell newCell{};
+                newCell.modeIndex = currentGenome.initialMode;
+                cellManager.addCellToStagingBuffer(newCell);
+                cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+                
+                // Reset simulation time
+                sceneManager.resetPreviewSimulationTime();
+                  // If target time is greater than 0, fast-forward to that time
+                if (targetTime > 0.0f)
+                {
+                    // Temporarily pause to prevent normal time updates during fast-forward
+                    bool wasPaused = sceneManager.isPaused();
+                    sceneManager.setPaused(true);
+                      // Use a coarser time step for scrubbing to make it more responsive
+                    float scrubTimeStep = config::scrubTimeStep;
+                    float timeRemaining = targetTime;
+                    int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
+                    
+                    for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                    {
+                        float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                        cellManager.updateCells(stepTime);
+                        timeRemaining -= stepTime;
+                        
+                        // Update simulation time manually during fast-forward
+                        sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
+                    }
+                    
+                    // Restore original pause state after fast-forward
+                    sceneManager.setPaused(wasPaused);
+                }
             }
             
             needsSimulationReset = false;
@@ -1226,4 +1323,152 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
         }
     }
     ImGui::End();
+}
+
+void UIManager::initializeKeyframes(CellManager& cellManager)
+{
+    std::cout << "Initializing keyframes for time scrubber...\n";
+    
+    // Clear existing keyframes
+    keyframes.clear();
+    keyframes.resize(MAX_KEYFRAMES);
+    
+    // Reset simulation to initial state
+    cellManager.resetSimulation();
+    cellManager.addGenomeToBuffer(currentGenome);
+    ComputeCell newCell{};
+    newCell.modeIndex = currentGenome.initialMode;
+    cellManager.addCellToStagingBuffer(newCell);
+    cellManager.addStagedCellsToGPUBuffer();
+    
+    // Capture initial keyframe at time 0
+    captureKeyframe(cellManager, 0.0f, 0);
+    std::cout << "Captured initial keyframe at time 0.0s\n";
+    
+    // Calculate time interval between keyframes
+    float timeInterval = maxTime / (MAX_KEYFRAMES - 1);
+    
+    // Simulate and capture keyframes
+    for (int i = 1; i < MAX_KEYFRAMES; i++)
+    {
+        float targetTime = i * timeInterval;
+        float currentSimTime = (i - 1) * timeInterval;
+        
+        // Simulate from previous keyframe to current keyframe
+        float timeToSimulate = targetTime - currentSimTime;
+        float scrubTimeStep = config::scrubTimeStep;
+        
+        while (timeToSimulate > 0.0f)
+        {
+            float stepTime = (timeToSimulate > scrubTimeStep) ? scrubTimeStep : timeToSimulate;
+            cellManager.updateCells(stepTime);
+            timeToSimulate -= stepTime;
+        }
+        
+        // Capture keyframe
+        captureKeyframe(cellManager, targetTime, i);
+        
+        // Progress feedback
+        if (i % 10 == 0 || i == MAX_KEYFRAMES - 1)
+        {
+            std::cout << "Captured keyframe " << i << "/" << (MAX_KEYFRAMES - 1) 
+                      << " at time " << targetTime << "s\n";
+        }
+    }
+    
+    keyframesInitialized = true;
+    std::cout << "Keyframe initialization complete!\n";
+}
+
+void UIManager::updateKeyframes(CellManager& cellManager, float newMaxTime)
+{
+    std::cout << "Updating keyframes for new max time: " << newMaxTime << "s\n";
+    maxTime = newMaxTime;
+    keyframesInitialized = false;
+    initializeKeyframes(cellManager);
+}
+
+int UIManager::findNearestKeyframe(float targetTime) const
+{
+    if (!keyframesInitialized || keyframes.empty())
+        return 0;
+    
+    // Clamp target time to valid range
+    targetTime = std::max(0.0f, std::min(targetTime, maxTime));
+    
+    // Calculate which keyframe index should contain this time
+    float timeInterval = maxTime / (MAX_KEYFRAMES - 1);
+    int idealIndex = static_cast<int>(targetTime / timeInterval);
+    
+    // Clamp to valid keyframe range
+    idealIndex = std::max(0, std::min(idealIndex, MAX_KEYFRAMES - 1));
+    
+    // Find the nearest valid keyframe at or before the ideal index
+    for (int i = idealIndex; i >= 0; i--)
+    {
+        if (i < keyframes.size() && keyframes[i].isValid)
+        {
+            return i;
+        }
+    }
+    
+    // Fallback to keyframe 0 if nothing found
+    return 0;
+}
+
+void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
+{
+    if (keyframeIndex < 0 || keyframeIndex >= keyframes.size() || !keyframes[keyframeIndex].isValid)
+        return;
+    
+    // Reset simulation
+    cellManager.resetSimulation();
+    
+    // Restore genome (make a non-const copy)
+    GenomeData genomeCopy = keyframes[keyframeIndex].genome;
+    cellManager.addGenomeToBuffer(genomeCopy);
+    
+    // Restore cell states
+    for (int i = 0; i < keyframes[keyframeIndex].cellCount && i < keyframes[keyframeIndex].cellStates.size(); i++)
+    {
+        cellManager.addCellToStagingBuffer(keyframes[keyframeIndex].cellStates[i]);
+    }
+    cellManager.addStagedCellsToGPUBuffer();
+    // ... any other state restoration ...
+}
+
+void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyframeIndex)
+{
+    if (keyframeIndex < 0 || keyframeIndex >= MAX_KEYFRAMES)
+    {
+        std::cerr << "Invalid keyframe index for capture: " << keyframeIndex << "\n";
+        return;
+    }
+    
+    // Ensure keyframes vector is large enough
+    if (keyframeIndex >= keyframes.size())
+    {
+        keyframes.resize(keyframeIndex + 1);
+    }
+    
+    SimulationKeyframe& keyframe = keyframes[keyframeIndex];
+    
+    // Capture current simulation state
+    keyframe.time = time;
+    keyframe.genome = currentGenome;
+    keyframe.cellCount = cellManager.getCellCount();
+    
+    // Sync cell data from GPU to CPU to ensure we have latest state
+    cellManager.syncCellPositionsFromGPU();
+    
+    // Copy cell states
+    keyframe.cellStates.clear();
+    keyframe.cellStates.reserve(keyframe.cellCount);
+    
+    for (int i = 0; i < keyframe.cellCount; i++)
+    {
+        keyframe.cellStates.push_back(cellManager.getCellData(i));
+    }
+    
+    keyframe.isValid = true;
 }

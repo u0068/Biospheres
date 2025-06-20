@@ -6,8 +6,10 @@
 #include "camera.h"
 #include "genome.h"
 
+// Forward declarations
 struct CellManager; // Forward declaration to avoid circular dependency
 class SceneManager; // Forward declaration for scene management
+struct ComputeCell; // Forward declaration for keyframe system
 
 enum class ToolType : std::uint8_t
 {
@@ -101,6 +103,25 @@ private:    // Helper to get window flags based on lock state
     float targetTime = 0.0f;     // Target time we want to scrub to
     bool needsSimulationReset = false;  // Flag to reset simulation when scrubber changes
     bool isScrubbingTime = false;       // Flag to indicate we're scrubbing to a specific time
+    
+    // Keyframe system for efficient time scrubbing
+    struct SimulationKeyframe {
+        float time = 0.0f;
+        std::vector<ComputeCell> cellStates;
+        GenomeData genome;
+        int cellCount = 0;
+        bool isValid = false;
+    };
+    
+    static constexpr int MAX_KEYFRAMES = 50;
+    std::vector<SimulationKeyframe> keyframes;
+    bool keyframesInitialized = false;
+    
+    void initializeKeyframes(CellManager& cellManager);
+    void updateKeyframes(CellManager& cellManager, float newMaxTime);
+    int findNearestKeyframe(float targetTime) const;
+    void restoreFromKeyframe(CellManager& cellManager, int keyframeIndex);
+    void captureKeyframe(CellManager& cellManager, float time, int keyframeIndex);
     
     // Genome change tracking
     bool genomeChanged = false;          // Flag to indicate genome was modified
