@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36121.58 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CellSim", "CellSim.vcxproj", "{D94349FD-5460-401F-9D7A-1CEDAAC766A5}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Biospheres", "Biospheres.vcxproj", "{D94349FD-5460-401F-9D7A-1CEDAAC766A5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +26,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {405AF83D-E8FC-48DC-8E0F-1FCB0CD4860B}
+		SolutionGuid = {FCE9A3E3-16A9-4B00-B636-9C4197D1002D}
 	EndGlobalSection
 EndGlobal
