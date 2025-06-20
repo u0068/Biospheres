@@ -152,8 +152,7 @@ void CellManager::cleanup()
 // Buffers
 
 void CellManager::initializeGPUBuffers()
-{
-    // Create triple buffered compute buffers for cell data
+{    // Create triple buffered compute buffers for cell data
     for (int i = 0; i < 3; i++)
     {
         glCreateBuffers(1, &cellBuffer[i]);
@@ -161,7 +160,7 @@ void CellManager::initializeGPUBuffers()
             cellBuffer[i],
             config::MAX_CELLS * sizeof(ComputeCell),
             nullptr,
-            GL_DYNAMIC_DRAW
+            GL_DYNAMIC_COPY  // Used by both GPU compute and CPU read operations
         );
 
     }
@@ -173,14 +172,12 @@ void CellManager::initializeGPUBuffers()
         config::MAX_CELLS * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
         nullptr,
         GL_DYNAMIC_DRAW
-    );
-
-    // Create single buffered genome buffer
+    );    // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
     glNamedBufferData(modeBuffer,
         config::MAX_CELLS * sizeof(GPUMode),
         nullptr,
-        GL_DYNAMIC_DRAW
+        GL_DYNAMIC_READ  // Written once by CPU, read frequently by both GPU and CPU
     );
 
     // A buffer that keeps track of how many cells there are in the simulation
