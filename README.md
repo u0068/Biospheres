@@ -1,4 +1,4 @@
-# Bio-Spheres CPP
+# Bio-Spheres
 
 A high-performance 3D cellular simulation using GPU compute shaders and instanced rendering in OpenGL. This project demonstrates real-time physics simulation of thousands of spherical cells with efficient GPU-based rendering.
 
