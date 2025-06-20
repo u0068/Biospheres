@@ -160,13 +160,13 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     // Main metrics with color coding
     ImGui::Text("FPS: ");
     ImGui::SameLine();
-    ImVec4 fpsColor = perfMonitor.displayFPS >= 60.0f ? ImVec4(0, 1, 0, 1) : perfMonitor.displayFPS >= 30.0f ? ImVec4(1, 1, 0, 1)
+    ImVec4 fpsColor = perfMonitor.displayFPS >= 59.0f ? ImVec4(0, 1, 0, 1) : perfMonitor.displayFPS >= 30.0f ? ImVec4(1, 1, 0, 1)
                                                                                                              : ImVec4(1, 0, 0, 1);
     ImGui::TextColored(fpsColor, "%.1f", perfMonitor.displayFPS);
 
     ImGui::Text("Frame Time: ");
     ImGui::SameLine();
-    ImVec4 frameTimeColor = perfMonitor.displayFrameTime <= 16.67f ? ImVec4(0, 1, 0, 1) : perfMonitor.displayFrameTime <= 33.33f ? ImVec4(1, 1, 0, 1)
+    ImVec4 frameTimeColor = perfMonitor.displayFrameTime <= 17.f ? ImVec4(0, 1, 0, 1) : perfMonitor.displayFrameTime <= 33.33f ? ImVec4(1, 1, 0, 1)
                                                                                                                                  : ImVec4(1, 0, 0, 1);
     ImGui::TextColored(frameTimeColor, "%.3f ms", perfMonitor.displayFrameTime);
 
@@ -201,7 +201,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     // Color-coded FPS performance bar
     ImVec4 fpsBarColor;
     std::string fpsStatus;
-    if (perfMonitor.displayFPS >= 60.0f)
+    if (perfMonitor.displayFPS >= 59.0f)
     {
         fpsBarColor = ImVec4(0.0f, 0.8f, 0.0f, 1.0f); // Green
         fpsStatus = "Excellent";
@@ -233,7 +233,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 2));
 
     // 60 FPS indicator
-    if (perfMonitor.displayFPS >= 60.0f)
+    if (perfMonitor.displayFPS >= 59.0f)
         ImGui::TextColored(ImVec4(0, 1, 0, 1), "60+");
     else
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1), "60");
@@ -255,7 +255,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
     ImVec4 frameTimeBarColor;
     std::string frameTimeStatus;
-    if (perfMonitor.displayFrameTime <= 16.67f)
+    if (perfMonitor.displayFrameTime <= 17.f)
     {
         frameTimeBarColor = ImVec4(0.0f, 0.8f, 0.0f, 1.0f); // Green
         frameTimeStatus = "Smooth";
@@ -306,7 +306,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
     ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
-    ImGui::Text("Triangles: ~%i", 192 * cellCount);
+    ImGui::Text("Triangles: ~%i", 192 * cellCount); // This should be changed to always accurately reflect the mesh
     ImGui::Text("Vertices: ~%i", 96 * cellCount); // Assuming sphere has ~96 vertices
 
     // Memory estimate

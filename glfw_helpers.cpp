@@ -72,7 +72,7 @@ GLFWwindow *createWindow()
     glfwMakeContextCurrent(window);
 
     // Disable V-Sync for unlimited FPS (or set to 1 to enable V-Sync)
-    glfwSwapInterval(0); // 0 = disabled, 1 = enabled
+    glfwSwapInterval(static_cast<int>(config::VSYNC)); // 0 = disabled, 1 = enabled
 
     // Set the viewport to the size of the window when its resized
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
