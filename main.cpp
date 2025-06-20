@@ -293,10 +293,16 @@ int main()
 		// Initialize Preview Simulation
 		previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
 		previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
 		
 		// Initialize Main Simulation
 		mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
 		mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+		
+		// Ensure both simulations have proper initial state by running one update cycle
+		previewCellManager.updateCells(config::physicsTimeStep);
+		mainCellManager.updateCells(config::physicsTimeStep);
 
 		AudioEngine audioEngine;
 		audioEngine.init();

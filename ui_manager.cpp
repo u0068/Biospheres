@@ -1001,6 +1001,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             ComputeCell newCell{};
             newCell.modeIndex = currentGenome.initialMode;
             cellManager.addCellToStagingBuffer(newCell);
+            cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
             
             // Reset simulation time
             sceneManager.resetPreviewSimulationTime();
@@ -1086,6 +1087,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 previewCellManager.addCellToStagingBuffer(newCell);
+                previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
                 
                 // Reset preview simulation time
                 sceneManager.resetPreviewSimulationTime();
@@ -1105,6 +1107,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 mainCellManager.addCellToStagingBuffer(newCell);
+                mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
                 
                 // Advance simulation by one frame after reset
                 mainCellManager.updateCells(config::physicsTimeStep);
