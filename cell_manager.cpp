@@ -1,12 +1,22 @@
 #include "cell_manager.h"
 #include "camera.h"
 #include "config.h"
+#include "ui_manager.h"
 #include <iostream>
 #include <cassert>
 #include <cfloat>
 #include <cmath>
+#include <vector>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <GLFW/glfw3.h>
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtx/component_wise.hpp>
 
 #include "genome.h"
 #include "timer.h"
@@ -33,6 +43,14 @@ CellManager::CellManager()
     gridAssignShader = new Shader("shaders/grid_assign.comp");
     gridPrefixSumShader = new Shader("shaders/grid_prefix_sum.comp");
     gridInsertShader = new Shader("shaders/grid_insert.comp");
+    
+    // Initialize orientation gizmo shader and buffers
+    gizmoShader = new Shader("shaders/gizmo.vert", "shaders/gizmo.frag");
+    initializeGizmoBuffers();
+    
+    // Initialize ring gizmo shader and buffers
+    ringGizmoShader = new Shader("shaders/ring_gizmo.vert", "shaders/ring_gizmo.frag");
+    initializeRingGizmoBuffers();
 }
 
 CellManager::~CellManager()
@@ -123,6 +141,10 @@ void CellManager::cleanup()
         delete gridInsertShader;
         gridInsertShader = nullptr;
     }
+    
+    // Cleanup gizmo resources
+    cleanupGizmos();
+    cleanupRingGizmos();
 
     sphereMesh.cleanup();
 }
@@ -433,7 +455,8 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
     if (resolution.x < 1 || resolution.y < 1)
     {
         return;
-    }    try
+    }
+    try
     { // Use compute shader to efficiently extract instance data
 	    {
 		    TimerGPU timer("Instance extraction");
@@ -1154,4 +1177,383 @@ bool CellManager::raySphereIntersection(const glm::vec3 &rayOrigin, const glm::v
     }
 
     return false; // Both intersections are behind the ray origin or too close
+}
+
+// ===========================
+// ORIENTATION GIZMO RENDERING
+// ===========================
+
+void CellManager::initializeGizmoBuffers()
+{
+    // Create VAO for gizmo lines
+    glGenVertexArrays(1, &gizmoVAO);
+    glBindVertexArray(gizmoVAO);
+    
+    // Create basic line geometry (will be transformed per cell)
+    // Each gizmo consists of 3 lines: Forward (red), Up (green), Right (blue)
+    // Each line goes from center to direction
+    float gizmoLength = 1.5f;
+    
+    float gizmoLines[] = {
+        // Forward direction (red) - positive Z in local space
+        0.0f, 0.0f, 0.0f,    1.0f, 0.0f, 0.0f,  // start, color
+        0.0f, 0.0f, gizmoLength,    1.0f, 0.0f, 0.0f,  // end, color
+        
+        // Up direction (green) - positive Y in local space
+        0.0f, 0.0f, 0.0f,    0.0f, 1.0f, 0.0f,  // start, color
+        0.0f, gizmoLength, 0.0f,    0.0f, 1.0f, 0.0f,  // end, color
+        
+        // Right direction (blue) - positive X in local space
+        0.0f, 0.0f, 0.0f,    0.0f, 0.0f, 1.0f,  // start, color
+        gizmoLength, 0.0f, 0.0f,    0.0f, 0.0f, 1.0f,  // end, color
+    };
+    
+    // Create and bind VBO for line data
+    glGenBuffers(1, &gizmoVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, gizmoVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(gizmoLines), gizmoLines, GL_STATIC_DRAW);
+    
+    // Set up vertex attributes
+    // Position attribute (location 0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // Color attribute (location 1)
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
+    glBindVertexArray(0);
+}
+
+void CellManager::updateGizmoData()
+{
+    // For now, gizmos will be drawn using instanced rendering with position and orientation data
+    // The orientation will be extracted from cell data in the rendering method
+}
+
+void CellManager::renderOrientationGizmos(glm::vec2 resolution, const Camera &camera, const UIManager &uiManager)
+{
+    if (!uiManager.getShowOrientationGizmos() || cellCount == 0)
+        return;
+        
+    if (gizmoVAO == 0 || !gizmoShader)
+        return;
+    
+    // Safety check for zero-sized framebuffer (minimized window)
+    if (resolution.x <= 0 || resolution.y <= 0)
+        return;
+    
+    // Enable line rendering
+    glEnable(GL_LINE_SMOOTH);
+    glLineWidth(3.0f);
+    
+    gizmoShader->use();
+    
+    // Set camera matrices (use same projection as main rendering)
+    glm::mat4 view = camera.getViewMatrix();
+    float aspectRatio = resolution.x / resolution.y;
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
+                                          aspectRatio,
+                                          0.1f, 1000.0f);
+    
+    // Set view and projection matrices once (they're the same for all gizmos)
+    gizmoShader->setMat4("uProjection", projection);
+    gizmoShader->setMat4("uView", view);
+    
+    glBindVertexArray(gizmoVAO);
+    
+    // Sync cell data from GPU to render gizmos
+    // This is a temporary solution - ideally we'd use a compute shader to generate gizmo geometry
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, getCellReadBuffer());
+    ComputeCell* cells = (ComputeCell*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+    
+    if (cells) {
+        for (int i = 0; i < cellCount; i++) {
+            const ComputeCell& cell = cells[i];
+            glm::vec3 position = glm::vec3(cell.positionAndMass);
+            
+            // Handle orientation - if quaternion is zero/invalid, use identity
+            glm::quat orientation = glm::quat(cell.orientation.w, cell.orientation.x, cell.orientation.y, cell.orientation.z);
+            if (glm::length(orientation) < 0.1f) {
+                orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion (w, x, y, z)
+            } else {
+                orientation = glm::normalize(orientation);
+            }
+            
+            // Calculate gizmo scale based on cell radius
+            float radius = cell.getRadius();
+            float gizmoScale = radius * 1.1f; // Gizmos twice the cell radius for visibility
+            
+            // Create transformation matrix for this cell's gizmo
+            glm::mat4 modelMatrix = glm::mat4(1.0f);
+            modelMatrix = glm::translate(modelMatrix, position);
+            
+            // Convert quaternion to rotation matrix manually
+            // For now, use identity rotation since orientation might not be properly initialized
+            // TODO: Properly convert quaternion to rotation matrix once orientation system is active
+            // glm::mat4 rotationMatrix = glm::mat4_cast(orientation);
+            glm::mat4 rotationMatrix = glm::mat4(1.0f); // Identity for now
+            
+            modelMatrix = modelMatrix * rotationMatrix;
+            modelMatrix = glm::scale(modelMatrix, glm::vec3(gizmoScale));
+            
+            // Set model matrix for this gizmo
+            gizmoShader->setMat4("uModel", modelMatrix);
+            
+            // Draw the 3 lines (6 vertices total)
+            glDrawArrays(GL_LINES, 0, 6);
+        }
+        
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    glBindVertexArray(0);
+    glLineWidth(2.0f);
+    glDisable(GL_LINE_SMOOTH);
+}
+
+void CellManager::cleanupGizmos()
+{
+    if (gizmoShader) {
+        gizmoShader->destroy();
+        delete gizmoShader;
+        gizmoShader = nullptr;
+    }
+    
+    if (gizmoVAO != 0) {
+        glDeleteVertexArrays(1, &gizmoVAO);
+        gizmoVAO = 0;
+    }
+    
+    if (gizmoVBO != 0) {
+        glDeleteBuffers(1, &gizmoVBO);
+        gizmoVBO = 0;
+    }
+    
+    if (gizmoInstanceVBO != 0) {
+        glDeleteBuffers(1, &gizmoInstanceVBO);
+        gizmoInstanceVBO = 0;
+    }
+    
+    if (ringGizmoShader) {
+        ringGizmoShader->destroy();
+        delete ringGizmoShader;
+        ringGizmoShader = nullptr;
+    }
+    
+    if (ringGizmoVAO != 0) {
+        glDeleteVertexArrays(1, &ringGizmoVAO);
+        ringGizmoVAO = 0;
+    }
+    
+    if (ringGizmoVBO != 0) {
+        glDeleteBuffers(1, &ringGizmoVBO);
+        ringGizmoVBO = 0;
+    }
+}
+
+// ===========================
+// RING GIZMO RENDERING
+// ===========================
+
+void CellManager::initializeRingGizmoBuffers()
+{
+    // Create VAO for ring geometry
+    glGenVertexArrays(1, &ringGizmoVAO);
+    glBindVertexArray(ringGizmoVAO);
+    
+    // Create ring geometry - a flat ring made of triangles
+    // Ring parameters
+    const int segments = 32;  // Number of segments around the ring
+    const float innerRadius = 0.4f;
+    const float outerRadius = 0.45f;
+    const float thickness = 0.001f; // Small thickness to make it visible from both sides
+    
+    std::vector<float> vertices;
+    std::vector<unsigned int> indices;
+    
+    // Generate ring vertices (top and bottom faces)
+    for (int i = 0; i <= segments; i++) {        float angle = (float)i / segments * 2.0f * (float)M_PI;
+        float cosAngle = cos(angle);
+        float sinAngle = sin(angle);
+        
+        // Top face vertices
+        // Inner ring vertex (top)
+        vertices.insert(vertices.end(), {
+            innerRadius * cosAngle, thickness * 0.5f, innerRadius * sinAngle,  // position
+            0.0f, 1.0f, 0.0f  // normal (pointing up)
+        });
+        
+        // Outer ring vertex (top)
+        vertices.insert(vertices.end(), {
+            outerRadius * cosAngle, thickness * 0.5f, outerRadius * sinAngle,  // position
+            0.0f, 1.0f, 0.0f  // normal (pointing up)
+        });
+        
+        // Bottom face vertices  
+        // Inner ring vertex (bottom)
+        vertices.insert(vertices.end(), {
+            innerRadius * cosAngle, -thickness * 0.5f, innerRadius * sinAngle,  // position
+            0.0f, -1.0f, 0.0f  // normal (pointing down)
+        });
+        
+        // Outer ring vertex (bottom)
+        vertices.insert(vertices.end(), {
+            outerRadius * cosAngle, -thickness * 0.5f, outerRadius * sinAngle,  // position
+            0.0f, -1.0f, 0.0f  // normal (pointing down)
+        });
+    }
+      // Generate indices for triangles
+    for (int i = 0; i < segments; i++) {
+        unsigned int base = (unsigned int)(i * 4);
+        unsigned int next = (unsigned int)(((i + 1) % (segments + 1)) * 4);
+        
+        // Top face triangles
+        indices.insert(indices.end(), {
+            base, base + 1u, next,
+            next, base + 1u, next + 1u
+        });
+        
+        // Bottom face triangles
+        indices.insert(indices.end(), {
+            base + 2u, next + 2u, base + 3u,
+            base + 3u, next + 2u, next + 3u
+        });
+    }
+    
+    // Create and bind VBO for ring data
+    glGenBuffers(1, &ringGizmoVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, ringGizmoVBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    
+    // Create and bind EBO for indices
+    GLuint ringGizmoEBO;
+    glGenBuffers(1, &ringGizmoEBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ringGizmoEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+    
+    // Set up vertex attributes
+    // Position attribute (location 0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // Normal attribute (location 1)
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+      // Store the number of indices for rendering
+    ringGizmoIndexCount = static_cast<unsigned int>(indices.size());
+    
+    glBindVertexArray(0);
+}
+
+void CellManager::renderRingGizmos(glm::vec2 resolution, const Camera &camera, const UIManager &uiManager)
+{
+    if (!uiManager.getShowOrientationGizmos() || cellCount == 0)
+        return;
+        
+    if (ringGizmoVAO == 0 || !ringGizmoShader)
+        return;
+    
+    // Safety check for zero-sized framebuffer (minimized window)
+    if (resolution.x <= 0 || resolution.y <= 0)
+        return;
+    
+    // Enable blending for transparent rings
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    ringGizmoShader->use();
+    
+    // Set camera matrices (use same projection as main rendering)
+    glm::mat4 view = camera.getViewMatrix();
+    float aspectRatio = resolution.x / resolution.y;
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
+                                          aspectRatio,
+                                          0.1f, 1000.0f);
+    
+    // Set view and projection matrices once (they're the same for all rings)
+    ringGizmoShader->setMat4("uProjection", projection);
+    ringGizmoShader->setMat4("uView", view);
+    
+    glBindVertexArray(ringGizmoVAO);
+      // Access cell data from GPU to render rings
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, getCellReadBuffer());
+    ComputeCell* cells = (ComputeCell*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+    
+    // Access mode data to get parent split orientation (map second buffer after first)
+    GPUMode* modes = nullptr;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, modeBuffer);
+    modes = (GPUMode*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+    
+    if (cells && modes) {
+        for (int i = 0; i < cellCount; i++) {
+            const ComputeCell& cell = cells[i];
+            glm::vec3 position = glm::vec3(cell.positionAndMass);
+            
+            // Get the mode data for this cell to access parent split orientation
+            int modeIndex = cell.modeIndex;
+            if (modeIndex >= 0) { // Assuming we have valid mode data
+                const GPUMode& mode = modes[modeIndex];
+                  // Get parent split orientation (pitch and yaw in radians)
+                float pitch = mode.splitOrientation.x;
+                float yaw = mode.splitOrientation.y;
+                
+                // Calculate ring scale based on cell radius
+                float radius = cell.getRadius();
+                float ringScale = radius * 3.0f; // Ring slightly larger than cell for visibility
+                
+                // Create transformation matrix for this cell's ring
+                glm::mat4 modelMatrix = glm::mat4(1.0f);
+                modelMatrix = glm::translate(modelMatrix, position);
+                
+                // Orient the ring to represent the splitting plane (perpendicular to split direction)
+                // The ring should show where the cell will divide, so it's rotated 90 degrees from the split direction
+                // First apply the yaw rotation
+                modelMatrix = glm::rotate(modelMatrix, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+                // Then apply pitch rotation + 90 degrees to make ring perpendicular to split direction
+                modelMatrix = glm::rotate(modelMatrix, pitch + (float)M_PI * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+                
+                modelMatrix = glm::scale(modelMatrix, glm::vec3(ringScale));
+                
+                // Set model matrix for this ring
+                ringGizmoShader->setMat4("uModel", modelMatrix);
+                
+                // Draw the ring
+                glDrawElements(GL_TRIANGLES, ringGizmoIndexCount, GL_UNSIGNED_INT, 0);
+            }
+        }
+    }
+    
+    // Unmap buffers in reverse order
+    if (modes) {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, modeBuffer);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    if (cells) {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, getCellReadBuffer());
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+}
+
+void CellManager::cleanupRingGizmos()
+{
+    if (ringGizmoShader) {
+        ringGizmoShader->destroy();
+        delete ringGizmoShader;
+        ringGizmoShader = nullptr;
+    }
+    
+    if (ringGizmoVAO != 0) {
+        glDeleteVertexArrays(1, &ringGizmoVAO);
+        ringGizmoVAO = 0;
+    }
+    
+    if (ringGizmoVBO != 0) {
+        glDeleteBuffers(1, &ringGizmoVBO);
+        ringGizmoVBO = 0;
+    }
 }

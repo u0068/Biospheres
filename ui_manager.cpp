@@ -389,6 +389,11 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     ImGui::BulletText("Left-click - Select cell");
     ImGui::BulletText("Left-click + Drag - Move selected cell");
     ImGui::BulletText("Scroll Wheel - Adjust drag distance");
+    
+    ImGui::Separator();
+    ImGui::Text("Visualization:");
+    ImGui::Checkbox("Show Orientation Gizmos", &showOrientationGizmos);
+    addTooltip("Display forward (red), up (green), and right (blue) orientation axes for each cell");
 
     // Show current selection info
     if (cellManager.hasSelectedCell())    {
