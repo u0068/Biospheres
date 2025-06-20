@@ -34,6 +34,6 @@ namespace config
 	inline float physicsTimeStep{ 0.01f };	// The size of a physics time step, in simulation time
 	//inline float physicsSpeed{ 1.f };		// A multiplier on the physics tickrate. Physics tickrate = physicsSpeed / physicsTimeStep
 	inline float scrubTimeStep{ 0.1f };	// Time step used for time scrubber fast-forward (larger = faster scrubbing)
-	inline float maxAccumulatorTime{ 0.02f };// Maximum amount of time spent on simulating physics per frame. Max physics tpf = maxAccumulatorTime * tickrate
+	inline float maxAccumulatorTime{ 0.1f };// Maximum amount of time spent on simulating physics per frame. Max physics tpf = maxAccumulatorTime * tickrate
 	inline float maxDeltaTime{ 0.1f };		// The maximum amount of time that can be accumulated by 1 frame
 }

@@ -507,8 +507,7 @@ void CellManager::runPhysicsCompute(float deltaTime)
 
     physicsShader->use();
 
-    // Set uniforms    physicsShader->setFloat("u_deltaTime", deltaTime);
-    physicsShader->setFloat("u_damping", 0.98f);
+    // Set uniforms
 
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -536,7 +535,9 @@ void CellManager::runPhysicsCompute(float deltaTime)
 
 void CellManager::runUpdateCompute(float deltaTime)
 {
-    TimerGPU timer("Cell Update Compute");    updateShader->use();
+    TimerGPU timer("Cell Update Compute");
+
+	updateShader->use();
 
     // Set uniforms
     updateShader->setFloat("u_deltaTime", deltaTime);

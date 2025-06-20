@@ -42,8 +42,6 @@ layout(std430, binding = 4) buffer CellCountBuffer {
 };
 
 // Uniforms
-uniform float u_deltaTime;
-uniform float u_damping;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 uniform int u_gridResolution;
 uniform float u_gridCellSize;

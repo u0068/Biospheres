@@ -24,7 +24,7 @@
     <ProjectGuid>{d94349fd-5460-401f-9d7a-1cedaac766a5}</ProjectGuid>
     <RootNamespace>YoutubeOpenGL</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>Biospheres 2</ProjectName>
+    <ProjectName>Biospheres</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

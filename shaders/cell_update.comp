@@ -51,7 +51,7 @@ void main() {
     cells[index].velocity += cells[index].acceleration.xyz * u_deltaTime;
     
     // Apply damping
-    cells[index].velocity *= u_damping;
+    cells[index].velocity *= pow(u_damping, u_deltaTime*100.);
     
     // Update position based on velocity (Euler integration)
     cells[index].positionAndMass.xyz += cells[index].velocity * u_deltaTime;

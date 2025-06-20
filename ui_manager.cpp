@@ -1140,7 +1140,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
                     {
                         float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
-                        cellManager.updateCells(stepTime);
+                        cellManager.updateCells(stepTime);  // might want to change it to always use scrubTimeStep for more determinism
                         timeRemaining -= stepTime;
                         
                         // Update simulation time manually during fast-forward

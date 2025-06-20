@@ -59,7 +59,8 @@ public:
         if (speed < 0.1f) speed = 0.1f;
         if (speed > 10.0f) speed = 10.0f;
         simulationSpeed = speed;
-    }    void resetSpeed() { simulationSpeed = 1.0f; }
+    }
+	void resetSpeed() { simulationSpeed = 1.0f; }
     
     // Preview simulation time tracking
     float getPreviewSimulationTime() const { return previewSimulationTime; }
@@ -68,7 +69,7 @@ public:
     { 
         if (!paused && currentScene == Scene::PreviewSimulation) 
         {
-            previewSimulationTime += deltaTime * simulationSpeed;
+            previewSimulationTime += deltaTime;// *simulationSpeed;
         }
     }
     void resetPreviewSimulationTime() { previewSimulationTime = 0.0f; }
