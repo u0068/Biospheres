@@ -1,5 +1,6 @@
 #include "ui_manager.h"
 #include "cell_manager.h"
+#include "config.h"
 #include "imgui.h"
 #include <algorithm>
 #include <string>
@@ -1014,8 +1015,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
           // Reset button next to pause/resume
         ImGui::SameLine();
         if (currentScene == Scene::PreviewSimulation)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
+        {            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
             if (ImGui::Button("Reset Preview", ImVec2(150, 30)))
             {
                 previewCellManager.resetSimulation();
@@ -1023,12 +1023,14 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 previewCellManager.addCellToStagingBuffer(newCell);
+                
+                // Advance simulation by one frame after reset
+                previewCellManager.updateCells(config::physicsTimeStep);
             }
             ImGui::PopStyleColor();
         }
         else if (currentScene == Scene::MainSimulation)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
+        {            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 1.0f)); // Red for reset
             if (ImGui::Button("Reset Main", ImVec2(150, 30)))
             {
                 mainCellManager.resetSimulation();
@@ -1036,6 +1038,9 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 mainCellManager.addCellToStagingBuffer(newCell);
+                
+                // Advance simulation by one frame after reset
+                mainCellManager.updateCells(config::physicsTimeStep);
             }
             ImGui::PopStyleColor();
         }
