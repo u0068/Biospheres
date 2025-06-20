@@ -612,6 +612,9 @@ void CellManager::resetSimulation()
     cpuPendingCellCount = 0;
     gpuPendingCellCount = 0;
     
+    // CRITICAL FIX: Reset buffer rotation state for consistent keyframe restoration
+    bufferRotation = 0;
+    
     // Clear selection state
     clearSelection();
     
@@ -641,7 +644,7 @@ void CellManager::resetSimulation()
     // Sync the staging buffer
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     
-    std::cout << "Reset simulation\n";
+    std::cout << "Reset simulation (buffer rotation reset to 0)\n";
 }
 
 void CellManager::spawnCells(int count) // no longer functional, needs to be updated for the new cell struct
@@ -999,6 +1002,10 @@ void CellManager::syncCellPositionsFromGPU()
 { // This will fail if the CPU buffer has the wrong size, which will happen once cell division is implemented so i will have to rewrite this
     if (cellCount == 0)
         return;
+
+    // CRITICAL FIX: Ensure all GPU operations are complete before mapping buffer
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glFinish(); // Wait for GPU to be completely idle
 
     // Use glMapBuffer for efficient GPU->CPU data transfer from current buffer
     ComputeCell *gpuData = static_cast<ComputeCell *>(glMapNamedBuffer(getCellReadBuffer(), GL_READ_ONLY));

@@ -82,6 +82,8 @@ public:
     // Scene management
     void switchToScene(int sceneIndex); // Method to switch scenes
 
+    void checkKeyframeTimingAccuracy();
+
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;
     
