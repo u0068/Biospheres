@@ -1,12 +1,19 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"name": "Biospheres-2",
-			"path": "../../projects/Biospheres 2/Biospheres-2"
-		}
-	],
-	"settings": {}
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "cmake.configureOnOpen": false,
+        "cmake.buildDirectory": "${workspaceFolder}/build"
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.cpptools",
+            "ms-vscode.cpptools-extension-pack",
+            "ms-vscode.cmake-tools",
+            "slevesque.shader"
+        ]
+    }
 }
