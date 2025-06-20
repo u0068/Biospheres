@@ -279,10 +279,9 @@ int main()
 		Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 
 		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
-		Input input;
-		input.init(window);		// Initialise the cameras - separate camera for each scene
-		Camera previewCamera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
-		Camera mainCamera(glm::vec3(5.0f, 5.0f, 15.0f)); // Start at different position for main scene
+		Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene
+		Camera previewCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start further back to see more cells
+		Camera mainCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start at same position for consistent view
 		// Initialise the UI manager // We dont have any ui to manage yet
 		ToolState toolState;
 		UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
