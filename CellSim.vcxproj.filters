@@ -167,6 +167,9 @@
     <ClInclude Include="audio_engine.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="scene_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\sphere.vert">

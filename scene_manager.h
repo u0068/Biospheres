@@ -40,7 +40,8 @@ public:
         if (speed < 0.1f) speed = 0.1f;
         if (speed > 5.0f) speed = 5.0f;
         simulationSpeed = speed;
-    }    void resetSpeed() { simulationSpeed = 1.0f; }
+    }
+	void resetSpeed() { simulationSpeed = 1.0f; }
 
     const char* getSceneName(Scene scene) const
     {
@@ -57,7 +58,8 @@ public:
         return getSceneName(currentScene);
     }
 
-private:    Scene currentScene;
+private:
+	Scene currentScene;
     bool sceneChanged = false;
     bool paused = false;
     float simulationSpeed = 1.0f;

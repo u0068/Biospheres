@@ -207,29 +207,31 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 void updateSimulation(CellManager& previewCellManager, CellManager& mainCellManager, SceneManager& sceneManager)
 {
 	// Only update simulations if not paused
-	if (!sceneManager.isPaused())
+	if (sceneManager.isPaused())
 	{
-		// Update both simulations with speed multiplier
-		float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
+		return;
+	}
+
+	// Update both simulations with speed multiplier
+	float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
+	
+	try
+	{
+		// Update Preview Simulation
+		previewCellManager.updateCells(timeStep);
+		checkGLError("updateCells - preview");
 		
-		try
-		{
-			// Update Preview Simulation
-			previewCellManager.updateCells(timeStep);
-			checkGLError("updateCells - preview");
-			
-			// Update Main Simulation
-			mainCellManager.updateCells(timeStep);
-			checkGLError("updateCells - main");
-		}
-		catch (const std::exception& e)
-		{
-			std::cerr << "Exception in simulation: " << e.what() << "\n";
-		}
-		catch (...)
-		{
-			std::cerr << "Unknown exception in simulation\n";
-		}
+		// Update Main Simulation
+		mainCellManager.updateCells(timeStep);
+		checkGLError("updateCells - main");
+	}
+	catch (const std::exception& e)
+	{
+		std::cerr << "Exception in simulation: " << e.what() << "\n";
+	}
+	catch (...)
+	{
+		std::cerr << "Unknown exception in simulation\n";
 	}
 }
 
@@ -261,152 +263,159 @@ void renderImGui(const ImGuiIO& io)
 int main()
 {
 	{ // This scope is used to ensure the opengl elements are destroyed before the opengl context
-		// Set up error callback before initializing GLFW
-		glfwSetErrorCallback(glfwErrorCallback);
-		initGLFW();
-		GLFWwindow *window = createWindow();
-		initGLAD(window);
-		setupGLFWDebugFlags();
-		// Load the sphere shader for instanced rendering
-		Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
+	// Set up error callback before initializing GLFW
+	glfwSetErrorCallback(glfwErrorCallback);
+	initGLFW();
+	GLFWwindow *window = createWindow();
+	initGLAD(window);
+	setupGLFWDebugFlags();
+	// Load the sphere shader for instanced rendering
+	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
 
-		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
-		Input input;
-		input.init(window);		// Initialise the cameras - separate camera for each scene
-		Camera previewCamera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
-		Camera mainCamera(glm::vec3(5.0f, 5.0f, 15.0f)); // Start at different position for main scene
-		// Initialise the UI manager // We dont have any ui to manage yet
-		ToolState toolState;
-		UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
-		CellManager previewCellManager;
-		CellManager mainCellManager;
-		
-		// Initialize Preview Simulation
-		previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
-		previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
-		
-		// Initialize Main Simulation
-		mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
-		mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+	const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
+	Input input;
+	input.init(window);
+	// Initialise the cameras - separate camera for each scene
+	Camera previewCamera(glm::vec3(0.0f, 0.0f, 10.0f)); // Start further back to see more cells
+	Camera mainCamera(glm::vec3(5.0f, 5.0f, 15.0f)); // Start at different position for main scene
+	// Initialise the UI manager
+	UIManager uiManager;
+	// Initialise cells - create separate cell managers for each scene
+	CellManager previewCellManager;
+	CellManager mainCellManager;
+	
+	// Initialize Preview Simulation
+	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
+	previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+	
+	// Initialize Main Simulation
+	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
+	mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
 
-		AudioEngine audioEngine;
-		audioEngine.init();
-		audioEngine.start();
-		SynthEngine synthEngine;
+	AudioEngine audioEngine;
+	audioEngine.init();
+	audioEngine.start();
+	SynthEngine synthEngine;
 
-		// Timing variables
-		float deltaTime = 0.0f;
-		float lastFrame = 0.0f;
-		float accumulator = 0.0f;
-		// Performance monitoring struct
-		PerformanceMonitor perfMonitor{};
+	// Timing variables
+	float deltaTime = 0.0f;
+	float lastFrame = 0.0f;
+	float accumulator = 0.0f;
 
-		// Scene management
-		SceneManager sceneManager;
+	// Performance monitoring struct
+	PerformanceMonitor perfMonitor{};
 
-		// Window state tracking
-		WindowState windowState;
+	// Scene management
+	SceneManager sceneManager;
 
-		// Main while loop
-		while (!glfwWindowShouldClose(window))
+	// Window state tracking
+	WindowState windowState;
+
+	// Main while loop
+	while (!glfwWindowShouldClose(window))
+	{
+		//cellManager.spawnCells(1); // spawns 1 cell somewhere, for debugging
+
+		// Calculate delta time
+		float currentFrame = static_cast<float>(glfwGetTime());
+		deltaTime = currentFrame - lastFrame;
+		lastFrame = currentFrame;
+		deltaTime = std::clamp(deltaTime, 0.0f, config::maxDeltaTime);
+		accumulator += deltaTime;
+		accumulator = std::clamp(accumulator, 0.0f, config::maxAccumulatorTime);
+		float tickPeriod = config::physicsTimeStep / config::physicsSpeed;
+
+		// Check window state first - before any OpenGL operations
+		if (handleWindowStateTransitions(window, windowState))
 		{
-			//cellManager.spawnCells(1); // spawns 1 cell somewhere, for debugging
+			// If the window state handling function indicates to skip the frame, continue to the next iteration
+			continue;
+		}
+		// Update performance metrics for min/avg/max calculations and history
+		updatePerformanceMonitoring(perfMonitor, uiManager, deltaTime, currentFrame);
 
-			// Calculate delta time
-			float currentFrame = static_cast<float>(glfwGetTime());
-			deltaTime = currentFrame - lastFrame;
-			lastFrame = currentFrame;
-			deltaTime = std::clamp(deltaTime, 0.0f, config::maxDeltaTime);
-			accumulator += deltaTime;
-			accumulator = std::clamp(accumulator, 0.0f, config::maxAccumulatorTime);
-			float tickPeriod = config::physicsTimeStep / config::physicsSpeed;
+		// Use the valid dimensions we stored
+		int width = windowState.lastKnownWidth;
+		int height = windowState.lastKnownHeight;
 
-			// Check window state first - before any OpenGL operations
-			if (handleWindowStateTransitions(window, windowState))
-			{
-				// If the window state handling function indicates to skip the frame, continue to the next iteration
-				continue;
-			}			// Update performance metrics for min/avg/max calculations and history
-			updatePerformanceMonitoring(perfMonitor, uiManager, deltaTime, currentFrame);
+		// Final safety check - if we still don't have valid dimensions, skip this frame
+		if (width <= 0 || height <= 0)
+		{
+			glfwPollEvents();
+			continue;
+		}
+		/// First we do some init stuff
+		/// Clear the framebuffer for proper 3D rendering
+		/// Tell OpenGL a new frame is about to begin
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
 
-			// Use the valid dimensions we stored
-			int width = windowState.lastKnownWidth;
-			int height = windowState.lastKnownHeight;
+		// Set viewport with our validated dimensions
+		try
+		{
+			glViewport(0, 0, width, height);
+			checkGLError("glViewport");
 
-			// Final safety check - if we still don't have valid dimensions, skip this frame
-			if (width <= 0 || height <= 0)
-			{
-				glfwPollEvents();
-				continue;
-			} //// First we do some init stuff
-			/// Clear the framebuffer for proper 3D rendering
-			/// Tell OpenGL a new frame is about to begin
-			ImGui_ImplOpenGL3_NewFrame();
-			ImGui_ImplGlfw_NewFrame();
-			ImGui::NewFrame();
+			// Clear framebuffer once at the start of the frame
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			checkGLError("glClear");
+		}
+		catch (...)
+		{
+			// If OpenGL operations fail, skip this frame
+			std::cerr << "OpenGL viewport/clear failed, skipping frame\n";
+			glfwPollEvents();
+			continue;
+		}
+		/// Then we handle input
+		// I should probably put this stuff in a separate function instead of having it in the main loop
+		// Take care of all GLFW events
+		processInput(input, previewCamera, mainCamera, previewCellManager, mainCellManager, sceneManager, deltaTime, width, height, synthEngine);
 
-			// Set viewport with our validated dimensions
+		/// Then we handle cell simulation
+		while (accumulator >= tickPeriod)
+		{
+			updateSimulation(previewCellManager, mainCellManager, sceneManager);
+			accumulator -= tickPeriod;
+		}
+		/// Then we handle rendering
+		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height);// ImGui rendering
+		renderImGui(io);
+
+		try
+		{
+			// Swap the back buffer with the front buffer, so that the rendered image is displayed on the screen
+			glfwSwapBuffers(window);
+			checkGLError("glfwSwapBuffers");
+		}
+		catch (const std::exception &e)
+		{
+			std::cerr << "Exception in framebuffer swap: " << e.what() << "\n";
+			// Try to recover by just swapping buffers
 			try
 			{
-				glViewport(0, 0, width, height);
-				checkGLError("glViewport");
-
-				// Clear framebuffer once at the start of the frame
-				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-				checkGLError("glClear");
-			}
-			catch (...)
-			{
-				// If OpenGL operations fail, skip this frame
-				std::cerr << "OpenGL viewport/clear failed, skipping frame\n";
-				glfwPollEvents();
-				continue;
-			}
-			/// Then we handle input			/// I should probably put this stuff in a separate function instead of having it in the main loop
-			// Take care of all GLFW events
-			processInput(input, previewCamera, mainCamera, previewCellManager, mainCellManager, sceneManager, deltaTime, width, height, synthEngine);
-
-			//// Then we handle cell simulation			while (accumulator >= tickPeriod)
-			{
-				updateSimulation(previewCellManager, mainCellManager, sceneManager);
-				accumulator -= tickPeriod;
-			}//// Then we handle rendering
-			renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height);// ImGui rendering
-			renderImGui(io);
-
-			try
-			{
-				// Swap the back buffer with the front buffer, so that the rendered image is displayed on the screen
 				glfwSwapBuffers(window);
-				checkGLError("glfwSwapBuffers");
-			}
-			catch (const std::exception &e)
-			{
-				std::cerr << "Exception in framebuffer swap: " << e.what() << "\n";
-				// Try to recover by just swapping buffers
-				try
-				{
-					glfwSwapBuffers(window);
-				}
-				catch (...)
-				{
-					// If even buffer swap fails, just continue to next frame
-				}
 			}
 			catch (...)
 			{
-				std::cerr << "Unknown exception in framebuffer swap\n";
-				// Try to recover by just swapping buffers
-				try
-				{
-					glfwSwapBuffers(window);
-				}
-				catch (...)
-				{
-					// If even buffer swap fails, just continue to next frame
-				}
+				// If even buffer swap fails, just continue to next frame
 			}
 		}
+		catch (...)
+		{
+			std::cerr << "Unknown exception in framebuffer swap\n";
+			// Try to recover by just swapping buffers
+			try
+			{
+				glfwSwapBuffers(window);
+			}
+			catch (...)
+			{
+				// If even buffer swap fails, just continue to next frame
+			}
+		}
+	}
 	}
 	// destroy and terminate everything before ending the ID
 	shutdownImGui();

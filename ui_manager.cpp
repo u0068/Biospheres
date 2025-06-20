@@ -22,7 +22,7 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
 {
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
-      int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
     if (ImGui::Begin("Cell Inspector", nullptr, flags))
     {
 
@@ -130,24 +130,24 @@ void UIManager::drawToolSelector(ToolState &toolState)
 
 void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
 {
-    switch (toolState.activeTool)
-    {
-    case ToolType::AddCell:
-        ImGui::ColorEdit4("New Cell Color", &toolState.newCellColor[0]);
-        ImGui::SliderFloat("New Cell Mass", &toolState.newCellMass, 0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-        break;
-    case ToolType::EditCell:
+	switch (toolState.activeTool)
+	{
+	case ToolType::AddCell:
+	    ImGui::ColorEdit4("New Cell Color", &toolState.newCellColor[0]);
+	    ImGui::SliderFloat("New Cell Mass", &toolState.newCellMass, 0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+	    break;
+	case ToolType::EditCell:
 
-    default:
-        break;
-    }
+	default:
+	    break;
+	}
 }
 
 void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager)
 {
     ImGui::SetNextWindowPos(ImVec2(420, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
-      int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
     if (ImGui::Begin("Advanced Performance Monitor", nullptr, flags))
     {
 
@@ -356,7 +356,7 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
 {
     ImGui::SetNextWindowPos(ImVec2(50, 470), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
-      int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
     if (ImGui::Begin("Camera & Controls", nullptr, flags))
     {
     glm::vec3 camPos = camera.getPosition();
