@@ -13,7 +13,7 @@ namespace config
 	constexpr int OPENGL_VERSION_MAJOR{4};
 	constexpr int OPENGL_VERSION_MINOR{6};
 	constexpr const char* GLSL_VERSION{"#version 460"};
-	constexpr const char* APPLICATION_NAME{"Biospheres 2"};
+	constexpr const char* APPLICATION_NAME{"Biospheres"};
 	constexpr bool PLAY_STARTUP_JINGLE{false};
 	constexpr bool VSYNC{ true };
 

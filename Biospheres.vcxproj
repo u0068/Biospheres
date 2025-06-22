@@ -220,10 +220,14 @@
     <None Include="shaders\cell_update.comp" />
     <None Include="shaders\cell_update_internal.comp" />
     <None Include="shaders\extract_instances.comp" />
+    <None Include="shaders\gizmo.frag" />
+    <None Include="shaders\gizmo.vert" />
     <None Include="shaders\grid_assign.comp" />
     <None Include="shaders\grid_clear.comp" />
     <None Include="shaders\grid_insert.comp" />
     <None Include="shaders\grid_prefix_sum.comp" />
+    <None Include="shaders\ring_gizmo.frag" />
+    <None Include="shaders\ring_gizmo.vert" />
     <None Include="shaders\sphere.frag" />
     <None Include="shaders\sphere.vert" />
   </ItemGroup>

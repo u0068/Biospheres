@@ -6,12 +6,13 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 // mode data structure for compute shader
 struct GPUMode {
-    vec4 color;
-    vec2 splitOrientation;
+    vec4 color;             // r, g, b, padding
+    vec4 orientationA;      // quaternion
+    vec4 orientationB;      // quaternion
+    vec4 splitDirection;  // x, y, z, padding
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
-    float[2] padding;
 };
 
 // Cell data structure for compute shader

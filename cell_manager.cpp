@@ -14,9 +14,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <glm/gtx/component_wise.hpp>
 
 #include "genome.h"
 #include "timer.h"
@@ -282,6 +280,14 @@ void CellManager::addStagedCellsToGPUBuffer()
     }
 }
 
+glm::vec3 pitchYawToVec3(float pitch, float yaw) {
+    return glm::vec3(
+        cos(pitch) * sin(yaw),
+        sin(pitch),
+        cos(pitch) * cos(yaw)
+    );
+}
+
 void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     int genomeBaseOffset = 0; // Later make it add to the end of the buffer
     int modeCount = static_cast<int>(genomeData.modes.size());
@@ -297,11 +303,15 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         gmode.splitInterval = mode.splitInterval;
         gmode.genomeOffset = genomeBaseOffset;
 
-        // Convert degrees to radians
-        gmode.splitOrientation = glm::radians(mode.parentSplitOrientation);
+        // Convert from pitch and yaw to padded vec4
+        gmode.splitDirection = glm::vec4(pitchYawToVec3(
+            glm::radians(mode.parentSplitDirection.x), glm::radians(mode.parentSplitDirection.y)), 0.);
 
         // Store child mode indices
         gmode.childModes = glm::ivec2(mode.childA.modeNumber, mode.childB.modeNumber);
+
+        gmode.orientationA = glm::quat(glm::radians(mode.childA.orientation));
+        gmode.orientationB = glm::quat(glm::radians(mode.childB.orientation));
 
         gpuModes.push_back(gmode);
     }
@@ -388,8 +398,8 @@ void CellManager::updateCells(float deltaTime)
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     gpuPendingCellCount = countPtr[1];
     
-    //if (gpuPendingCellCount > 0)
-    //{
+    //if (gpuPendingCellCount > 0) // Due to an unrelenting bug with gpu-cpu sync i am forced to remove this if statement
+    //{                            // causing 100,000 threads to be dispatched every frame just in case any cells split
     applyCellAdditions(); // Apply mitosis results immediately
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     //}
@@ -397,7 +407,7 @@ void CellManager::updateCells(float deltaTime)
     // Update final cell count after all additions
     cellCount = countPtr[0];
 
-    // Log if cells were added (split event occurred)
+    // Log if cells were added (split event occurred)   // This actually logs it a frame late due to aforementioned sync issue
     if (cellCount > previousCellCount) {
         std::cout << "Split event occurred! Cell count increased from " << previousCellCount << " to " << cellCount << "\n";
     }
@@ -1193,15 +1203,15 @@ void CellManager::initializeGizmoBuffers()
     
     float gizmoLines[] = {
         // Forward direction (red) - positive Z in local space
-        0.0f, 0.0f, 0.0f,    1.0f, 0.0f, 0.0f,  // start, color
+        0.0f, 0.0f, 0.0f,           1.0f, 0.0f, 0.0f,  // start, color
         0.0f, 0.0f, gizmoLength,    1.0f, 0.0f, 0.0f,  // end, color
         
         // Up direction (green) - positive Y in local space
-        0.0f, 0.0f, 0.0f,    0.0f, 1.0f, 0.0f,  // start, color
+        0.0f, 0.0f, 0.0f,           0.0f, 1.0f, 0.0f,  // start, color
         0.0f, gizmoLength, 0.0f,    0.0f, 1.0f, 0.0f,  // end, color
         
         // Right direction (blue) - positive X in local space
-        0.0f, 0.0f, 0.0f,    0.0f, 0.0f, 1.0f,  // start, color
+        0.0f, 0.0f, 0.0f,           0.0f, 0.0f, 1.0f,  // start, color
         gizmoLength, 0.0f, 0.0f,    0.0f, 0.0f, 1.0f,  // end, color
     };
     
@@ -1270,7 +1280,7 @@ void CellManager::renderOrientationGizmos(glm::vec2 resolution, const Camera &ca
             glm::vec3 position = glm::vec3(cell.positionAndMass);
             
             // Handle orientation - if quaternion is zero/invalid, use identity
-            glm::quat orientation = glm::quat(cell.orientation.w, cell.orientation.x, cell.orientation.y, cell.orientation.z);
+            glm::quat orientation = cell.orientation;
             if (glm::length(orientation) < 0.1f) {
                 orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion (w, x, y, z)
             } else {
@@ -1288,8 +1298,8 @@ void CellManager::renderOrientationGizmos(glm::vec2 resolution, const Camera &ca
             // Convert quaternion to rotation matrix manually
             // For now, use identity rotation since orientation might not be properly initialized
             // TODO: Properly convert quaternion to rotation matrix once orientation system is active
-            // glm::mat4 rotationMatrix = glm::mat4_cast(orientation);
-            glm::mat4 rotationMatrix = glm::mat4(1.0f); // Identity for now
+            glm::mat4 rotationMatrix = glm::mat4_cast(orientation);
+            //glm::mat4 rotationMatrix = glm::mat4(1.0f); // Identity for now
             
             modelMatrix = modelMatrix * rotationMatrix;
             modelMatrix = glm::scale(modelMatrix, glm::vec3(gizmoScale));
@@ -1491,31 +1501,39 @@ void CellManager::renderRingGizmos(glm::vec2 resolution, const Camera &camera, c
             int modeIndex = cell.modeIndex;
             if (modeIndex >= 0) { // Assuming we have valid mode data
                 const GPUMode& mode = modes[modeIndex];
-                  // Get parent split orientation (pitch and yaw in radians)
-                float pitch = mode.splitOrientation.x;
-                float yaw = mode.splitOrientation.y;
-                
-                // Calculate ring scale based on cell radius
+
+                // Calculate radius and ring scale
                 float radius = cell.getRadius();
-                float ringScale = radius * 3.0f; // Ring slightly larger than cell for visibility
-                
-                // Create transformation matrix for this cell's ring
-                glm::mat4 modelMatrix = glm::mat4(1.0f);
-                modelMatrix = glm::translate(modelMatrix, position);
-                  // Orient the ring to represent the splitting plane (perpendicular to split direction)
-                // The ring should show where the cell will divide, so it's rotated 90 degrees from the split direction
-                // First apply the yaw rotation
-                modelMatrix = glm::rotate(modelMatrix, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-                // Then apply pitch rotation + 90 degrees to make ring perpendicular to split direction
-                // Negate pitch to correct rotation direction
-                modelMatrix = glm::rotate(modelMatrix, -pitch + (float)M_PI * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-                
+                float ringScale = radius * 3.0f;
+
+                // Step 1: Get local split direction from mode (already normalized)
+                glm::vec3 localSplitDirection = glm::normalize(glm::vec3(
+                    mode.splitDirection.x,
+                    mode.splitDirection.y,
+                    mode.splitDirection.z
+                ));
+
+                // Step 2: Convert cell orientation (vec4) to quaternion
+                glm::quat cellOrientation = cell.orientation;
+                // Step 3: Rotate split direction by cell's orientation to get world space split direction
+                glm::vec3 worldSplitDirection = cellOrientation * localSplitDirection;
+
+                // Step 4: Calculate rotation matrix to align ring with plane normal
+                // The ring lies in the XY plane by default, so we want to rotate it so its normal aligns with worldSplitDirection
+
+                glm::vec3 ringNormal = worldSplitDirection;
+                glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f); // Default ring normal (facing +Z)
+
+                glm::quat rotationQuat = glm::rotation(up, ringNormal); // rotate up to face split direction
+                glm::mat4 rotationMatrix = glm::mat4_cast(rotationQuat);
+
+                // Step 5: Construct full model matrix
+                glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), position);
+                modelMatrix *= rotationMatrix;
                 modelMatrix = glm::scale(modelMatrix, glm::vec3(ringScale));
-                
-                // Set model matrix for this ring
+
+                // Step 6: Apply and draw
                 ringGizmoShader->setMat4("uModel", modelMatrix);
-                
-                // Draw the ring
                 glDrawElements(GL_TRIANGLES, ringGizmoIndexCount, GL_UNSIGNED_INT, 0);
             }
         }

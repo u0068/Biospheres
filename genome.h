@@ -2,16 +2,17 @@
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
-
 #include "glad/glad.h"
+#include <glm/gtc/quaternion.hpp>
 
 struct GPUMode {
     glm::vec4 color{ 1.};  // R, G, B padding
-    glm::vec2 splitOrientation{ 0. };           // pitch, yaw (in radians)
+    glm::quat orientationA{1., 0., 0., 0.};  // quaternion
+    glm::quat orientationB{1., 0., 0., 0.};  // quaternion
+    glm::vec4 splitDirection{ 1., 0. ,0. ,0. };// x, y, z, padding
     glm::ivec2 childModes{ 0 };
-    float splitInterval{ 5 };
-    int genomeOffset{ 0 };                  // Offset into global buffer where this genome starts
-    float padding[2]{};                     // Struct must align to 16 bytes
+    float splitInterval{ 5. };
+    int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
 };
 
 // Genome Editor Data Structures
@@ -40,7 +41,7 @@ struct ModeSettings
     bool parentMakeAdhesion = true;
     float splitMass = 1.0f;
     float splitInterval = 5.0f;
-    glm::vec2 parentSplitOrientation = { 0.0f, 0.0f}; // pitch, yaw in degrees
+    glm::vec2 parentSplitDirection = { 0.0f, 0.0f}; // pitch, yaw in degrees
 
     // Child Settings
     ChildSettings childA;

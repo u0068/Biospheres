@@ -479,7 +479,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     ImGui::Text("Initial Mode:");
     addTooltip("The starting mode for new cells in this genome");
     
-    ImGui::SameLine();    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
+    ImGui::SameLine();
+    if (ImGui::Combo("##InitialMode", &currentGenome.initialMode, [](void *data, int idx, const char **out_text) -> bool
                      {
             GenomeData* genome = (GenomeData*)data;
             if (idx >= 0 && idx < genome->modes.size()) {
@@ -760,10 +761,10 @@ void UIManager::drawParentSettings(ModeSettings &mode)
 
     ImGui::Text("Parent Split Angle:");
     addTooltip("Controls the vector direction that child cells split along relative to the parent");
-      drawSliderWithInput("Pitch", &mode.parentSplitOrientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
+      drawSliderWithInput("Pitch", &mode.parentSplitDirection.x, -180.0f, 180.0f, "%.0f°", 1.0f);
     addTooltip("Vertical angle of the split vector (up/down direction for child cell placement)");
     
-    drawSliderWithInput("Yaw", &mode.parentSplitOrientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
+    drawSliderWithInput("Yaw", &mode.parentSplitDirection.y, -180.0f, 180.0f, "%.0f°", 1.0f);
     addTooltip("Horizontal angle of the split vector (left/right direction for child cell placement)");
 
     // Add divider before Parent Make Adhesion checkbox

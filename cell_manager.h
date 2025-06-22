@@ -16,10 +16,10 @@ class Camera;
 // GPU compute cell structure matching the compute shader
 struct ComputeCell {
     // Physics:
-    glm::vec4 positionAndMass{ glm::vec4(0, 0, 0, 1) };       // x, y, z, mass
+    glm::vec4 positionAndMass{0, 0, 0, 1};       // x, y, z, mass
     glm::vec4 velocity{};
     glm::vec4 acceleration{};
-    glm::vec4 orientation{};          // angular stuff in quaternions to prevent gimbal lock
+    glm::quat orientation{1., 0., 0., 0.};  // angular stuff in quaternions to prevent gimbal lock
     glm::vec4 angularVelocity{};
     glm::vec4 angularAcceleration{};
 
@@ -51,6 +51,7 @@ struct CellManager
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
 
     // Genome buffer (immutable, no need for double buffering)
+    // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
     GLuint modeBuffer{};
 
     // Spatial partitioning buffers - Double buffered

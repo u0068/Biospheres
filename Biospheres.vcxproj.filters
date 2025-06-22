@@ -208,5 +208,17 @@
     <None Include="shaders\apply_additions.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\gizmo.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\gizmo.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\ring_gizmo.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\ring_gizmo.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

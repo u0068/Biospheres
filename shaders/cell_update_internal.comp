@@ -3,12 +3,13 @@
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 struct GPUMode {
-    vec4 color;
-    vec2 splitOrientation; // pitch, yaw
+    vec4 color;             // r, g, b, padding
+    vec4 orientationA;      // quaternion
+    vec4 orientationB;      // quaternion
+    vec4 splitDirection;  // x, y, z, padding
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
-    float[2] padding;
 };
 
 struct ComputeCell {
@@ -45,20 +46,32 @@ layout(std430, binding = 3) buffer CellCountBuffer {
 uniform float u_deltaTime;
 uniform int u_maxCells;
 
-vec3 splitOffset(vec2 angles, float distance) { // Convert pitch and yaw to a vector
-    float pitch = angles.x;
-    float yaw = angles.y;
-    float x = distance * cos(pitch) * sin(yaw);
-    float y = distance * sin(pitch);
-    float z = distance * cos(pitch) * cos(yaw);
-    return vec3(x, y, z);
+vec4 quatMultiply(vec4 q1, vec4 q2) {
+    return vec4(
+        q1.w*q2.x + q1.x*q2.w + q1.y*q2.z - q1.z*q2.y,
+        q1.w*q2.y - q1.x*q2.z + q1.y*q2.w + q1.z*q2.x,
+        q1.w*q2.z + q1.x*q2.y - q1.y*q2.x + q1.z*q2.w,
+        q1.w*q2.w - q1.x*q2.x - q1.y*q2.y - q1.z*q2.z
+    );
+}
+
+vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
+    // v' = q * v * q^-1
+    // Optimized version using cross product:
+    vec3 u = q.xyz;
+    float s = q.w;
+
+    return 2.0 * dot(u, v) * u
+         + (s * s - dot(u, u)) * v
+         + 2.0 * s * cross(u, v);
 }
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= cellCount) {
         return;
-    }    ComputeCell cell = cells[index]; // Read from current buffer
+    }
+    ComputeCell cell = cells[index]; // Read from current buffer
     GPUMode mode = modes[cell.modeIndex];
 
     cell.age += u_deltaTime;
@@ -67,24 +80,30 @@ void main() {
         uint currentTotal = atomicAdd(pendingCellCount, 0); // Read current pending count
         if (cellCount + currentTotal < u_maxCells) {
             // Atomically reserve a slot in the addition queue
-            uint queueIdx = atomicAdd(pendingCellCount, 1);            vec3 offset = splitOffset(mode.splitOrientation, 0.5);
+            uint queueIdx = atomicAdd(pendingCellCount, 1);
+            vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
 
             // Both child cells should start with the same age after the split
             // Since we already aged the parent cell by deltaTime this frame,
             // we need to subtract the excess age beyond the split interval
             float startAge = cell.age - mode.splitInterval;
 
-            // Child A (replaces parent)
+            // Convert input quaternions
+            vec4 q_parent = cell.orientation;
+            vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
+            vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
+
             ComputeCell childA = cell;
             childA.positionAndMass.xyz += offset;
             childA.age = startAge;
             childA.modeIndex = mode.childModes.x;
+            childA.orientation = q_childA;
 
-            // Child B (goes in addition queue)
             ComputeCell childB = cell;
             childB.positionAndMass.xyz -= offset;
             childB.age = startAge;
             childB.modeIndex = mode.childModes.y;
+            childB.orientation = q_childB;
 
             // Store new cells
             cells[index] = childA;
