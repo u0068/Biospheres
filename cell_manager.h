@@ -20,8 +20,8 @@ struct ComputeCell {
     glm::vec4 velocity{};
     glm::vec4 acceleration{};
     glm::quat orientation{1., 0., 0., 0.};  // angular stuff in quaternions to prevent gimbal lock
-    glm::vec4 angularVelocity{};
-    glm::vec4 angularAcceleration{};
+    glm::quat angularVelocity{ 1., 0., 0., 0. };
+    glm::quat angularAcceleration{ 1., 0., 0., 0. };
 
     // Internal:
     glm::vec4 signallingSubstances{}; // 4 substances for now
