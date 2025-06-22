@@ -499,10 +499,13 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     ImGui::Text("Modes:");
     addTooltip("Manage the different behavioral modes available in this genome");
     
-    ImGui::SameLine();    if (ImGui::Button("Add Mode"))
+    ImGui::SameLine();
+    if (ImGui::Button("Add Mode"))
     {
         ModeSettings newMode;
         newMode.name = "Mode " + std::to_string(currentGenome.modes.size());
+        newMode.childA.modeNumber = currentGenome.modes.size();
+        newMode.childB.modeNumber = currentGenome.modes.size();
         currentGenome.modes.push_back(newMode);
         genomeChanged = true;
     }
