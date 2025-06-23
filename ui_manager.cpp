@@ -1445,6 +1445,9 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
 
 void UIManager::initializeKeyframes(CellManager& cellManager)
 {
+    // Save current time slider position
+    float savedCurrentTime = currentTime;
+    float savedTargetTime = targetTime;
     std::cout << "Initializing keyframes for time scrubber...\n";
     
     // Clear existing keyframes
@@ -1496,17 +1499,30 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     
     keyframesInitialized = true;
     std::cout << "Keyframe initialization complete!\n";
-
     // Check for potential timing accuracy issues with keyframe intervals
     checkKeyframeTimingAccuracy();
+
+    // Restore time slider position and trigger simulation reset to that time
+    currentTime = std::max(0.0f, std::min(savedCurrentTime, maxTime));
+    targetTime = currentTime;
+    needsSimulationReset = true;
+    isScrubbingTime = true;
 }
 
 void UIManager::updateKeyframes(CellManager& cellManager, float newMaxTime)
 {
+    // Save current time slider position
+    float savedCurrentTime = currentTime;
+    float savedTargetTime = targetTime;
     std::cout << "Updating keyframes for new max time: " << newMaxTime << "s\n";
     maxTime = newMaxTime;
     keyframesInitialized = false;
     initializeKeyframes(cellManager);
+    // Restore time slider position and trigger simulation reset to that time
+    currentTime = std::max(0.0f, std::min(savedCurrentTime, maxTime));
+    targetTime = currentTime;
+    needsSimulationReset = true;
+    isScrubbingTime = true;
 }
 
 int UIManager::findNearestKeyframe(float targetTime) const
@@ -1628,6 +1644,7 @@ void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyfra
     // Sync cell data from GPU to CPU to ensure we have latest state
     cellManager.syncCellPositionsFromGPU();
     
+       
     // Copy cell states
     keyframe.cellStates.clear();
     keyframe.cellStates.reserve(keyframe.cellCount);
