@@ -136,4 +136,6 @@ private:    // Helper to get window flags based on lock state
     
     // Window management
     bool windowsLocked = true;
+
+    void applyLocalRotation(glm::quat& orientation, const glm::vec3& axis, float delta);
 };

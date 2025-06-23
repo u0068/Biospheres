@@ -19,6 +19,14 @@
 #include "genome.h"
 #include "timer.h"
 
+// ——— simple “delta” rotation around a local axis ———
+static void applyLocalRotation(glm::quat &q, const glm::vec3 &axis, float deltaDeg) {
+    // build a tiny rotation of deltaDeg° about `axis`
+    glm::quat d = glm::angleAxis(glm::radians(deltaDeg), axis);
+    // apply it in LOCAL space:
+    q = glm::normalize(q * d);
+}
+
 CellManager::CellManager()
 {
     // Generate sphere mesh
@@ -288,17 +296,6 @@ glm::vec3 pitchYawToVec3(float pitch, float yaw) {
     );
 }
 
-glm::quat pitchYawRollToQuat(const glm::vec3& eulerAngle)
-{
-    // angles are in radians
-    glm::quat pitch = glm::angleAxis(eulerAngle.x, glm::vec3(1, 0, 0)); // X axis
-    glm::quat yaw = glm::angleAxis(eulerAngle.y, glm::vec3(0, 1, 0)); // Y axis
-    glm::quat roll = glm::angleAxis(eulerAngle.z, glm::vec3(0, 0, 1)); // Z axis
-
-    // Compose in desired order: pitch -> yaw -> roll
-    return pitch * yaw * roll;
-}
-
 void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     int genomeBaseOffset = 0; // Later make it add to the end of the buffer
     int modeCount = static_cast<int>(genomeData.modes.size());
@@ -321,8 +318,9 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         // Store child mode indices
         gmode.childModes = glm::ivec2(mode.childA.modeNumber, mode.childB.modeNumber);
 
-        gmode.orientationA = pitchYawRollToQuat(glm::radians(mode.childA.orientation));
-        gmode.orientationB = pitchYawRollToQuat(glm::radians(mode.childB.orientation));
+        // Directly store quaternions (no conversion)
+        gmode.orientationA = mode.childA.orientation;  // now a quat already
+        gmode.orientationB = mode.childB.orientation;
 
         gpuModes.push_back(gmode);
     }

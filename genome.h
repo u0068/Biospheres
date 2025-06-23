@@ -30,7 +30,7 @@ struct AdhesionSettings
 struct ChildSettings
 {
     int modeNumber = 0;
-    glm::vec3 orientation = { 0.0f, 0.0f, 0.0f }; // pitch, yaw, roll in degrees
+    glm::quat orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // quaternion, identity by default
     bool keepAdhesion = false;
 };
 

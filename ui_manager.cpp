@@ -687,22 +687,17 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
 
 void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 {
-    ImGui::Text("Mode %d Settings", modeIndex);
-    ImGui::Separator();    // Mode Name
-    char nameBuffer[256];
-    strcpy_s(nameBuffer, mode.name.c_str());    if (ImGui::InputText("Mode Name", nameBuffer, sizeof(nameBuffer)))
-    {
-        mode.name = std::string(nameBuffer);
-        genomeChanged = true;
+    // Persistent arrays for delta sliders (per mode)
+    static std::vector<float> lastPitchA, lastYawA, lastRollA;
+    static std::vector<float> lastPitchB, lastYawB, lastRollB;
+    if (lastPitchA.size() != currentGenome.modes.size()) {
+        lastPitchA.assign(currentGenome.modes.size(), 0.0f);
+        lastYawA = lastPitchA;
+        lastRollA = lastPitchA;
+        lastPitchB = lastPitchA;
+        lastYawB = lastPitchA;
+        lastRollB = lastPitchA;
     }
-    addTooltip("The display name for this cell mode");
-
-    // Mode Color
-    drawColorPicker("Mode Color", &mode.color);
-    addTooltip("The visual color representing this cell mode");
-
-    ImGui::Separator();
-
     // Tabbed interface for different settings
     if (ImGui::BeginTabBar("ModeSettingsTabs"))
     {
@@ -714,11 +709,70 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 
         if (ImGui::BeginTabItem("Child A Settings"))
         {
-            drawChildSettings("Child A", mode.childA);
+            // Delta-aware sliders for Child A orientation
+            ImGui::PushID(modeIndex * 2); // Unique ID for Child A
+            ImGui::Text("Mode %d \u22C5 Child A", modeIndex);
+            // Pitch
+            float newP = lastPitchA[modeIndex];
+            if (ImGui::SliderFloat("Pitch", &newP, -180.0f, 180.0f)) {
+                float delta = newP - lastPitchA[modeIndex];
+                applyLocalRotation(mode.childA.orientation, glm::vec3(1,0,0), delta);
+                lastPitchA[modeIndex] = newP;
+                genomeChanged = true;
+            }
+            // Yaw
+            float newY = lastYawA[modeIndex];
+            if (ImGui::SliderFloat("Yaw", &newY, -180.0f, 180.0f)) {
+                float delta = newY - lastYawA[modeIndex];
+                applyLocalRotation(mode.childA.orientation, glm::vec3(0,1,0), delta);
+                lastYawA[modeIndex] = newY;
+                genomeChanged = true;
+            }
+            // Roll
+            float newR = lastRollA[modeIndex];
+            if (ImGui::SliderFloat("Roll", &newR, -180.0f, 180.0f)) {
+                float delta = newR - lastRollA[modeIndex];
+                applyLocalRotation(mode.childA.orientation, glm::vec3(0,0,1), delta);
+                lastRollA[modeIndex] = newR;
+                genomeChanged = true;
+            }
+            ImGui::PopID();
+            ImGui::Separator();
+            // ...existing code for Child A settings (except orientation)...
             ImGui::EndTabItem();
-        }        if (ImGui::BeginTabItem("Child B Settings"))
+        }
+        if (ImGui::BeginTabItem("Child B Settings"))
         {
-            drawChildSettings("Child B", mode.childB);
+            // Delta-aware sliders for Child B orientation
+            ImGui::PushID(modeIndex * 2 + 1); // Unique ID for Child B
+            ImGui::Text("Mode %d \u22C5 Child B", modeIndex);
+            // Pitch
+            float newP = lastPitchB[modeIndex];
+            if (ImGui::SliderFloat("Pitch", &newP, -180.0f, 180.0f)) {
+                float delta = newP - lastPitchB[modeIndex];
+                applyLocalRotation(mode.childB.orientation, glm::vec3(1,0,0), delta);
+                lastPitchB[modeIndex] = newP;
+                genomeChanged = true;
+            }
+            // Yaw
+            float newY = lastYawB[modeIndex];
+            if (ImGui::SliderFloat("Yaw", &newY, -180.0f, 180.0f)) {
+                float delta = newY - lastYawB[modeIndex];
+                applyLocalRotation(mode.childB.orientation, glm::vec3(0,1,0), delta);
+                lastYawB[modeIndex] = newY;
+                genomeChanged = true;
+            }
+            // Roll
+            float newR = lastRollB[modeIndex];
+            if (ImGui::SliderFloat("Roll", &newR, -180.0f, 180.0f)) {
+                float delta = newR - lastRollB[modeIndex];
+                applyLocalRotation(mode.childB.orientation, glm::vec3(0,0,1), delta);
+                lastRollB[modeIndex] = newR;
+                genomeChanged = true;
+            }
+            ImGui::PopID();
+            ImGui::Separator();
+            // ...existing code for Child B settings (except orientation)...
             ImGui::EndTabItem();
         }
 
@@ -785,7 +839,7 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     // Mode selection dropdown
     ImGui::Text("Mode:");
     addTooltip("The cell mode that this child will switch to after splitting");
-      if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
+    if (ImGui::Combo("##Mode", &child.modeNumber, [](void *data, int idx, const char **out_text) -> bool
                      {
                          UIManager* uiManager = (UIManager*)data;
                          if (idx >= 0 && idx < uiManager->currentGenome.modes.size()) {
@@ -806,28 +860,13 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
         genomeChanged = true;
     }
 
-    // Add some spacing before orientation controls
+    // Remove old orientation controls (now handled by delta-aware sliders in drawModeSettings)
+    // Add some spacing before other controls
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-
-    ImGui::Text("Orientation:");
-    addTooltip("The initial orientation angles of the child cell after splitting");
-    
-    drawSliderWithInput("Pitch", &child.orientation.x, -180.0f, 180.0f, "%.0f°", 1.0f);
-    addTooltip("Rotation around the X-axis (up/down angle) for the child's initial orientation");
-    
-    drawSliderWithInput("Yaw", &child.orientation.y, -180.0f, 180.0f, "%.0f°", 1.0f);
-    addTooltip("Rotation around the Y-axis (left/right angle) for the child's initial orientation");
-    
-    drawSliderWithInput("Roll", &child.orientation.z, -180.0f, 180.0f, "%.0f°", 1.0f);
-    addTooltip("Rotation around the Z-axis (twist angle) for the child's initial orientation");
 
     // Add divider before Keep Adhesion checkbox
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
     ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
     addTooltip("Whether this child maintains adhesive connections with its parent and siblings");
 }
@@ -1583,4 +1622,12 @@ void UIManager::checkKeyframeTimingAccuracy()
     } else {
         std::cout << "Keyframe timing accuracy: Good (ratio: " << timingRatio << ")\n";
     }
+}
+
+// Helper for delta-aware orientation sliders
+void UIManager::applyLocalRotation(glm::quat& orientation, const glm::vec3& axis, float delta)
+{
+    // Apply a local rotation of delta degrees about the given axis
+    glm::quat d = glm::angleAxis(glm::radians(delta), axis);
+    orientation = glm::normalize(orientation * d);
 }
