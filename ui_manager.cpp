@@ -709,28 +709,54 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
 
         if (ImGui::BeginTabItem("Child A Settings"))
         {
-            // Delta-aware sliders for Child A orientation
             ImGui::PushID(modeIndex * 2); // Unique ID for Child A
             ImGui::Text("Mode %d \u22C5 Child A", modeIndex);
             // Pitch
+            ImGui::Text("Pitch");
             float newP = lastPitchA[modeIndex];
-            if (ImGui::SliderFloat("Pitch", &newP, -180.0f, 180.0f)) {
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            bool pitchChanged = ImGui::SliderFloat("##PitchSlider", &newP, -180.0f, 180.0f, "%.0f", 1.0f);
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(90.0f);
+            if (ImGui::InputFloat("##PitchInput", &newP, 1.0f, 10.0f, "%.0f")) pitchChanged = true;
+            ImGui::PopItemWidth();
+            newP = std::round(newP); // enforce integer
+            if (pitchChanged) {
                 float delta = newP - lastPitchA[modeIndex];
                 applyLocalRotation(mode.childA.orientation, glm::vec3(1,0,0), delta);
                 lastPitchA[modeIndex] = newP;
                 genomeChanged = true;
             }
             // Yaw
+            ImGui::Text("Yaw");
             float newY = lastYawA[modeIndex];
-            if (ImGui::SliderFloat("Yaw", &newY, -180.0f, 180.0f)) {
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            bool yawChanged = ImGui::SliderFloat("##YawSlider", &newY, -180.0f, 180.0f, "%.0f", 1.0f);
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(90.0f);
+            if (ImGui::InputFloat("##YawInput", &newY, 1.0f, 10.0f, "%.0f")) yawChanged = true;
+            ImGui::PopItemWidth();
+            newY = std::round(newY);
+            if (yawChanged) {
                 float delta = newY - lastYawA[modeIndex];
                 applyLocalRotation(mode.childA.orientation, glm::vec3(0,1,0), delta);
                 lastYawA[modeIndex] = newY;
                 genomeChanged = true;
             }
             // Roll
+            ImGui::Text("Roll");
             float newR = lastRollA[modeIndex];
-            if (ImGui::SliderFloat("Roll", &newR, -180.0f, 180.0f)) {
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            bool rollChanged = ImGui::SliderFloat("##RollSlider", &newR, -180.0f, 180.0f, "%.0f", 1.0f);
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(90.0f);
+            if (ImGui::InputFloat("##RollInput", &newR, 1.0f, 10.0f, "%.0f")) rollChanged = true;
+            ImGui::PopItemWidth();
+            newR = std::round(newR);
+            if (rollChanged) {
                 float delta = newR - lastRollA[modeIndex];
                 applyLocalRotation(mode.childA.orientation, glm::vec3(0,0,1), delta);
                 lastRollA[modeIndex] = newR;
@@ -743,28 +769,54 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
         }
         if (ImGui::BeginTabItem("Child B Settings"))
         {
-            // Delta-aware sliders for Child B orientation
             ImGui::PushID(modeIndex * 2 + 1); // Unique ID for Child B
             ImGui::Text("Mode %d \u22C5 Child B", modeIndex);
             // Pitch
+            ImGui::Text("Pitch");
             float newP = lastPitchB[modeIndex];
-            if (ImGui::SliderFloat("Pitch", &newP, -180.0f, 180.0f)) {
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            bool pitchChanged = ImGui::SliderFloat("##PitchSliderB", &newP, -180.0f, 180.0f, "%.0f", 1.0f);
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(90.0f);
+            if (ImGui::InputFloat("##PitchInputB", &newP, 1.0f, 10.0f, "%.0f")) pitchChanged = true;
+            ImGui::PopItemWidth();
+            newP = std::round(newP);
+            if (pitchChanged) {
                 float delta = newP - lastPitchB[modeIndex];
                 applyLocalRotation(mode.childB.orientation, glm::vec3(1,0,0), delta);
                 lastPitchB[modeIndex] = newP;
                 genomeChanged = true;
             }
             // Yaw
+            ImGui::Text("Yaw");
             float newY = lastYawB[modeIndex];
-            if (ImGui::SliderFloat("Yaw", &newY, -180.0f, 180.0f)) {
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            bool yawChanged = ImGui::SliderFloat("##YawSliderB", &newY, -180.0f, 180.0f, "%.0f", 1.0f);
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(90.0f);
+            if (ImGui::InputFloat("##YawInputB", &newY, 1.0f, 10.0f, "%.0f")) yawChanged = true;
+            ImGui::PopItemWidth();
+            newY = std::round(newY);
+            if (yawChanged) {
                 float delta = newY - lastYawB[modeIndex];
                 applyLocalRotation(mode.childB.orientation, glm::vec3(0,1,0), delta);
                 lastYawB[modeIndex] = newY;
                 genomeChanged = true;
             }
             // Roll
+            ImGui::Text("Roll");
             float newR = lastRollB[modeIndex];
-            if (ImGui::SliderFloat("Roll", &newR, -180.0f, 180.0f)) {
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+            bool rollChanged = ImGui::SliderFloat("##RollSliderB", &newR, -180.0f, 180.0f, "%.0f", 1.0f);
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(90.0f);
+            if (ImGui::InputFloat("##RollInputB", &newR, 1.0f, 10.0f, "%.0f")) rollChanged = true;
+            ImGui::PopItemWidth();
+            newR = std::round(newR);
+            if (rollChanged) {
                 float delta = newR - lastRollB[modeIndex];
                 applyLocalRotation(mode.childB.orientation, glm::vec3(0,0,1), delta);
                 lastRollB[modeIndex] = newR;
@@ -1172,7 +1224,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 
                 // Reset scene manager time to keyframe time
                 sceneManager.resetPreviewSimulationTime();
-                sceneManager.setPreviewSimulationTime(nearestKeyframe.time);                // If target time is after the keyframe, simulate forward
+                sceneManager.setPreviewSimulationTime(nearestKeyframe.time); // If target time is after the keyframe, simulate forward
                 if (targetTime > nearestKeyframe.time)
                 {
                     // Temporarily pause to prevent normal time updates during fast-forward
@@ -1267,7 +1319,8 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
     // Set window position on first use - top center
     ImGui::SetNextWindowPos(ImVec2(400, 20), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_FirstUseEver);
-      int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);    if (ImGui::Begin("Scene Manager", nullptr, flags))
+    int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
+    if (ImGui::Begin("Scene Manager", nullptr, flags))
     {
         // Get current scene for use throughout the function
         Scene currentScene = sceneManager.getCurrentScene();

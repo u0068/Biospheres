@@ -68,7 +68,8 @@ class UIManager
 public:
     void renderCellInspector(CellManager &cellManager, SceneManager& sceneManager);
     void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager);
-    void renderCameraControls(CellManager &cellmanager, Camera &camera, SceneManager& sceneManager);    void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager);
+    void renderCameraControls(CellManager &cellmanager, Camera &camera, SceneManager& sceneManager);
+    void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager);
     void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager); // New time scrubber window
     void renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager); // Scene switcher window
 
@@ -104,7 +105,8 @@ private:    // Helper to get window flags based on lock state
     int selectedModeIndex = 0;    // Time Scrubber Data
     float currentTime = 0.0f;
     float maxTime = 100.0f;
-    char timeInputBuffer[32] = "0.00";    float simulatedTime = 0.0f;  // Actual simulated time in preview
+    char timeInputBuffer[32] = "0.00";
+    float simulatedTime = 0.0f;  // Actual simulated time in preview
     float targetTime = 0.0f;     // Target time we want to scrub to
     bool needsSimulationReset = false;  // Flag to reset simulation when scrubber changes
     bool isScrubbingTime = false;       // Flag to indicate we're scrubbing to a specific time
