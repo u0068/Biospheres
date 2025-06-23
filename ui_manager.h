@@ -104,7 +104,7 @@ private:    // Helper to get window flags based on lock state
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
     int selectedModeIndex = 0;    // Time Scrubber Data
     float currentTime = 0.0f;
-    float maxTime = 100.0f;
+    float maxTime = 50.0f;
     char timeInputBuffer[32] = "0.00";
     float simulatedTime = 0.0f;  // Actual simulated time in preview
     float targetTime = 0.0f;     // Target time we want to scrub to
