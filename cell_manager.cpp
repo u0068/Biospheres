@@ -164,7 +164,7 @@ void CellManager::initializeGPUBuffers()
         glCreateBuffers(1, &cellBuffer[i]);
         glNamedBufferData(
             cellBuffer[i],
-            config::MAX_CELLS * sizeof(ComputeCell),
+            cellLimit * sizeof(ComputeCell),
             nullptr,
             GL_DYNAMIC_COPY  // Used by both GPU compute and CPU read operations
         );
@@ -175,13 +175,13 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &instanceBuffer);
     glNamedBufferData(
         instanceBuffer,
-        config::MAX_CELLS * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
+        cellLimit * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
         nullptr,
         GL_DYNAMIC_DRAW
     );    // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
     glNamedBufferData(modeBuffer,
-        config::MAX_CELLS * sizeof(GPUMode),
+        cellLimit * sizeof(GPUMode),
         nullptr,
         GL_DYNAMIC_READ  // Written once by CPU, read frequently by both GPU and CPU
     );
@@ -209,7 +209,7 @@ void CellManager::initializeGPUBuffers()
     // Cell addition queue buffer
     glCreateBuffers(1, &cellAdditionBuffer);
     glNamedBufferData(cellAdditionBuffer,
-        config::MAX_CELLS * sizeof(ComputeCell) / 2, // Worst case scenario
+        cellLimit * sizeof(ComputeCell) / 2, // Worst case scenario
         nullptr,
         GL_DYNAMIC_DRAW
     );
@@ -218,7 +218,7 @@ void CellManager::initializeGPUBuffers()
     sphereMesh.setupInstanceBuffer(instanceBuffer);
 
     // Reserve CPU storage
-    cpuCells.reserve(config::MAX_CELLS);
+    cpuCells.reserve(cellLimit);
 }
 
 void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
@@ -227,7 +227,7 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
 
     std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount << " -> " << cellCount + newCellCount << "\n";
 
-    if (cellCount + newCellCount > config::MAX_CELLS)
+    if (cellCount + newCellCount > cellLimit)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -263,7 +263,7 @@ void CellManager::addCellToGPUBuffer(const ComputeCell &newCell)
 
 void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
 {
-    if (cellCount + 1 > config::MAX_CELLS)
+    if (cellCount + 1 > cellLimit)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -441,13 +441,13 @@ void CellManager::runCellCounter()  // This only count active cells in the gpu, 
     cellCounterShader->use();
 
     // Set uniforms
-    cellCounterShader->setInt("u_maxCells", config::MAX_CELLS);
+    cellCounterShader->setInt("u_maxCells", cellLimit);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
 
     // Dispatch compute shader
-    GLuint numGroups = (config::MAX_CELLS + 63) / 64; // Round up division
+    GLuint numGroups = (cellLimit + 63) / 64; // Round up division
     cellCounterShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -623,7 +623,7 @@ void CellManager::applyCellAdditions()
     cellAdditionShader->use();
 
     // Set uniforms
-    cellAdditionShader->setInt("u_maxCells", config::MAX_CELLS);
+    cellAdditionShader->setInt("u_maxCells", cellLimit);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
@@ -631,13 +631,12 @@ void CellManager::applyCellAdditions()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
-    GLuint numGroups = (config::MAX_CELLS / 2 + 63) / 64; // Horrific over-dispatch but it's better than under-dispatch and surprisingly doesn't hurt performance
+    GLuint numGroups = (cellLimit / 2 + 63) / 64; // Horrific over-dispatch but it's better than under-dispatch and surprisingly doesn't hurt performance
     cellAdditionShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    GLuint zero = 0;    // This looks silly but I need a pointer to 0 to reset the pending cell counter
-    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
+    GLuint zero = 0;    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
 }
@@ -686,11 +685,11 @@ void CellManager::resetSimulation()
     std::cout << "Reset simulation (buffer rotation reset to 0)\n";
 }
 
-void CellManager::spawnCells(int count) // no longer functional, needs to be updated for the new cell struct
+void CellManager::spawnCells(int count)
 {
     TimerCPU cpuTimer("Spawning Cells");
 
-    for (int i = 0; i < count && cellCount < config::MAX_CELLS; ++i)
+    for (int i = 0; i < count && cellCount < cellLimit; ++i)
     {
         // Random position within spawn radius
         float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;

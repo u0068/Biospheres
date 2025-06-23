@@ -22,6 +22,7 @@
 
 void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& sceneManager)
 {
+    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
@@ -148,6 +149,7 @@ void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
 
 void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager)
 {
+    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     ImGui::SetNextWindowPos(ImVec2(420, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
@@ -357,6 +359,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
 void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, SceneManager& sceneManager)
 {
+    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     ImGui::SetNextWindowPos(ImVec2(50, 470), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
@@ -421,6 +424,7 @@ int UIManager::getWindowFlags(int baseFlags) const
 
 void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager)
 {
+    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     ImGui::SetNextWindowPos(ImVec2(840, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     
@@ -1095,6 +1099,7 @@ void UIManager::updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float 
 
 void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager)
 {
+    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     // Set window size and position for a long horizontal resizable window
     ImGui::SetNextWindowPos(ImVec2(50, 680), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);

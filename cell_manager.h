@@ -111,6 +111,7 @@ struct CellManager
     static constexpr int MAX_CELLS = config::MAX_CELLS;
     static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
     float spawnRadius = config::DEFAULT_SPAWN_RADIUS;
+    int cellLimit = config::MAX_CELLS;
 
     // Constructor and destructor
     CellManager();
@@ -209,6 +210,9 @@ struct CellManager
     void rotateBuffers() { bufferRotation = getRotatedIndex(1, 3); }
     GLuint getCellReadBuffer() const { return cellBuffer[getRotatedIndex(0, 3)]; }
     GLuint getCellWriteBuffer() const { return cellBuffer[getRotatedIndex(1, 3)]; }
+
+    void setCellLimit(int limit) { cellLimit = limit; }
+    int getCellLimit() const { return cellLimit; }
 
 private:
     void runPhysicsCompute(float deltaTime);

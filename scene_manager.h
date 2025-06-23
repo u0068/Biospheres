@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 
 enum class Scene
 {
@@ -10,7 +11,10 @@ enum class Scene
 class SceneManager
 {
 public:
-    SceneManager() : currentScene(Scene::PreviewSimulation), sceneChanged(false), paused(true), simulationSpeed(1.0f), previewPaused(true), mainPaused(false) {}
+    SceneManager() : currentScene(Scene::PreviewSimulation), sceneChanged(false), paused(true), simulationSpeed(1.0f), previewPaused(true), mainPaused(false) {
+        sceneCellLimits[Scene::PreviewSimulation] = 256;
+        sceneCellLimits[Scene::MainSimulation] = config::MAX_CELLS;
+    }
       Scene getCurrentScene() const { return currentScene; }
     void switchToScene(Scene newScene) 
     { 
@@ -89,6 +93,15 @@ public:
         return getSceneName(currentScene);
     }
 
+    // Per-scene cell limits
+    void setCellLimit(Scene scene, int limit) { sceneCellLimits[scene] = limit; }
+    int getCellLimit(Scene scene) const {
+        auto it = sceneCellLimits.find(scene);
+        if (it != sceneCellLimits.end()) return it->second;
+        return config::MAX_CELLS;
+    }
+    int getCurrentCellLimit() const { return getCellLimit(currentScene); }
+
 private:
     Scene currentScene;
     bool sceneChanged = false;
@@ -99,4 +112,6 @@ private:
     // Per-scene pause states
     bool previewPaused = true;   // Preview starts paused
     bool mainPaused = false;     // Main starts unpaused
+
+    std::map<Scene, int> sceneCellLimits{{Scene::PreviewSimulation, config::MAX_CELLS}, {Scene::MainSimulation, config::MAX_CELLS}};
 };
