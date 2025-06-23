@@ -710,7 +710,8 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
         if (ImGui::BeginTabItem("Child A Settings"))
         {
             ImGui::PushID(modeIndex * 2); // Unique ID for Child A
-            ImGui::Text("Mode %d \u22C5 Child A", modeIndex);
+            // Move mode selection dropdown to the top
+            drawChildSettings("Child A", mode.childA);
             // Pitch
             ImGui::Text("Pitch");
             float newP = lastPitchA[modeIndex];
@@ -770,7 +771,8 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
         if (ImGui::BeginTabItem("Child B Settings"))
         {
             ImGui::PushID(modeIndex * 2 + 1); // Unique ID for Child B
-            ImGui::Text("Mode %d \u22C5 Child B", modeIndex);
+            // Move mode selection dropdown to the top
+            drawChildSettings("Child B", mode.childB);
             // Pitch
             ImGui::Text("Pitch");
             float newP = lastPitchB[modeIndex];
