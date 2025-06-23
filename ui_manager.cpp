@@ -770,6 +770,15 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
                 lastRollA[modeIndex] = newR;
                 genomeChanged = true;
             }
+            // Reset Orientation Button
+            if (ImGui::Button("Reset Orientation (Child A)")) {
+                mode.childA.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset to identity
+                lastPitchA[modeIndex] = 0.0f;
+                lastYawA[modeIndex] = 0.0f;
+                lastRollA[modeIndex] = 0.0f;
+                genomeChanged = true;
+            }
+            addTooltip("Snap Child A orientation to the default (identity) orientation");
             ImGui::PopID();
             ImGui::Separator();
             // ...existing code for Child A settings (except orientation)...
@@ -831,6 +840,15 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
                 lastRollB[modeIndex] = newR;
                 genomeChanged = true;
             }
+            // Reset Orientation Button
+            if (ImGui::Button("Reset Orientation (Child B)")) {
+                mode.childB.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset to identity
+                lastPitchB[modeIndex] = 0.0f;
+                lastYawB[modeIndex] = 0.0f;
+                lastRollB[modeIndex] = 0.0f;
+                genomeChanged = true;
+            }
+            addTooltip("Snap Child B orientation to the default (identity) orientation");
             ImGui::PopID();
             ImGui::Separator();
             // ...existing code for Child B settings (except orientation)...
