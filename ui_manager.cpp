@@ -112,7 +112,8 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
         ImGui::Text("Instructions:");
         ImGui::BulletText("Left-click on a cell to select it");
         ImGui::BulletText("Drag to move selected cell");
-        ImGui::BulletText("Scroll wheel to adjust distance");        ImGui::BulletText("Selected cell moves in a plane");
+        ImGui::BulletText("Scroll wheel to adjust distance");
+        ImGui::BulletText("Selected cell moves in a plane");
         ImGui::BulletText("parallel to the camera");
     }
 
@@ -424,7 +425,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     
     // Set minimum window size constraints
-    ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));    int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));
+    int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
     if (ImGui::Begin("Genome Editor", nullptr, flags))
     {
     ImGui::Text("Genome Name:");
@@ -624,7 +626,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
 
     // Mode Settings Panel
     if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
-    {        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
+    {        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);
+        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
         ImGui::EndChild();
     }    // Handle genome changes - trigger instant resimulation
     if (genomeChanged)
@@ -940,7 +943,8 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     addTooltip("How strongly the adhesion resists stretching or compression");
     
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
-    addTooltip("Damping factor that reduces oscillations in the adhesive connection");    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
+    addTooltip("Damping factor that reduces oscillations in the adhesive connection");
+    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
     addTooltip("How strongly the adhesion resists rotational changes between connected cells");
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
