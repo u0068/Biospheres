@@ -80,13 +80,13 @@ public:
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
     GenomeData currentGenome;
 
-    // Orientation gizmo getter
-    bool getShowOrientationGizmos() const { return showOrientationGizmos; }
-
     // Scene management
     void switchToScene(int sceneIndex); // Method to switch scenes
 
     void checkKeyframeTimingAccuracy();
+
+    // Genome change tracking
+    bool genomeChanged = false;          // Flag to indicate genome was modified
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;
@@ -129,9 +129,6 @@ private:    // Helper to get window flags based on lock state
     int findNearestKeyframe(float targetTime) const;
     void restoreFromKeyframe(CellManager& cellManager, int keyframeIndex);
     void captureKeyframe(CellManager& cellManager, float time, int keyframeIndex);
-    
-    // Genome change tracking
-    bool genomeChanged = false;          // Flag to indicate genome was modified
     
     // Orientation gizmo visualization
     bool showOrientationGizmos = false;  // Toggle for showing cell orientation gizmos

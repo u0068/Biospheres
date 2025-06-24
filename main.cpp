@@ -173,18 +173,6 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		{
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera);
 			checkGLError("renderCells");
-			
-			// Render gizmos only in Preview Simulation
-			if (currentScene == Scene::PreviewSimulation)
-			{
-				// Render orientation gizmos after cells (requires depth testing)
-				activeCellManager->renderOrientationGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-				checkGLError("renderOrientationGizmos");
-				
-				// Render ring gizmos
-				activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-				checkGLError("renderRingGizmos");
-			}
 		}
 		catch (const std::exception &e)
 		{

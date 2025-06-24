@@ -82,18 +82,6 @@ struct CellManager
     Shader* gridPrefixSumShader = nullptr; // Calculate grid offsets
     Shader* gridInsertShader = nullptr;    // Insert cells into grid
     
-    // Orientation gizmo rendering
-    Shader* gizmoShader = nullptr;         // Shader for rendering orientation gizmos
-    GLuint gizmoVAO = 0;                   // VAO for gizmo lines
-    GLuint gizmoVBO = 0;                   // VBO for gizmo vertex data
-    GLuint gizmoInstanceVBO = 0;           // VBO for per-cell gizmo instance data
-
-    // Ring gizmo rendering
-    Shader* ringGizmoShader = nullptr;     // Shader for rendering ring gizmos
-    GLuint ringGizmoVAO = 0;               // VAO for ring geometry
-    GLuint ringGizmoVBO = 0;               // VBO for ring vertex data
-    unsigned int ringGizmoIndexCount = 0;  // Number of indices for ring rendering
-
     // CPU-side storage for initialization and debugging
     // Note: cpuCells is deprecated in favor of GPU buffers, should be removed after refactoring
     std::vector<ComputeCell> cpuCells;
@@ -125,7 +113,6 @@ struct CellManager
     void resetSimulation();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera);
-    void renderOrientationGizmos(glm::vec2 resolution, const class Camera &camera, const class UIManager &uiManager);
     void initializeGizmoBuffers();
     void updateGizmoData();
     void cleanupGizmos();
