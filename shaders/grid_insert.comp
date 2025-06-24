@@ -7,8 +7,8 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 struct ComputeCell {
     // Physics:
     vec4 positionAndMass; // x, y, z, mass
-    vec3 velocity;
-    vec3 acceleration;
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
     vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;

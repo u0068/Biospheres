@@ -14,8 +14,8 @@ struct GPUMode {
 
 struct ComputeCell {
     vec4 positionAndMass;
-    vec3 velocity;
-    vec3 acceleration;
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
     vec4 orientation;
     vec4 angularVelocity;
     vec4 angularAcceleration;
@@ -88,7 +88,7 @@ void main() {
             // we need to subtract the excess age beyond the split interval
             float startAge = cell.age - mode.splitInterval;
 
-            // Convert input quaternions
+            // Apply rotation deltas to parent orientation
             vec4 q_parent = cell.orientation;
             vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
             vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));

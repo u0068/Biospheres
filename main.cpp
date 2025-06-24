@@ -173,6 +173,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		{
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera);
 			checkGLError("renderCells");
+			
+			// Render gizmos if enabled
+			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
+			checkGLError("renderGizmos");
 		}
 		catch (const std::exception &e)
 		{

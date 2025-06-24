@@ -214,6 +214,9 @@
     <None Include="shaders\gizmo.vert">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\gizmo_extract.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
     <None Include="shaders\ring_gizmo.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>

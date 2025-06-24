@@ -113,9 +113,17 @@ struct CellManager
     void resetSimulation();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera);
+    // Gizmo orientation visualization
+    GLuint gizmoBuffer{};           // Buffer for gizmo line vertices
+    GLuint gizmoVAO{};              // VAO for gizmo rendering
+    GLuint gizmoVBO{};              // VBO for gizmo vertices
+    Shader* gizmoExtractShader = nullptr; // Compute shader for generating gizmo data
+    Shader* gizmoShader = nullptr;        // Vertex/fragment shaders for rendering gizmos
+    
     void initializeGizmoBuffers();
     void updateGizmoData();
     void cleanupGizmos();
+    void renderGizmos(glm::vec2 resolution, const Camera& camera, bool showGizmos);
     
     // Ring gizmo methods
     void renderRingGizmos(glm::vec2 resolution, const class Camera &camera, const class UIManager &uiManager);

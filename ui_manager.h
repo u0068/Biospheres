@@ -87,6 +87,9 @@ public:
 
     // Genome change tracking
     bool genomeChanged = false;          // Flag to indicate genome was modified
+    
+    // Orientation gizmo visualization
+    bool showOrientationGizmos = false;  // Toggle for showing cell orientation gizmos
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;
@@ -94,7 +97,7 @@ private:    // Helper to get window flags based on lock state
     void drawToolSelector(ToolState &toolState);
     void drawToolSettings(ToolState &toolState, CellManager &cellManager); // Genome Editor Helper Functions
     void drawModeSelector(GenomeData &genome);
-    void drawModeSettings(ModeSettings &mode, int modeIndex);
+    void drawModeSettings(ModeSettings &mode, int modeIndex, CellManager& cellManager);
     void drawParentSettings(ModeSettings &mode);
     void drawChildSettings(const char *label, ChildSettings &child);
     void drawAdhesionSettings(AdhesionSettings &adhesion);
@@ -129,9 +132,6 @@ private:    // Helper to get window flags based on lock state
     int findNearestKeyframe(float targetTime) const;
     void restoreFromKeyframe(CellManager& cellManager, int keyframeIndex);
     void captureKeyframe(CellManager& cellManager, float time, int keyframeIndex);
-    
-    // Orientation gizmo visualization
-    bool showOrientationGizmos = false;  // Toggle for showing cell orientation gizmos
     
     // Window management
     bool windowsLocked = true;

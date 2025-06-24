@@ -631,7 +631,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     // Mode Settings Panel
     if (selectedModeIndex >= 0 && selectedModeIndex < currentGenome.modes.size())
     {        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);
-        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex);
+        drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex, cellManager);
         ImGui::EndChild();
     }    // Handle genome changes - trigger instant resimulation
     if (genomeChanged)
@@ -645,6 +645,11 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         cellManager.addGenomeToBuffer(currentGenome);
         ComputeCell newCell{};
         newCell.modeIndex = currentGenome.initialMode;
+        // Set initial cell orientation to match the mode's child A orientation
+        // This ensures all cells start with the same base orientation
+        if (currentGenome.initialMode < currentGenome.modes.size()) {
+            newCell.orientation = currentGenome.modes[currentGenome.initialMode].childA.orientation;
+        }
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
         
@@ -692,7 +697,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     ImGui::End();
 }
 
-void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
+void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager& cellManager)
 {
     // Persistent arrays for delta sliders (per mode)
     static std::vector<float> lastPitchA, lastYawA, lastRollA;
@@ -779,6 +784,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
                 genomeChanged = true;
             }
             addTooltip("Snap Child A orientation to the default (identity) orientation");
+            
             ImGui::PopID();
             ImGui::Separator();
             // ...existing code for Child A settings (except orientation)...
@@ -849,6 +855,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex)
                 genomeChanged = true;
             }
             addTooltip("Snap Child B orientation to the default (identity) orientation");
+            
             ImGui::PopID();
             ImGui::Separator();
             // ...existing code for Child B settings (except orientation)...

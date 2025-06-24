@@ -7,8 +7,8 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 struct ComputeCell {
     // Physics:
     vec4 positionAndMass; // x, y, z, mass
-    vec3 velocity;
-    vec3 acceleration;
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
     vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
@@ -48,13 +48,13 @@ void main() {
     }
     
     // Update velocity based on acceleration
-    cells[index].velocity += cells[index].acceleration.xyz * u_deltaTime;
+    cells[index].velocity.xyz += cells[index].acceleration.xyz * u_deltaTime;
     
     // Apply damping
-    cells[index].velocity *= pow(u_damping, u_deltaTime*100.);
+    cells[index].velocity.xyz *= pow(u_damping, u_deltaTime*100.);
     
     // Update position based on velocity (Euler integration)
-    cells[index].positionAndMass.xyz += cells[index].velocity * u_deltaTime;
+    cells[index].positionAndMass.xyz += cells[index].velocity.xyz * u_deltaTime;
     
     // Optional: Add boundary constraints here
     // For example, keep cells within a certain bounds
