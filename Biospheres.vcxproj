@@ -214,6 +214,10 @@
     <ClInclude Include="sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\adhesion_line_gen.comp" />
+    <None Include="shaders\adhesion_line.frag" />
+    <None Include="shaders\adhesion_line.vert" />
+    <None Include="shaders\adhesion_forces.comp" />
     <None Include="shaders\apply_additions.comp" />
     <None Include="shaders\cell_counter.comp" />
     <None Include="shaders\cell_physics_spatial.comp" />

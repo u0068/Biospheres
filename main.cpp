@@ -173,6 +173,8 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		{
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera);
 			checkGLError("renderCells");
+			activeCellManager->renderAdhesions();
+			checkGLError("renderAdhesions");
 			
 			// Render gizmos only in Preview Simulation
 			if (currentScene == Scene::PreviewSimulation)

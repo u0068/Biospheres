@@ -30,6 +30,9 @@ CellManager::CellManager()
 
     // Initialize compute shaders
     physicsShader = new Shader("shaders/cell_physics_spatial.comp"); // Use spatial partitioning version
+    adhesionShader = new Shader("shaders/adhesion_forces.comp");
+    adhesionLineGenShader = new Shader("shaders/adhesion_line_gen.comp");
+    adhesionLineShader = new Shader("shaders/adhesion_line.vert", "shaders/adhesion_line.frag");
     updateShader = new Shader("shaders/cell_update.comp");
     internalUpdateShader = new Shader("shaders/cell_update_internal.comp");
     extractShader = new Shader("shaders/extract_instances.comp");
@@ -71,6 +74,26 @@ void CellManager::cleanup()
     {
         glDeleteBuffers(1, &instanceBuffer);
         instanceBuffer = 0;
+    }
+    if (adhesionBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionBuffer);
+        adhesionBuffer = 0;
+    }
+    if (adhesionLineVBO != 0)
+    {
+        glDeleteBuffers(1, &adhesionLineVBO);
+        adhesionLineVBO = 0;
+    }
+    if (adhesionLineVAO != 0)
+    {
+        glDeleteBuffers(1, &adhesionLineVAO);
+        adhesionLineVAO = 0;
+    }
+    if (adhesionCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionCountBuffer);
+        adhesionCountBuffer = 0;
     }
     if (modeBuffer != 0)
     {
@@ -170,7 +193,24 @@ void CellManager::initializeGPUBuffers()
         config::MAX_CELLS * sizeof(glm::vec4) * 2, // 2 vec4s, one for pos and radius, the other for color
         nullptr,
         GL_DYNAMIC_DRAW
-    );    // Create single buffered genome buffer
+    );
+
+    glCreateBuffers(1, &adhesionBuffer);
+    glNamedBufferData(
+        adhesionBuffer,
+        config::MAX_CELLS * config::MAX_ADHESIONS * sizeof(Adhesion),
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
+
+    glCreateBuffers(1, &adhesionCountBuffer);
+    glNamedBufferData(
+        adhesionCountBuffer,
+        sizeof(GLuint),
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+
     glCreateBuffers(1, &modeBuffer);
     glNamedBufferData(modeBuffer,
         config::MAX_CELLS * sizeof(GPUMode),
@@ -205,6 +245,26 @@ void CellManager::initializeGPUBuffers()
         nullptr,
         GL_DYNAMIC_DRAW
     );
+
+
+    int maxAdhesionCount = config::MAX_CELLS * config::MAX_ADHESIONS;
+    glGenVertexArrays(1, &adhesionLineVAO);
+    glGenBuffers(1, &adhesionLineVBO);
+
+    glBindVertexArray(adhesionLineVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, adhesionLineVBO);
+
+    // Allocate space by uploading dummy data
+    glBufferData(GL_ARRAY_BUFFER, maxAdhesionCount * 2 * sizeof(glm::vec3), nullptr, GL_DYNAMIC_DRAW);
+
+    // Setup attribute pointer
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
+
+    // Unbind
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
 
     // Setup the sphere mesh to use our current instance buffer
     sphereMesh.setupInstanceBuffer(instanceBuffer);
@@ -324,6 +384,9 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         gmode.orientationA = pitchYawRollToQuat(glm::radians(mode.childA.orientation));
         gmode.orientationB = pitchYawRollToQuat(glm::radians(mode.childB.orientation));
 
+        gmode.adhesionSettings = mode.adhesion;
+        gmode.adhesionSettings.enabled = mode.parentMakeAdhesion;
+
         gpuModes.push_back(gmode);
     }
 
@@ -427,37 +490,6 @@ void CellManager::updateCells(float deltaTime)
     rotateBuffers();
 }
 
-void CellManager::runCellCounter()  // This only count active cells in the gpu, not cells pending addition
-{
-    TimerGPU timer("Cell Counter");
-
-    // Reset cell count to 0
-    glClearNamedBufferData(
-        gpuCellCountBuffer,        // Our cell counter buffer
-        GL_R32UI,                  // Format (match the internal type)
-        GL_RED_INTEGER,            // Format layout
-        GL_UNSIGNED_INT,           // Data type
-        nullptr                    // Null = fill with zero
-    );
-
-    cellCounterShader->use();
-
-    // Set uniforms
-    cellCounterShader->setInt("u_maxCells", config::MAX_CELLS);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
-
-    // Dispatch compute shader
-    GLuint numGroups = (config::MAX_CELLS + 63) / 64; // Round up division
-    cellCounterShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure writes are visible
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint));
-}
-
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera)
 {
     if (cellCount == 0)
@@ -542,6 +574,31 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
     }
 }
 
+void CellManager::renderAdhesions()
+{
+    const int maxAdhesionCount = config::MAX_CELLS * config::MAX_ADHESIONS;
+
+    // 1. Dispatch the compute shader
+    adhesionLineGenShader->use();
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, adhesionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionLineVBO);
+
+    adhesionLineGenShader->dispatch((maxAdhesionCount + 63) / 64, 1, 1);    // Dispatching morbillions of threads every frame might be a bad idea
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // 2. Render with a simple shader
+    glBindBuffer(GL_ARRAY_BUFFER, adhesionLineVBO);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+
+    glBindVertexArray(adhesionLineVAO);
+    adhesionLineShader->use();
+    glDrawArrays(GL_LINES, 0, maxAdhesionCount * 2);
+    glBindVertexArray(0);
+}
+
 void CellManager::runPhysicsCompute(float deltaTime)
 {
     TimerGPU timer("Cell Physics Compute");
@@ -610,6 +667,8 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Read from current buffer (has physics results)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, adhesionCountBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64; // Round up division
@@ -665,6 +724,7 @@ void CellManager::resetSimulation()
     // Reset cell count buffers
     glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint), &zero); // cellCount = 0
     glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // pendingCellCount = 0
+    glNamedBufferSubData(adhesionCountBuffer, 0, sizeof(GLuint), &zero); // adhesionCount = 0
     
     // Clear all cell buffers
     for (int i = 0; i < 3; i++)

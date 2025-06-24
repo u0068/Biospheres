@@ -13,6 +13,7 @@ struct GPUMode {
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
+    float[12] adhesionSettings;
 };
 
 // Cell data structure for compute shader

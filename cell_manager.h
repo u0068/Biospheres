@@ -40,15 +40,18 @@ struct CellManager
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates
 
-    // GPU buffer objects - Double buffered for performance
-    GLuint cellBuffer[3]{};         // SSBO for compute cell data (double buffered)
+    int bufferRotation{};   // Determines which of the triple buffers should be used
+
+    // GPU buffer objects - Triple buffered for performance
+    GLuint cellBuffer[3]{};         // SSBO for compute cell data (triple buffered)
     GLuint instanceBuffer{};        // VBO for instance rendering data
-    int bufferRotation{};
+    GLuint adhesionBuffer{};        // SSBO for adhesion data
 
     // Cell count management
     GLuint gpuCellCountBuffer{};     // GPU-accessible cell count buffer
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
+    GLuint adhesionCountBuffer{};   // GPU only adhesion count buffer because i cant be bothered to worry about syncing this crap rn
 
     // Genome buffer (immutable, no need for double buffering)
     // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
@@ -71,6 +74,8 @@ struct CellManager
     // Compute shaders
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
+    Shader* adhesionShader = nullptr;
+    Shader* adhesionLineGenShader = nullptr;
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
     Shader* cellCounterShader = nullptr;
@@ -81,7 +86,11 @@ struct CellManager
     Shader* gridAssignShader = nullptr;    // Assign cells to grid
     Shader* gridPrefixSumShader = nullptr; // Calculate grid offsets
     Shader* gridInsertShader = nullptr;    // Insert cells into grid
-    
+
+    Shader* adhesionLineShader = nullptr;
+    GLuint adhesionLineVBO; // For drawing adhesions;
+    GLuint adhesionLineVAO;
+
     // Orientation gizmo rendering
     Shader* gizmoShader = nullptr;         // Shader for rendering orientation gizmos
     GLuint gizmoVAO = 0;                   // VAO for gizmo lines
@@ -124,6 +133,7 @@ struct CellManager
     void resetSimulation();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera);
+    void renderAdhesions();
     void renderOrientationGizmos(glm::vec2 resolution, const class Camera &camera, const class UIManager &uiManager);
     void initializeGizmoBuffers();
     void updateGizmoData();

@@ -5,6 +5,20 @@
 #include "glad/glad.h"
 #include <glm/gtc/quaternion.hpp>
 
+// Genome Editor Data Structures
+struct AdhesionSettings
+{
+    float breakForce{10.0f};
+    float restLength{2.0f};
+    float linearSpringStiffness{5.0f};
+    float linearSpringDamping{0.5f};
+    float angularSpringStiffness{2.0f};
+    float maxAngularDeviation{45.0f}; // degrees
+    bool enabled{ false };
+    bool canBreak{ true };
+    float padding[4]{};   // Structs need to align to 16 bytes in glsl
+};
+
 struct GPUMode {
     glm::vec4 color{ 1.};  // R, G, B padding
     glm::quat orientationA{1., 0., 0., 0.};  // quaternion
@@ -13,18 +27,15 @@ struct GPUMode {
     glm::ivec2 childModes{ 0 };
     float splitInterval{ 5. };
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
+    AdhesionSettings adhesionSettings{};
 };
 
-// Genome Editor Data Structures
-struct AdhesionSettings
+struct Adhesion
 {
-    bool canBreak = true;
-    float breakForce = 10.0f;
-    float restLength = 2.0f;
-    float linearSpringStiffness = 5.0f;
-    float linearSpringDamping = 0.5f;
-    float orientationSpringStrength = 2.0f;
-    float maxAngularDeviation = 45.0f; // degrees
+    glm::quat restOrientationOffset{ 1., 0., 0., 0. };
+    glm::ivec2 connectedCells{ -1 };
+    int modeIndex{ 0 }; // To get the mode's adhesion settings
+    float padding{ 0 };
 };
 
 struct ChildSettings

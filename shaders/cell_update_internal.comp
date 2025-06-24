@@ -2,14 +2,27 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
+struct AdhesionSettings {
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float angularSpringStiffness;
+    float maxAngularDeviation; // degrees
+    bool enabled;
+    bool canBreak;
+    float padding[4];
+};
+
 struct GPUMode {
-    vec4 color;             // r, g, b, padding
-    vec4 orientationA;      // quaternion
-    vec4 orientationB;      // quaternion
-    vec4 splitDirection;  // x, y, z, padding
+    vec4 color;
+    vec4 orientationA;
+    vec4 orientationB;
+    vec4 splitDirection;
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
+    AdhesionSettings adhesionSettings;
 };
 
 struct ComputeCell {
@@ -26,11 +39,18 @@ struct ComputeCell {
     float nitrates;
 };
 
-layout(std430, binding = 0) restrict buffer modeBuffer {
+struct Adhesion {
+    vec4 restOrientationOffset;
+    ivec2 connectedCells;
+    int modeIndex; // To get the mode's adhesion settings
+    float padding;
+};
+
+layout(std430, binding = 0) readonly buffer modeBuffer {
     GPUMode modes[];
 };
 
-layout(std430, binding = 1) restrict buffer CellBuffer {
+layout(std430, binding = 1) buffer CellBuffer {
     ComputeCell cells[];
 };
 
@@ -41,6 +61,14 @@ layout(std430, binding = 2) buffer CellAdditionQueue {
 layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
+};
+
+layout(std430, binding = 4) buffer AdhesionBuffer {
+    Adhesion adhesions[];
+};
+
+layout(std430, binding = 5) buffer AdhesionCountBuffer {
+    uint adhesionCount;
 };
 
 uniform float u_deltaTime;
@@ -56,8 +84,6 @@ vec4 quatMultiply(vec4 q1, vec4 q2) {
 }
 
 vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
-    // v' = q * v * q^-1
-    // Optimized version using cross product:
     vec3 u = q.xyz;
     float s = q.w;
 
@@ -66,29 +92,27 @@ vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
          + 2.0 * s * cross(u, v);
 }
 
+// Inverse of a unit quaternion
+vec4 quatInverse(vec4 q) {
+    return vec4(-q.xyz, q.w); // assumes q is normalized
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= cellCount) {
-        return;
-    }
-    ComputeCell cell = cells[index]; // Read from current buffer
+    if (index >= cellCount) return;
+
+    ComputeCell cell = cells[index];
     GPUMode mode = modes[cell.modeIndex];
 
     cell.age += u_deltaTime;
     if (cell.age >= mode.splitInterval) {
-        // Estimate new total number of cells
-        uint currentTotal = atomicAdd(pendingCellCount, 0); // Read current pending count
+        uint currentTotal = atomicAdd(pendingCellCount, 0);
         if (cellCount + currentTotal < u_maxCells) {
-            // Atomically reserve a slot in the addition queue
             uint queueIdx = atomicAdd(pendingCellCount, 1);
             vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
 
-            // Both child cells should start with the same age after the split
-            // Since we already aged the parent cell by deltaTime this frame,
-            // we need to subtract the excess age beyond the split interval
             float startAge = cell.age - mode.splitInterval;
 
-            // Convert input quaternions
             vec4 q_parent = cell.orientation;
             vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
             vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
@@ -105,15 +129,24 @@ void main() {
             childB.modeIndex = mode.childModes.y;
             childB.orientation = q_childB;
 
-            // Store new cells
+            // Write cells
             cells[index] = childA;
             newCells[queueIdx] = childB;
+
+            // Add adhesion between A and B
+            if (mode.adhesionSettings.enabled) {
+                uint adhesionIndex = atomicAdd(adhesionCount, 1);
+                adhesions[adhesionIndex].connectedCells = ivec2(index, int(cellCount + queueIdx));
+                adhesions[adhesionIndex].modeIndex = cell.modeIndex;
+
+                // Compute relative rotation: restOffset = inverse(qA) * qB
+                vec4 restOffset = quatMultiply(quatInverse(q_childA), q_childB);
+                adhesions[adhesionIndex].restOrientationOffset = normalize(restOffset);
+            }
         } else {
-            // Can't divide � just continue aging
-            cells[index] = cell;
+            cells[index] = cell; // No split — just age
         }
     } else {
-        // Not ready to divide � age normally
         cells[index] = cell;
     }
 }

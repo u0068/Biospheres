@@ -220,5 +220,17 @@
     <None Include="shaders\ring_gizmo.vert">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\adhesion_forces.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\adhesion_line_gen.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\adhesion_line.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\adhesion_line.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
