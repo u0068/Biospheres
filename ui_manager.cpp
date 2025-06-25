@@ -1666,7 +1666,8 @@ void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyfra
     
     // CRITICAL FIX: Ensure all GPU operations are complete before capturing state
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
-    glFinish(); // Ensure GPU is completely idle
+    // Use targeted barrier instead of glFinish() to avoid pixel transfer synchronization warning
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
     
     // Capture current simulation state
     keyframe.time = time;

@@ -50,6 +50,10 @@ struct CellManager
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
 
+    // Cell data staging buffer for CPU reads (avoids GPU->CPU transfer warnings)
+    GLuint stagingCellBuffer{};      // CPU-accessible cell data buffer
+    void* mappedCellPtr = nullptr;   // Pointer to the cell data staging buffer
+
     // Genome buffer (immutable, no need for double buffering)
     // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
     GLuint modeBuffer{};

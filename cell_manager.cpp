@@ -99,6 +99,11 @@ void CellManager::cleanup()
         glDeleteBuffers(1, &stagingCellCountBuffer);
         stagingCellCountBuffer = 0;
     }
+    if (stagingCellBuffer != 0)
+    {
+        glDeleteBuffers(1, &stagingCellBuffer);
+        stagingCellBuffer = 0;
+    }
     if (cellAdditionBuffer != 0)
     {
         glDeleteBuffers(1, &cellAdditionBuffer);
@@ -205,13 +210,15 @@ void CellManager::initializeGPUBuffers()
         instanceBuffer,
         cellLimit * sizeof(glm::vec4) * 3, // 3 vec4s: positionAndRadius, color, orientation
         nullptr,
-        GL_DYNAMIC_DRAW
-    );    // Create single buffered genome buffer
+        GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+    );
+
+    // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
     glNamedBufferData(modeBuffer,
         cellLimit * sizeof(GPUMode),
         nullptr,
-        GL_DYNAMIC_READ  // Written once by CPU, read frequently by both GPU and CPU
+        GL_DYNAMIC_COPY  // Written once by CPU, read frequently by GPU compute shaders
     );
 
     // A buffer that keeps track of how many cells there are in the simulation
@@ -234,12 +241,23 @@ void CellManager::initializeGPUBuffers()
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     countPtr = static_cast<GLuint*>(mappedPtr);
 
+    // Cell data staging buffer for CPU reads (avoids GPU->CPU transfer warnings)
+    glCreateBuffers(1, &stagingCellBuffer);
+    glNamedBufferStorage(
+        stagingCellBuffer,
+        cellLimit * sizeof(ComputeCell),
+        nullptr,
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    );
+    mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+
     // Cell addition queue buffer
     glCreateBuffers(1, &cellAdditionBuffer);
     glNamedBufferData(cellAdditionBuffer,
         cellLimit * sizeof(ComputeCell) / 2, // Worst case scenario
         nullptr,
-        GL_DYNAMIC_DRAW
+        GL_STREAM_COPY  // Frequently updated by GPU compute shaders
     );
 
     // Setup the sphere mesh to use our current instance buffer
@@ -754,19 +772,19 @@ void CellManager::initializeSpatialGrid()
     glCreateBuffers(1, &gridBuffer);
     glNamedBufferData(gridBuffer,
                       config::TOTAL_GRID_CELLS * config::MAX_CELLS_PER_GRID * sizeof(GLuint),
-                      nullptr, GL_DYNAMIC_DRAW);
+                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
 
     // Create double buffered grid count buffers to store number of cells per grid cell
     glCreateBuffers(1, &gridCountBuffer);
     glNamedBufferData(gridCountBuffer,
                       config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                      nullptr, GL_DYNAMIC_DRAW);
+                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
 
     // Create double buffered grid offset buffers for prefix sum calculations
     glCreateBuffers(1, &gridOffsetBuffer);
     glNamedBufferData(gridOffsetBuffer,
                       config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                      nullptr, GL_DYNAMIC_DRAW);
+                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
 
     std::cout << "Initialized double buffered spatial grid with " << config::TOTAL_GRID_CELLS
               << " grid cells (" << config::GRID_RESOLUTION << "^3)\n";
@@ -897,7 +915,7 @@ void CellManager::initializeGizmoBuffers()
     glCreateBuffers(1, &gizmoBuffer);
     glNamedBufferData(gizmoBuffer,
         cellLimit * 6 * sizeof(glm::vec4) * 2, // position + color for each vertex
-        nullptr, GL_DYNAMIC_DRAW);
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for gizmo rendering
     glCreateVertexArrays(1, &gizmoVAO);
@@ -906,7 +924,7 @@ void CellManager::initializeGizmoBuffers()
     glCreateBuffers(1, &gizmoVBO);
     glNamedBufferData(gizmoVBO,
         cellLimit * 6 * sizeof(glm::vec4) * 2,
-        nullptr, GL_DYNAMIC_DRAW);
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
     glVertexArrayVertexBuffer(gizmoVAO, 0, gizmoVBO, 0, sizeof(glm::vec4) * 2);
@@ -977,7 +995,7 @@ void CellManager::renderGizmos(glm::vec2 resolution, const Camera& camera, bool 
     glDepthMask(GL_FALSE);
     
     // Enable line width for better visibility
-    glLineWidth(2.0f);
+    glLineWidth(4.0f);
     
     // Render gizmo lines
     glBindVertexArray(gizmoVAO);
@@ -1189,39 +1207,38 @@ void CellManager::syncCellPositionsFromGPU()
     if (cellCount == 0)
         return;
 
-    // CRITICAL FIX: Ensure all GPU operations are complete before mapping buffer
+    // CRITICAL FIX: Ensure all GPU operations are complete before copying data
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    glFinish(); // Wait for GPU to be completely idle
+    
+    // Copy data from GPU buffer to staging buffer (no GPU->CPU transfer warning)
+    glCopyNamedBufferSubData(getCellReadBuffer(), stagingCellBuffer, 0, 0, cellCount * sizeof(ComputeCell));
+    
+    // Memory barrier to ensure copy is complete
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 
-    // Use glMapBuffer for efficient GPU->CPU data transfer from current buffer
-    ComputeCell *gpuData = static_cast<ComputeCell *>(glMapNamedBuffer(getCellReadBuffer(), GL_READ_ONLY));
+    // Now read from the staging buffer (CPU->CPU, no warning)
+    ComputeCell* stagedData = static_cast<ComputeCell*>(mappedCellPtr);
 
-    if (gpuData)
+    if (stagedData)
     {
         cpuCells.reserve(cellCount);
-        // Copy only the position data from GPU to CPU (don't overwrite velocity/mass as those might be needed)
+        // Copy data from staging buffer to CPU storage
         for (int i = 0; i < cellCount; i++)
         {
-            // Only sync position and radius, preserve velocity and mass from CPU
-            //cpuCells[i].positionAndMass = gpuData[i].positionAndMass;
             if (i < cpuCells.size())
             {
-                cpuCells[i] = gpuData[i]; // im syncing all of the data which is quite wasteful
+                cpuCells[i] = stagedData[i]; // Sync all data
             } else
             {
-                cpuCells.push_back(gpuData[i]);
+                cpuCells.push_back(stagedData[i]);
             }
-            // if youre reading this and want to optimise this function please i beg of you
-            // move cell selection to the gpu and only return the data of the selected cell
         }
 
-        glUnmapNamedBuffer(getCellReadBuffer());
-
-        std::cout << "Synced " << cellCount << " cell positions from GPU" << std::endl;
+        std::cout << "Synced " << cellCount << " cell positions from GPU via staging buffer" << std::endl;
     }
     else
     {
-        std::cerr << "Failed to map GPU buffer for readback" << std::endl;
+        std::cerr << "Failed to access staging buffer for cell data readback" << std::endl;
     }
 }
 
@@ -1351,7 +1368,7 @@ void CellManager::initializeRingGizmoBuffers()
     glCreateBuffers(1, &ringGizmoBuffer);
     glNamedBufferData(ringGizmoBuffer,
         cellLimit * 384 * sizeof(glm::vec4) * 2, // position + color for each vertex
-        nullptr, GL_DYNAMIC_DRAW);
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for ring gizmo rendering
     glCreateVertexArrays(1, &ringGizmoVAO);
@@ -1360,7 +1377,7 @@ void CellManager::initializeRingGizmoBuffers()
     glCreateBuffers(1, &ringGizmoVBO);
     glNamedBufferData(ringGizmoVBO,
         cellLimit * 384 * sizeof(glm::vec4) * 2,
-        nullptr, GL_DYNAMIC_DRAW);
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
     glVertexArrayVertexBuffer(ringGizmoVAO, 0, ringGizmoVBO, 0, sizeof(glm::vec4) * 2);

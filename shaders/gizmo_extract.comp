@@ -67,7 +67,7 @@ void main() {
     mat3 rotMatrix = quatToMat3(cell.orientation);
     
     // Calculate gizmo length based on cell size
-    float gizmoLength = cellRadius * 3.0; // 3x the cell radius
+    float gizmoLength = cellRadius * 1.8; // 1.8x the cell radius
     
     // Local coordinate system vectors
     vec3 forward = vec3(1.0, 0.0, 0.0);  // Local X-axis (red)
@@ -82,11 +82,11 @@ void main() {
     // Each cell generates 6 vertices (3 lines, 2 vertices each)
     uint baseIndex = cellIndex * 6;
     
-    // Forward axis line (red)
+    // Forward axis line (blue)
     gizmoVertices[baseIndex + 0].position = vec4(cellPos, 1.0);
-    gizmoVertices[baseIndex + 0].color = vec4(1.0, 0.0, 0.0, 1.0);
+    gizmoVertices[baseIndex + 0].color = vec4(0.0, 0.0, 1.0, 1.0);
     gizmoVertices[baseIndex + 1].position = vec4(cellPos + worldForward * gizmoLength, 1.0);
-    gizmoVertices[baseIndex + 1].color = vec4(1.0, 0.0, 0.0, 1.0);
+    gizmoVertices[baseIndex + 1].color = vec4(0.0, 0.0, 1.0, 1.0);
     
     // Right axis line (green)
     gizmoVertices[baseIndex + 2].position = vec4(cellPos, 1.0);
@@ -94,9 +94,9 @@ void main() {
     gizmoVertices[baseIndex + 3].position = vec4(cellPos + worldRight * gizmoLength, 1.0);
     gizmoVertices[baseIndex + 3].color = vec4(0.0, 1.0, 0.0, 1.0);
     
-    // Up axis line (blue)
+    // Up axis line (red)
     gizmoVertices[baseIndex + 4].position = vec4(cellPos, 1.0);
-    gizmoVertices[baseIndex + 4].color = vec4(0.0, 0.0, 1.0, 1.0);
+    gizmoVertices[baseIndex + 4].color = vec4(1.0, 0.0, 0.0, 1.0);
     gizmoVertices[baseIndex + 5].position = vec4(cellPos + worldUp * gizmoLength, 1.0);
-    gizmoVertices[baseIndex + 5].color = vec4(0.0, 0.0, 1.0, 1.0);
+    gizmoVertices[baseIndex + 5].color = vec4(1.0, 0.0, 0.0, 1.0);
 } 
