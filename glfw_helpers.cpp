@@ -37,22 +37,22 @@ void setupGLFWDebugFlags()
 #endif
 
     //// Suppress low-severity performance messages
-    //glDebugMessageControl(
-    //    GL_DEBUG_SOURCE_API,         // Source
-    //    GL_DEBUG_TYPE_PERFORMANCE,   // Type
-    //    GL_DEBUG_SEVERITY_LOW,       // Severity
-    //    0, nullptr,                  // IDs (0 = all)
-    //    GL_FALSE                     // Don't enable (i.e., suppress)
-    //);
+    glDebugMessageControl(
+        GL_DEBUG_SOURCE_API,         // Source
+        GL_DEBUG_TYPE_PERFORMANCE,   // Type
+        GL_DEBUG_SEVERITY_LOW,       // Severity
+        0, nullptr,                  // IDs (0 = all)
+        GL_FALSE                     // Don't enable (i.e., suppress)
+    );
 
     //// Suppress medium-severity performance messages
-    //glDebugMessageControl(
-    //    GL_DEBUG_SOURCE_API,
-    //    GL_DEBUG_TYPE_PERFORMANCE,
-    //    GL_DEBUG_SEVERITY_MEDIUM,
-    //    0, nullptr,
-    //    GL_FALSE
-    //);
+    glDebugMessageControl(
+        GL_DEBUG_SOURCE_API,
+        GL_DEBUG_TYPE_PERFORMANCE,
+        GL_DEBUG_SEVERITY_MEDIUM,
+        0, nullptr,
+        GL_FALSE
+    );
 }
 
 GLFWwindow *createWindow()
@@ -94,7 +94,7 @@ void APIENTRY glDebugOutput(GLenum source,
                             const void *userParam)
 {
     // ignore non-significant error/warning codes
-    if (id == 131169 || id == 131185 || id == 131218 || id == 131204)
+    if (id == 131169 || id == 131185 || id == 131218 || id == 131204 || id == 131154)
         return;
 
     std::cout << "---------------\n";

@@ -416,6 +416,9 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
 void CellManager::updateCells(float deltaTime)
 {
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    
+    // CRITICAL FIX: Ensure GPU operations are complete before accessing mapped buffer
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 
     cellCount = countPtr[0];
     gpuPendingCellCount = countPtr[1]; // This is effectively more of a bool than an int due to its horrific inaccuracy, but that's good enough for us
@@ -451,6 +454,17 @@ void CellManager::updateCells(float deltaTime)
 
     // Immediately apply any new cell divisions that occurred this frame
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    
+    // CRITICAL FIX: Use fence sync to ensure GPU operations are complete before accessing mapped buffer
+    GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    GLenum result = glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000); // Wait up to 1ms
+    glDeleteSync(sync);
+    
+    // If the sync didn't complete in time, fall back to glFinish
+    if (result == GL_TIMEOUT_EXPIRED) {
+        glFinish();
+    }
+    
     gpuPendingCellCount = countPtr[1];
     
     //if (gpuPendingCellCount > 0) // Due to an unrelenting bug with gpu-cpu sync i am forced to remove this if statement
@@ -458,7 +472,7 @@ void CellManager::updateCells(float deltaTime)
     applyCellAdditions(); // Apply mitosis results immediately
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     //}
-    
+
     // Update final cell count after all additions
     cellCount = countPtr[0];
 
@@ -1215,6 +1229,17 @@ void CellManager::syncCellPositionsFromGPU()
     
     // Memory barrier to ensure copy is complete
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    
+    // CRITICAL FIX: Use fence sync with longer timeout to ensure GPU operations are complete
+    // This prevents the pixel transfer synchronization warning
+    GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    GLenum result = glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, 10000000); // Wait up to 10ms
+    glDeleteSync(sync);
+    
+    // If the sync didn't complete in time, fall back to glFinish
+    if (result == GL_TIMEOUT_EXPIRED) {
+        glFinish();
+    }
 
     // Now read from the staging buffer (CPU->CPU, no warning)
     ComputeCell* stagedData = static_cast<ComputeCell*>(mappedCellPtr);
