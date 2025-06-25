@@ -35,6 +35,7 @@ CellManager::CellManager()
 
     initializeGPUBuffers();
     initializeSpatialGrid();
+    initializeIDSystem();
 
     // Initialize compute shaders
     physicsShader = new Shader("shaders/cell_physics_spatial.comp"); // Use spatial partitioning version
@@ -43,6 +44,7 @@ CellManager::CellManager()
     extractShader = new Shader("shaders/extract_instances.comp");
     cellCounterShader = new Shader("shaders/cell_counter.comp");
     cellAdditionShader = new Shader("shaders/apply_additions.comp");
+    idManagerShader = new Shader("shaders/id_manager.comp");
 
     // Initialize spatial grid shaders
     gridClearShader = new Shader("shaders/grid_clear.comp");
@@ -111,6 +113,7 @@ void CellManager::cleanup()
     }
 
     cleanupSpatialGrid();
+    cleanupIDSystem();
 
     if (extractShader)
     {
@@ -129,6 +132,12 @@ void CellManager::cleanup()
         updateShader->destroy();
         delete updateShader;
         updateShader = nullptr;
+    }
+    if (idManagerShader)
+    {
+        idManagerShader->destroy();
+        delete idManagerShader;
+        idManagerShader = nullptr;
     }
 
     // Cleanup spatial grid shaders
@@ -381,11 +390,13 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
 
 ComputeCell CellManager::getCellData(int index) const
 {
-    if (index >= 0 && index < cellCount)
+    if (index >= 0 && index < cellCount && index < static_cast<int>(cpuCells.size()))
     {
         return cpuCells[index];
     }
-    return ComputeCell{}; // Return empty cell if index is invalid
+    ComputeCell emptyCell{};
+    emptyCell.setUniqueID(0, 0, 0); // Ensure empty cell has valid ID
+    return emptyCell; // Return empty cell if index is invalid
 }
 
 void CellManager::updateCellData(int index, const ComputeCell &newData)
@@ -472,6 +483,10 @@ void CellManager::updateCells(float deltaTime)
     applyCellAdditions(); // Apply mitosis results immediately
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     //}
+
+    // Run ID manager to recycle dead cell IDs
+    runIDManager();
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Update final cell count after all additions
     cellCount = countPtr[0];
@@ -668,6 +683,8 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Read from current buffer (has physics results)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, idCounterBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, idPoolBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64; // Round up division
@@ -739,6 +756,17 @@ void CellManager::resetSimulation()
     glClearNamedBufferData(gridCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     glClearNamedBufferData(gridOffsetBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     
+    // Reset ID system
+    struct IDCounters {
+        uint32_t nextAvailableID = 1;      // Start from 1 (0 is reserved)
+        uint32_t recycledIDCount = 0;      // No recycled IDs initially
+        uint32_t maxCellID = 32767;        // Maximum cell ID (15 bits)
+        uint32_t deadCellCount = 0;        // Dead cells found this frame
+    } resetCounters;
+    glNamedBufferSubData(idCounterBuffer, 0, sizeof(IDCounters), &resetCounters);
+    glClearNamedBufferData(idPoolBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glClearNamedBufferData(idRecycleBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    
     // Sync the staging buffer
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     
@@ -773,6 +801,16 @@ void CellManager::spawnCells(int count)
         newCell.positionAndMass = glm::vec4(position, 1.);
         newCell.velocity = glm::vec4(velocity, 0.);
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
+        
+        // Assign unique ID (for spawned cells, parent ID = 0, cell ID = sequential, child flag = 0)
+        // This is a simple approach for initial spawning - GPU will handle more complex ID management
+        static uint16_t nextSpawnID = 1;
+        newCell.setUniqueID(0, nextSpawnID++, 0);
+        
+        // Wrap around if we exceed the maximum ID
+        if (nextSpawnID > 32767) {
+            nextSpawnID = 1;
+        }
 
         addCellToStagingBuffer(newCell);
     }
@@ -1519,5 +1557,107 @@ void CellManager::cleanupRingGizmos()
     {
         glDeleteVertexArrays(1, &ringGizmoVAO);
         ringGizmoVAO = 0;
+    }
+}
+
+// ID Management System Implementation
+
+void CellManager::initializeIDSystem()
+{
+    // Create ID counter buffer
+    glCreateBuffers(1, &idCounterBuffer);
+    
+    // Initialize counter data
+    struct IDCounters {
+        uint32_t nextAvailableID = 1;      // Start from 1 (0 is reserved)
+        uint32_t recycledIDCount = 0;      // No recycled IDs initially
+        uint32_t maxCellID = 32767;        // Maximum cell ID (15 bits)
+        uint32_t deadCellCount = 0;        // Dead cells found this frame
+    } initialCounters;
+    
+    glNamedBufferData(idCounterBuffer, sizeof(IDCounters), &initialCounters, GL_DYNAMIC_COPY);
+    
+    // Create ID pool buffer for available/recycled IDs
+    glCreateBuffers(1, &idPoolBuffer);
+    glNamedBufferData(idPoolBuffer, cellLimit * sizeof(uint32_t), nullptr, GL_DYNAMIC_COPY);
+    
+    // Create ID recycle buffer for dead cell IDs
+    glCreateBuffers(1, &idRecycleBuffer);
+    glNamedBufferData(idRecycleBuffer, cellLimit * sizeof(uint32_t), nullptr, GL_DYNAMIC_COPY);
+}
+
+void CellManager::cleanupIDSystem()
+{
+    if (idCounterBuffer != 0)
+    {
+        glDeleteBuffers(1, &idCounterBuffer);
+        idCounterBuffer = 0;
+    }
+    if (idPoolBuffer != 0)
+    {
+        glDeleteBuffers(1, &idPoolBuffer);
+        idPoolBuffer = 0;
+    }
+    if (idRecycleBuffer != 0)
+    {
+        glDeleteBuffers(1, &idRecycleBuffer);
+        idRecycleBuffer = 0;
+    }
+}
+
+void CellManager::runIDManager()
+{
+    if (cellCount == 0) return;
+    
+    idManagerShader->use();
+    
+    // Bind buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, idCounterBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, idPoolBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, idRecycleBuffer);
+    
+    // Set uniforms
+    idManagerShader->setInt("u_maxCells", cellLimit);
+    idManagerShader->setFloat("u_minMass", 0.01f); // Minimum mass to consider a cell alive
+    
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 63) / 64;
+    idManagerShader->dispatch(numGroups, 1, 1);
+    
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::recycleDeadCellIDs()
+{
+    // This is now handled by the runIDManager() function
+    // Called automatically during the update cycle
+}
+
+void CellManager::printCellIDs(int maxCells)
+{
+    if (cellCount == 0) {
+        std::cout << "No cells to display IDs for.\n";
+        return;
+    }
+    
+    // Sync cell data from GPU for debugging
+    syncCellPositionsFromGPU();
+    
+    std::cout << "Cell IDs (showing first " << std::min(maxCells, cellCount) << " cells):\n";
+    for (int i = 0; i < std::min(maxCells, cellCount); i++) {
+        if (i < static_cast<int>(cellStagingBuffer.size())) {
+            const ComputeCell& cell = cellStagingBuffer[i];
+            uint16_t parentID = cell.getParentID();
+            uint16_t cellID = cell.getCellID();
+            uint8_t childFlag = cell.getChildFlag();
+            char childChar = (childFlag == 0) ? 'A' : 'B';
+            
+            std::cout << "Cell " << i << ": " << parentID << "." << cellID << "." << childChar 
+                      << " (raw: 0x" << std::hex << cell.uniqueID << std::dec << ")\n";
+        }
     }
 }

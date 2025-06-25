@@ -298,12 +298,16 @@ int main()
 		
 		// Initialize Preview Simulation
 		previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
-		previewCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		ComputeCell previewCell{};
+		previewCell.setUniqueID(0, 1, 0); // Initialize with proper ID
+		previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
 		previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
 		
 		// Initialize Main Simulation
 		mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
-		mainCellManager.addCellToStagingBuffer(ComputeCell()); // spawns 1 cell at 0,0,0
+		ComputeCell mainCell{};
+		mainCell.setUniqueID(0, 1, 0); // Initialize with proper ID
+		mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
 		mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
 		
 		// Ensure both simulations have proper initial state by running one update cycle

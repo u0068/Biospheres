@@ -15,6 +15,10 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
+    // Unique ID system
+    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
+    uint padding1;     // Padding to maintain alignment
+    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
 };
 
 // Gizmo line data - each cell generates 6 vertices (3 lines, 2 vertices each)

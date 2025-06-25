@@ -18,6 +18,10 @@ struct ComputeCell {
     float age; // also used for split timer
     float toxins;
     float nitrates;
+    // Unique ID system
+    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
+    uint padding1;     // Padding to maintain alignment
+    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
 };
 
 

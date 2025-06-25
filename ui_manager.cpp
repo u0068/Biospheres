@@ -648,6 +648,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         // Set initial cell orientation to the genome's initial orientation
         // This keeps the initial cell orientation independent of Child A/B settings
         newCell.orientation = currentGenome.initialOrientation;
+        newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
         
@@ -1310,6 +1311,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 cellManager.addGenomeToBuffer(currentGenome);
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
+                newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
                 cellManager.addCellToStagingBuffer(newCell);
                 cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
                 
@@ -1398,6 +1400,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 mainCellManager.addGenomeToBuffer(currentGenome);
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
+                newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
                 mainCellManager.addCellToStagingBuffer(newCell);
                 mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
                 
@@ -1491,6 +1494,7 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     cellManager.addGenomeToBuffer(currentGenome);
     ComputeCell newCell{};
     newCell.modeIndex = currentGenome.initialMode;
+    newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
     cellManager.addCellToStagingBuffer(newCell);
     cellManager.addStagedCellsToGPUBuffer();
     

@@ -24,6 +24,10 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
+    // Unique ID system
+    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
+    uint padding1;     // Padding to maintain alignment
+    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -41,6 +45,16 @@ layout(std430, binding = 2) buffer CellAdditionQueue {
 layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
+};
+
+layout(std430, binding = 4) buffer IDCounterBuffer {
+    uint nextAvailableID;    // Next ID to assign
+    uint recycledIDCount;    // Number of recycled IDs available
+    uint maxCellID;          // Maximum cell ID (32767)
+};
+
+layout(std430, binding = 5) buffer IDPoolBuffer {
+    uint availableIDs[];     // Pool of available/recycled cell IDs
 };
 
 uniform float u_deltaTime;
@@ -64,6 +78,54 @@ vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
     return 2.0 * dot(u, v) * u
          + (s * s - dot(u, u)) * v
          + 2.0 * s * cross(u, v);
+}
+
+// ID utility functions
+uint getParentID(uint uniqueID) {
+    return (uniqueID >> 16) & 0xFFFFu;
+}
+
+uint getCellID(uint uniqueID) {
+    return (uniqueID >> 1) & 0x7FFFu;
+}
+
+uint getChildFlag(uint uniqueID) {
+    return uniqueID & 0x1u;
+}
+
+uint packUniqueID(uint parentID, uint cellID, uint childFlag) {
+    return (parentID << 16) | ((cellID & 0x7FFFu) << 1) | (childFlag & 0x1u);
+}
+
+// Allocate a new cell ID from the pool or generate new one
+uint allocateCellID() {
+    uint newCellID;
+    
+    // Try to get a recycled ID first
+    if (recycledIDCount > 0) {
+        uint recycleIndex = atomicAdd(recycledIDCount, -1) - 1;
+        if (recycleIndex < recycledIDCount + 1) { // Check bounds
+            newCellID = availableIDs[recycleIndex];
+        } else {
+            // Fallback to new ID if race condition occurred
+            newCellID = atomicAdd(nextAvailableID, 1);
+            if (newCellID > maxCellID) {
+                // Wrap around if we've exceeded max ID
+                atomicExchange(nextAvailableID, 1);
+                newCellID = 1;
+            }
+        }
+    } else {
+        // No recycled IDs available, use next available
+        newCellID = atomicAdd(nextAvailableID, 1);
+        if (newCellID > maxCellID) {
+            // Wrap around if we've exceeded max ID
+            atomicExchange(nextAvailableID, 1);
+            newCellID = 1;
+        }
+    }
+    
+    return newCellID;
 }
 
 void main() {
@@ -93,27 +155,36 @@ void main() {
             vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
             vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
 
+            // Allocate new cell IDs for both children
+            uint childACellID = allocateCellID();
+            uint childBCellID = allocateCellID();
+            
+            // Get parent's cell ID to use as parent ID for children
+            uint parentCellID = getCellID(cell.uniqueID);
+
             ComputeCell childA = cell;
             childA.positionAndMass.xyz += offset;
             childA.age = startAge;
             childA.modeIndex = mode.childModes.x;
             childA.orientation = q_childA;
+            childA.uniqueID = packUniqueID(parentCellID, childACellID, 0u); // A child
 
             ComputeCell childB = cell;
             childB.positionAndMass.xyz -= offset;
             childB.age = startAge;
             childB.modeIndex = mode.childModes.y;
             childB.orientation = q_childB;
+            childB.uniqueID = packUniqueID(parentCellID, childBCellID, 1u); // B child
 
             // Store new cells
             cells[index] = childA;
             newCells[queueIdx] = childB;
         } else {
-            // Can't divide � just continue aging
+            // Can't divide just continue aging
             cells[index] = cell;
         }
     } else {
-        // Not ready to divide � age normally
+        // Not ready to divide age normally
         cells[index] = cell;
     }
 }
