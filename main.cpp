@@ -177,6 +177,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			// Render gizmos if enabled
 			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
 			checkGLError("renderGizmos");
+			
+			// Render ring gizmos if enabled
+			activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+			checkGLError("renderRingGizmos");
 		}
 		catch (const std::exception &e)
 		{

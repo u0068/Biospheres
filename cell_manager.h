@@ -120,6 +120,13 @@ struct CellManager
     Shader* gizmoExtractShader = nullptr; // Compute shader for generating gizmo data
     Shader* gizmoShader = nullptr;        // Vertex/fragment shaders for rendering gizmos
     
+    // Ring gizmo visualization
+    GLuint ringGizmoBuffer{};           // Buffer for ring gizmo vertices
+    GLuint ringGizmoVAO{};              // VAO for ring gizmo rendering
+    GLuint ringGizmoVBO{};              // VBO for ring gizmo vertices
+    Shader* ringGizmoExtractShader = nullptr; // Compute shader for generating ring gizmo data
+    Shader* ringGizmoShader = nullptr;        // Vertex/fragment shaders for rendering ring gizmos
+    
     void initializeGizmoBuffers();
     void updateGizmoData();
     void cleanupGizmos();
@@ -128,6 +135,7 @@ struct CellManager
     // Ring gizmo methods
     void renderRingGizmos(glm::vec2 resolution, const class Camera &camera, const class UIManager &uiManager);
     void initializeRingGizmoBuffers();
+    void updateRingGizmoData();
     void cleanupRingGizmos();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
