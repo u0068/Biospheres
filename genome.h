@@ -55,6 +55,7 @@ struct GenomeData
 {
     std::string name = "Untitled Genome";
     int initialMode = 0;
+    glm::quat initialOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Separate orientation for initial cell
     std::vector<ModeSettings> modes;
 
     GenomeData()

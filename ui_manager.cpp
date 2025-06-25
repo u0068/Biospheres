@@ -645,11 +645,9 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         cellManager.addGenomeToBuffer(currentGenome);
         ComputeCell newCell{};
         newCell.modeIndex = currentGenome.initialMode;
-        // Set initial cell orientation to match the mode's child A orientation
-        // This ensures all cells start with the same base orientation
-        if (currentGenome.initialMode < currentGenome.modes.size()) {
-            newCell.orientation = currentGenome.modes[currentGenome.initialMode].childA.orientation;
-        }
+        // Set initial cell orientation to the genome's initial orientation
+        // This keeps the initial cell orientation independent of Child A/B settings
+        newCell.orientation = currentGenome.initialOrientation;
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
         
