@@ -1042,9 +1042,9 @@ void CellManager::renderGizmos(glm::vec2 resolution, const Camera& camera, bool 
     gizmoShader->setMat4("uProjection", projection);
     gizmoShader->setMat4("uView", view);
     
-    // Enable depth testing but disable depth writing to avoid z-fighting with spheres
+    // Enable depth testing and depth writing for proper depth sorting with ring gizmos
     glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
+    glDepthMask(GL_TRUE);
     
     // Enable line width for better visibility
     glLineWidth(4.0f);
@@ -1053,9 +1053,6 @@ void CellManager::renderGizmos(glm::vec2 resolution, const Camera& camera, bool 
     glBindVertexArray(gizmoVAO);
     glDrawArrays(GL_LINES, 0, cellCount * 6); // 6 vertices per cell (3 lines * 2 vertices)
     glBindVertexArray(0);
-    
-    // Restore depth mask
-    glDepthMask(GL_TRUE);
     glLineWidth(1.0f);
 }
 

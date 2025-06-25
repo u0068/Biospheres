@@ -33,6 +33,17 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
     {
     	const auto &selectedCell = cellManager.getSelectedCell();
         ImGui::Text("Selected Cell #%d", selectedCell.cellIndex);
+        
+        // Display unique ID in X.Y.Z format
+        uint16_t parentID = selectedCell.cellData.getParentID();
+        uint16_t cellID = selectedCell.cellData.getCellID();
+        uint8_t childFlag = selectedCell.cellData.getChildFlag();
+        char childChar = (childFlag == 0) ? 'A' : 'B';
+        ImGui::Text("Unique ID: %u.%u.%c", parentID, cellID, childChar);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Format: Parent.Cell.Child\nParent: ID of parent cell when this cell was created\nCell: Unique identifier for this cell\nChild: A or B indicating which child this was after split");
+        }
+        
         ImGui::Separator();
 
         // Display current properties
