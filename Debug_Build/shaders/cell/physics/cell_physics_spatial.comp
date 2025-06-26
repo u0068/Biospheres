@@ -1,0 +1,168 @@
+#version 430 core
+
+// Optimized work group size for better GPU utilization with 100k cells
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    // Unique ID system
+    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
+    uint padding1;     // Padding to maintain alignment
+    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
+};
+
+// Shader storage buffer objects
+layout(std430, binding = 0) restrict buffer CellInputBuffer {
+    ComputeCell inputCells[];  // Previous frame cell data (read-only)
+};
+
+layout(std430, binding = 1) restrict buffer GridBuffer {
+    uint gridCells[];  // Stores cell indices for each grid cell
+};
+
+layout(std430, binding = 2) restrict buffer GridCountBuffer {
+    uint gridCounts[];
+};
+
+layout(std430, binding = 3) restrict buffer CellOutputBuffer {
+    ComputeCell outputCells[];  // Current frame cell data (write-only)
+};
+
+layout(std430, binding = 4) buffer CellCountBuffer {
+    uint cellCount;
+};
+
+// Uniforms
+uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+uniform int u_gridResolution;
+uniform float u_gridCellSize;
+uniform float u_worldSize;
+uniform int u_maxCellsPerGrid;
+
+// Function to convert world position to grid coordinates
+ivec3 worldToGrid(vec3 worldPos) {
+    // Clamp to world bounds first
+    vec3 clampedPos = clamp(worldPos, vec3(-u_worldSize * 0.5), vec3(u_worldSize * 0.5));
+    
+    // Convert to grid coordinates [0, gridResolution)
+    vec3 normalizedPos = (clampedPos + u_worldSize * 0.5) / u_worldSize;
+    ivec3 gridPos = ivec3(normalizedPos * u_gridResolution);
+    
+    // Ensure we stay within bounds
+    return clamp(gridPos, ivec3(0), ivec3(u_gridResolution - 1));
+}
+
+// Function to convert 3D grid coordinates to 1D index
+uint gridToIndex(ivec3 gridPos) {
+    return uint(gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution);
+}
+
+// Function to check if grid coordinates are valid
+bool isValidGridPos(ivec3 gridPos) {
+    return gridPos.x >= 0 && gridPos.x < u_gridResolution &&
+           gridPos.y >= 0 && gridPos.y < u_gridResolution &&
+           gridPos.z >= 0 && gridPos.z < u_gridResolution;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+      // Check bounds
+    if (index >= cellCount) {
+        return;
+    }
+      // Skip physics for dragged cell - it will be positioned directly
+    if (int(index) == u_draggedCellIndex) {
+        // Copy input to output but clear velocity and acceleration for dragged cell
+        outputCells[index] = inputCells[index];
+        outputCells[index].velocity.xyz = vec3(0.0);
+        outputCells[index].acceleration = vec4(0.0);
+        return;
+    }    
+    // Copy input cell data to output and reset acceleration
+    outputCells[index] = inputCells[index];
+    outputCells[index].acceleration = vec4(0.0);
+    
+    // Calculate forces from nearby cells using spatial partitioning
+    vec3 totalForce = vec3(0.0);
+    vec3 myPos = inputCells[index].positionAndMass.xyz;
+    float myMass = inputCells[index].positionAndMass.w;
+    float myRadius = pow(myMass, 1./3.);
+    
+    // Get the grid cell this cell belongs to
+    ivec3 myGridPos = worldToGrid(myPos);
+    
+    // OPTIMIZED: Reduced neighbor search - only check necessary neighbors
+    // Use smaller search radius based on typical cell sizes
+    int searchRadius = 1; // Can be reduced to 0 for very dense grids
+    
+    // Check neighboring grid cells with early termination
+    for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+        for (int dy = -searchRadius; dy <= searchRadius; dy++) {
+            for (int dz = -searchRadius; dz <= searchRadius; dz++) {
+                ivec3 neighborGridPos = myGridPos + ivec3(dx, dy, dz);
+                
+                // Skip if neighbor is outside grid bounds
+                if (!isValidGridPos(neighborGridPos)) {
+                    continue;
+                }
+                
+                uint neighborGridIndex = gridToIndex(neighborGridPos);
+                uint localCellCount = gridCounts[neighborGridIndex];
+                
+                // OPTIMIZED: Early exit if no cells in this grid
+                if (localCellCount == 0) {
+                    continue;
+                }
+                
+                // OPTIMIZED: Limit search to reasonable number of cells
+                uint maxCellsToCheck = min(localCellCount, uint(u_maxCellsPerGrid));
+                
+                // Check all cells in this neighboring grid cell
+                for (uint i = 0; i < maxCellsToCheck; i++) {
+                    uint gridBufferIndex = neighborGridIndex * u_maxCellsPerGrid + i;
+                    uint otherIndex = gridCells[gridBufferIndex];
+                    
+                    // Skip self and invalid indices
+                    if (otherIndex == index || otherIndex >= cellCount) {
+                        continue;
+                    }
+                    
+                    vec3 otherPos = inputCells[otherIndex].positionAndMass.xyz;
+                    vec3 delta = myPos - otherPos;
+                    float distance = length(delta);
+                    
+                    // OPTIMIZED: Early distance check before radius calculation
+                    if (distance > 4.0) { // Approximate max interaction distance
+                        continue;
+                    }
+                    
+                    float otherRadius = pow(inputCells[otherIndex].positionAndMass.w, 1./3.);
+                    float minDistance = myRadius + otherRadius;
+                    
+                    if (distance < minDistance && distance > 0.001) {
+                        // Collision detected - apply repulsion force
+                        vec3 direction = normalize(delta);
+                        float overlap = minDistance - distance;
+                        totalForce += direction * overlap * 100.0; // Force strength
+                    }
+                }
+            }
+        }
+    }
+    
+    // Store acceleration (F = ma, so a = F/m) in output buffer
+    outputCells[index].acceleration.xyz = totalForce / myMass;
+}

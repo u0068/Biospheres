@@ -1,0 +1,80 @@
+#version 430
+
+// FIXED: Updated work group size to match dispatch for consistent cell movement
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    // Unique ID system
+    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
+    uint padding1;     // Padding to maintain alignment
+    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
+};
+
+// Shader storage buffer objects
+layout(std430, binding = 0) restrict buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+layout(std430, binding = 1) buffer CellCountBuffer {
+    uint cellCount;
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform float u_damping;
+uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    // Check bounds
+    if (index >= cellCount) {
+        return;
+    }
+    
+    // Skip position updates for dragged cell - position is set directly by dragging
+    if (int(index) == u_draggedCellIndex) {
+        return;
+    }
+    
+    // Update velocity based on acceleration
+    cells[index].velocity.xyz += cells[index].acceleration.xyz * u_deltaTime;
+    
+    // Apply damping
+    cells[index].velocity.xyz *= pow(u_damping, u_deltaTime*100.);
+    
+    // Update position based on velocity (Euler integration)
+    cells[index].positionAndMass.xyz += cells[index].velocity.xyz * u_deltaTime;
+    
+    // Optional: Add boundary constraints here
+    // For example, keep cells within a certain bounds
+    vec3 pos = cells[index].positionAndMass.xyz;
+    float bounds = 50.0;
+    
+    if (abs(pos.x) > bounds) {
+        cells[index].positionAndMass.x = sign(pos.x) * bounds;
+        cells[index].velocity.x *= -0.8; // Bounce with energy loss
+    }
+    if (abs(pos.y) > bounds) {
+        cells[index].positionAndMass.y = sign(pos.y) * bounds;
+        cells[index].velocity.y *= -0.8;
+    }
+    if (abs(pos.z) > bounds) {
+        cells[index].positionAndMass.z = sign(pos.z) * bounds;
+        cells[index].velocity.z *= -0.8;
+    }
+}

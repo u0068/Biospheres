@@ -1,0 +1,140 @@
+#version 430 core
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure (matches ComputeCell in cell_manager.h)
+struct ComputeCell {
+    vec4 positionAndMass;           // xyz = position, w = mass
+    vec4 velocity;                  // xyz = velocity, w = unused
+    vec4 acceleration;              // xyz = acceleration, w = unused
+    vec4 orientation;               // quaternion (w, x, y, z)
+    vec4 angularVelocity;          // quaternion (w, x, y, z)
+    vec4 angularAcceleration;      // quaternion (w, x, y, z)
+    vec4 signallingSubstances;     // 4 substances
+    int modeIndex;                 // Index into mode array
+    float age;                     // Cell age
+    float toxins;                  // Toxin level
+    float nitrates;                // Nitrate level
+    uint uniqueID;                 // Unique cell ID
+    uint padding1;                 // Padding
+    uint padding2_low;             // Low 32 bits of padding2
+    uint padding2_high;            // High 32 bits of padding2
+};
+
+// Instance data structure for rendering
+struct InstanceData {
+    vec4 positionAndRadius;  // xyz = position, w = radius
+    vec4 color;              // rgba color
+    vec4 orientation;        // quaternion (w, x, y, z)
+};
+
+// Mode data structure
+struct Mode {
+    vec4 color;              // rgba color
+    vec4 properties;         // Various properties
+};
+
+// Frustum plane structure
+struct FrustumPlane {
+    vec3 normal;
+    float distance;
+};
+
+// Input/Output buffers
+layout(std430, binding = 0) readonly buffer CellBuffer {
+    ComputeCell cellData[];
+};
+
+layout(std430, binding = 1) readonly buffer ModeBuffer {
+    Mode modes[];
+};
+
+layout(std430, binding = 2) readonly buffer CellCountBuffer {
+    uint cellCount;
+};
+
+// LOD output buffers
+layout(std430, binding = 3) writeonly buffer InstanceDataLOD0 {
+    InstanceData instanceDataLOD0[];
+};
+
+layout(std430, binding = 4) writeonly buffer InstanceDataLOD1 {
+    InstanceData instanceDataLOD1[];
+};
+
+layout(std430, binding = 5) writeonly buffer InstanceDataLOD2 {
+    InstanceData instanceDataLOD2[];
+};
+
+layout(std430, binding = 6) writeonly buffer InstanceDataLOD3 {
+    InstanceData instanceDataLOD3[];
+};
+
+layout(std430, binding = 7) buffer LODCounts {
+    uint lodCounts[4];
+};
+
+// Uniforms
+uniform vec3 u_cameraPos;
+uniform float u_lodDistances[4];  // Distance thresholds for LOD levels
+uniform FrustumPlane u_frustumPlanes[6];
+
+// Test if sphere is inside frustum
+bool isSphereInFrustum(vec3 center, float radius) {
+    for (int i = 0; i < 6; i++) {
+        float distance = dot(u_frustumPlanes[i].normal, center) + u_frustumPlanes[i].distance;
+        if (distance < -radius) {
+            return false; // Sphere is completely outside this plane
+        }
+    }
+    return true; // Sphere is inside or intersecting the frustum
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index >= cellCount) return;
+    
+    // Calculate cell radius and position
+    vec3 cellPos = cellData[index].positionAndMass.xyz;
+    float cellRadius = pow(cellData[index].positionAndMass.w, 1.0/3.0);
+    
+    // Perform frustum culling test first
+    if (!isSphereInFrustum(cellPos, cellRadius)) {
+        return; // Cell is not visible, skip LOD processing
+    }
+    
+    // Cell is visible, calculate distance from camera to cell surface
+    float distanceToCamera = distance(u_cameraPos, cellPos) - cellRadius;
+    
+    // Determine LOD level based on distance
+    uint lodLevel = 3; // Default to lowest detail
+    if (distanceToCamera < u_lodDistances[0]) {
+        lodLevel = 0; // Highest detail
+    } else if (distanceToCamera < u_lodDistances[1]) {
+        lodLevel = 1; // High detail
+    } else if (distanceToCamera < u_lodDistances[2]) {
+        lodLevel = 2; // Medium detail
+    }
+    // else lodLevel = 3 (lowest detail)
+    
+    // Create instance data
+    InstanceData instance;
+    instance.positionAndRadius = vec4(cellPos, cellRadius);
+    instance.color = modes[cellData[index].modeIndex].color;
+    instance.orientation = cellData[index].orientation;
+    
+    // Atomically increment the count for this LOD level and get the write index
+    uint writeIndex = atomicAdd(lodCounts[lodLevel], 1);
+    
+    // Write instance data to the appropriate LOD buffer
+    if (lodLevel == 0) {
+        instanceDataLOD0[writeIndex] = instance;
+    } else if (lodLevel == 1) {
+        instanceDataLOD1[writeIndex] = instance;
+    } else if (lodLevel == 2) {
+        instanceDataLOD2[writeIndex] = instance;
+    } else { // lodLevel == 3
+        instanceDataLOD3[writeIndex] = instance;
+    }
+} 

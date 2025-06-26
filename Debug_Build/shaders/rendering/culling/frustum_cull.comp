@@ -1,0 +1,101 @@
+#version 430 core
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure (matches ComputeCell in cell_manager.h)
+struct ComputeCell {
+    vec4 positionAndMass;           // xyz = position, w = mass
+    vec4 velocity;                  // xyz = velocity, w = unused
+    vec4 acceleration;              // xyz = acceleration, w = unused
+    vec4 orientation;               // quaternion (w, x, y, z)
+    vec4 angularVelocity;          // quaternion (w, x, y, z)
+    vec4 angularAcceleration;      // quaternion (w, x, y, z)
+    vec4 signallingSubstances;     // 4 substances
+    int modeIndex;                 // Index into mode array
+    float age;                     // Cell age
+    float toxins;                  // Toxin level
+    float nitrates;                // Nitrate level
+    uint uniqueID;                 // Unique cell ID
+    uint padding1;                 // Padding
+    uint padding2_low;             // Low 32 bits of padding2
+    uint padding2_high;            // High 32 bits of padding2
+};
+
+// Instance data structure for rendering
+struct InstanceData {
+    vec4 positionAndRadius;  // xyz = position, w = radius
+    vec4 color;              // rgba color
+    vec4 orientation;        // quaternion (w, x, y, z)
+};
+
+// Mode data structure
+struct Mode {
+    vec4 color;              // rgba color
+    vec4 properties;         // Various properties
+};
+
+// Frustum plane structure
+struct FrustumPlane {
+    vec3 normal;
+    float distance;
+};
+
+// Input/Output buffers
+layout(std430, binding = 0) readonly buffer CellBuffer {
+    ComputeCell cellData[];
+};
+
+layout(std430, binding = 1) readonly buffer ModeBuffer {
+    Mode modes[];
+};
+
+layout(std430, binding = 2) writeonly buffer VisibleInstanceBuffer {
+    InstanceData visibleInstances[];
+};
+
+layout(std430, binding = 3) buffer VisibleCountBuffer {
+    uint visibleCount;
+};
+
+layout(std430, binding = 4) readonly buffer CellCountBuffer {
+    uint cellCount;
+};
+
+// Frustum planes uniform
+uniform FrustumPlane u_frustumPlanes[6];
+
+// Test if sphere is inside frustum
+bool isSphereInFrustum(vec3 center, float radius) {
+    for (int i = 0; i < 6; i++) {
+        float distance = dot(u_frustumPlanes[i].normal, center) + u_frustumPlanes[i].distance;
+        if (distance < -radius) {
+            return false; // Sphere is completely outside this plane
+        }
+    }
+    return true; // Sphere is inside or intersecting the frustum
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index >= cellCount) return;
+    
+    // Calculate cell radius from mass (assuming sphere volume formula)
+    vec3 cellPos = cellData[index].positionAndMass.xyz;
+    float cellRadius = pow(cellData[index].positionAndMass.w, 1.0/3.0);
+    
+    // Perform frustum culling test
+    if (isSphereInFrustum(cellPos, cellRadius)) {
+        // Cell is visible, add to visible instances
+        uint writeIndex = atomicAdd(visibleCount, 1);
+        
+        // Create instance data
+        InstanceData instance;
+        instance.positionAndRadius = vec4(cellPos, cellRadius);
+        instance.color = modes[cellData[index].modeIndex].color;
+        instance.orientation = cellData[index].orientation;
+        
+        // Write to visible instances buffer
+        visibleInstances[writeIndex] = instance;
+    }
+} 
