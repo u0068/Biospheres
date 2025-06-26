@@ -16,28 +16,15 @@ void Camera::processInput(Input &input, float deltaTime)
     if (input.isKeyPressed(GLFW_KEY_LEFT_SHIFT))
         velocity *= sprintMultiplier;
 
-    // Roll controls (Q and E for camera roll) - handle first so vectors are updated
-    float rollSpeed = 45.0f * deltaTime; // 45 degrees per second (reduced from 90)
-    bool rollChanged = false;
-    if (input.isKeyPressed(GLFW_KEY_Q))
-    {
-        roll += rollSpeed;
-        rollChanged = true;
-    }
-    if (input.isKeyPressed(GLFW_KEY_E))
-    {
-        roll -= rollSpeed;
-        rollChanged = true;
-    }
-
-    // Handle mouse input for camera rotation
+    // Handle mouse input for camera rotation FIRST
     static bool wasRightMousePressed = false;
     bool isRightMousePressed = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
     if (isRightMousePressed && !wasRightMousePressed)
     {
         // Start dragging
         isDragging = true;
-        lastMousePos = input.getMousePosition(false); // Don't flip Y for mouse tracking        // Hide cursor when starting to drag
+        lastMousePos = input.getMousePosition(false); // Don't flip Y for mouse tracking
+        // Hide cursor when starting to drag
         glfwSetInputMode(input.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
     else if (!isRightMousePressed && wasRightMousePressed)
@@ -57,6 +44,20 @@ void Camera::processInput(Input &input, float deltaTime)
     }
 
     wasRightMousePressed = isRightMousePressed;
+
+    // Roll controls (Q and E for camera roll) - handle AFTER mouse movement
+    float rollSpeed = 45.0f * deltaTime; // 45 degrees per second (reduced from 90)
+    bool rollChanged = false;
+    if (input.isKeyPressed(GLFW_KEY_Q))
+    {
+        roll += rollSpeed;
+        rollChanged = true;
+    }
+    if (input.isKeyPressed(GLFW_KEY_E))
+    {
+        roll -= rollSpeed;
+        rollChanged = true;
+    }
 
     // Update camera vectors only if roll changed (mouse movement handles its own vector updates)
     if (rollChanged)
@@ -102,6 +103,7 @@ void Camera::processMouseMovement(float xOffset, float yOffset)
         yOffset = -yOffset;
     }
 
+    // Use camera-relative axes for rotation
     // Rotate around the camera's local up axis (horizontal mouse movement)
     glm::mat4 yawRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-xOffset), up);
 
@@ -141,11 +143,11 @@ void Camera::updateCameraVectors()
     newFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
     front = glm::normalize(newFront);
 
-    // Re-calculate the right and up vector
+    // Re-calculate the right and up vector using world-relative orientation
     glm::vec3 tempRight = glm::normalize(glm::cross(front, worldUp));
     glm::vec3 tempUp = glm::normalize(glm::cross(tempRight, front));
 
-    // Apply roll rotation
+    // Apply roll rotation to the temporary vectors
     float rollRad = glm::radians(roll);
     right = tempRight * cos(rollRad) + tempUp * sin(rollRad);
     up = tempUp * cos(rollRad) - tempRight * sin(rollRad);

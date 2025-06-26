@@ -1,0 +1,190 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct GPUMode {
+    vec4 color;             // r, g, b, padding
+    vec4 orientationA;      // quaternion
+    vec4 orientationB;      // quaternion
+    vec4 splitDirection;  // x, y, z, padding
+    ivec2 childModes;
+    float splitInterval;
+    int genomeOffset;
+};
+
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    // Unique ID system
+    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
+    uint padding1;     // Padding to maintain alignment
+    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
+};
+
+layout(std430, binding = 0) restrict buffer modeBuffer {
+    GPUMode modes[];
+};
+
+layout(std430, binding = 1) restrict buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+layout(std430, binding = 2) buffer CellAdditionQueue {
+    ComputeCell newCells[];
+};
+
+layout(std430, binding = 3) buffer CellCountBuffer {
+    uint cellCount;
+    uint pendingCellCount;
+};
+
+layout(std430, binding = 4) buffer IDCounterBuffer {
+    uint nextAvailableID;    // Next ID to assign
+    uint recycledIDCount;    // Number of recycled IDs available
+    uint maxCellID;          // Maximum cell ID (32767)
+};
+
+layout(std430, binding = 5) buffer IDPoolBuffer {
+    uint availableIDs[];     // Pool of available/recycled cell IDs
+};
+
+uniform float u_deltaTime;
+uniform int u_maxCells;
+
+vec4 quatMultiply(vec4 q1, vec4 q2) {
+    return vec4(
+        q1.w*q2.x + q1.x*q2.w + q1.y*q2.z - q1.z*q2.y,
+        q1.w*q2.y - q1.x*q2.z + q1.y*q2.w + q1.z*q2.x,
+        q1.w*q2.z + q1.x*q2.y - q1.y*q2.x + q1.z*q2.w,
+        q1.w*q2.w - q1.x*q2.x - q1.y*q2.y - q1.z*q2.z
+    );
+}
+
+vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
+    // v' = q * v * q^-1
+    // Optimized version using cross product:
+    vec3 u = q.xyz;
+    float s = q.w;
+
+    return 2.0 * dot(u, v) * u
+         + (s * s - dot(u, u)) * v
+         + 2.0 * s * cross(u, v);
+}
+
+// ID utility functions
+uint getParentID(uint uniqueID) {
+    return (uniqueID >> 16) & 0xFFFFu;
+}
+
+uint getCellID(uint uniqueID) {
+    return (uniqueID >> 1) & 0x7FFFu;
+}
+
+uint getChildFlag(uint uniqueID) {
+    return uniqueID & 0x1u;
+}
+
+uint packUniqueID(uint parentID, uint cellID, uint childFlag) {
+    return (parentID << 16) | ((cellID & 0x7FFFu) << 1) | (childFlag & 0x1u);
+}
+
+// Allocate a new cell ID from the pool or generate new one
+uint allocateCellID() {
+    uint newCellID;
+    
+    // Try to get a recycled ID first
+    if (recycledIDCount > 0) {
+        uint recycleIndex = atomicAdd(recycledIDCount, -1) - 1;
+        if (recycleIndex < recycledIDCount + 1) { // Check bounds
+            newCellID = availableIDs[recycleIndex];
+        } else {
+            // Fallback to new ID if race condition occurred
+            newCellID = atomicAdd(nextAvailableID, 1);
+            if (newCellID > maxCellID) {
+                // Wrap around if we've exceeded max ID
+                atomicExchange(nextAvailableID, 1);
+                newCellID = 1;
+            }
+        }
+    } else {
+        // No recycled IDs available, use next available
+        newCellID = atomicAdd(nextAvailableID, 1);
+        if (newCellID > maxCellID) {
+            // Wrap around if we've exceeded max ID
+            atomicExchange(nextAvailableID, 1);
+            newCellID = 1;
+        }
+    }
+    
+    return newCellID;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= cellCount) {
+        return;
+    }
+    ComputeCell cell = cells[index]; // Read from current buffer
+    GPUMode mode = modes[cell.modeIndex];
+
+    cell.age += u_deltaTime;
+    if (cell.age >= mode.splitInterval) {
+        // Estimate new total number of cells
+        uint currentTotal = atomicAdd(pendingCellCount, 0); // Read current pending count
+        if (cellCount + currentTotal < u_maxCells) {
+            // Atomically reserve a slot in the addition queue
+            uint queueIdx = atomicAdd(pendingCellCount, 1);
+            vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
+
+            // Both child cells should start with the same age after the split
+            // Since we already aged the parent cell by deltaTime this frame,
+            // we need to subtract the excess age beyond the split interval
+            float startAge = cell.age - mode.splitInterval;
+
+            // Apply rotation deltas to parent orientation
+            vec4 q_parent = cell.orientation;
+            vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
+            vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
+
+            // Allocate new cell IDs for both children
+            uint childACellID = allocateCellID();
+            uint childBCellID = allocateCellID();
+            
+            // Get parent's cell ID to use as parent ID for children
+            uint parentCellID = getCellID(cell.uniqueID);
+
+            ComputeCell childA = cell;
+            childA.positionAndMass.xyz += offset;
+            childA.age = startAge;
+            childA.modeIndex = mode.childModes.x;
+            childA.orientation = q_childA;
+            childA.uniqueID = packUniqueID(parentCellID, childACellID, 0u); // A child
+
+            ComputeCell childB = cell;
+            childB.positionAndMass.xyz -= offset;
+            childB.age = startAge;
+            childB.modeIndex = mode.childModes.y;
+            childB.orientation = q_childB;
+            childB.uniqueID = packUniqueID(parentCellID, childBCellID, 1u); // B child
+
+            // Store new cells
+            cells[index] = childA;
+            newCells[queueIdx] = childB;
+        } else {
+            // Can't divide just continue aging
+            cells[index] = cell;
+        }
+    } else {
+        // Not ready to divide age normally
+        cells[index] = cell;
+    }
+}
