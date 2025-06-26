@@ -161,6 +161,13 @@ struct CellManager
     Shader* ringGizmoExtractShader = nullptr; // Compute shader for generating ring gizmo data
     Shader* ringGizmoShader = nullptr;        // Vertex/fragment shaders for rendering ring gizmos
     
+    // Adhesion line visualization
+    GLuint adhesionLineBuffer{};        // Buffer for adhesion line vertices  
+    GLuint adhesionLineVAO{};           // VAO for adhesion line rendering
+    GLuint adhesionLineVBO{};           // VBO for adhesion line vertices
+    Shader* adhesionLineExtractShader = nullptr; // Compute shader for generating adhesion line data
+    Shader* adhesionLineShader = nullptr;        // Vertex/fragment shaders for rendering adhesion lines
+    
     void initializeGizmoBuffers();
     void updateGizmoData();
     void cleanupGizmos();
@@ -171,6 +178,12 @@ struct CellManager
     void initializeRingGizmoBuffers();
     void updateRingGizmoData();
     void cleanupRingGizmos();
+    
+    // Adhesion line methods
+    void renderAdhesionLines(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
+    void initializeAdhesionLineBuffers();
+    void updateAdhesionLineData();
+    void cleanupAdhesionLines();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
@@ -240,6 +253,77 @@ struct CellManager
     const SelectedCellInfo &getSelectedCell() const { return selectedCell; }
     ComputeCell getCellData(int index) const;
     void updateCellData(int index, const ComputeCell &newData); // Needs refactoring
+
+    // Memory barrier optimization system
+    // Forward declaration and performance monitoring
+    struct BarrierStats {
+        int totalBarriers = 0;
+        int batchedBarriers = 0;
+        int flushCalls = 0;
+        float barrierEfficiency = 0.0f; // batchedBarriers / totalBarriers
+        
+        void reset() {
+            totalBarriers = 0;
+            batchedBarriers = 0;
+            flushCalls = 0;
+            barrierEfficiency = 0.0f;
+        }
+        
+        void updateEfficiency() {
+            if (totalBarriers > 0) {
+                barrierEfficiency = static_cast<float>(batchedBarriers) / totalBarriers;
+            }
+        }
+    };
+    
+    struct BarrierBatch {
+        GLbitfield pendingBarriers = 0;
+        bool needsFlush = false;
+        mutable BarrierStats* stats = nullptr; // Reference to stats for tracking
+        
+        void addBarrier(GLbitfield barrier) {
+            pendingBarriers |= barrier;
+            if (stats) {
+                stats->totalBarriers++;
+                if (pendingBarriers != barrier) {
+                    stats->batchedBarriers++; // This barrier was batched with others
+                }
+            }
+        }
+        
+        void flush() {
+            if (pendingBarriers != 0) {
+                glMemoryBarrier(pendingBarriers);
+                pendingBarriers = 0;
+                if (stats) {
+                    stats->flushCalls++;
+                    stats->updateEfficiency();
+                }
+            }
+            needsFlush = false;
+        }
+        
+        void clear() {
+            pendingBarriers = 0;
+            needsFlush = false;
+        }
+        
+        void setStats(BarrierStats* statsPtr) {
+            stats = statsPtr;
+        }
+    };
+    
+    mutable BarrierBatch barrierBatch;
+    mutable BarrierStats barrierStats;
+    
+    // Optimized barrier methods
+    void addBarrier(GLbitfield barrier) const { barrierBatch.addBarrier(barrier); }
+    void flushBarriers() const { barrierBatch.flush(); }
+    void clearBarriers() const { barrierBatch.clear(); }
+    
+    // Debug methods for barrier optimization
+    const BarrierStats& getBarrierStats() const { return barrierStats; }
+    void resetBarrierStats() const { barrierStats.reset(); }
 
     // Asynchronous readback functions for performance monitoring // not actually implemented yet, maybe later if we need to
     //void initializeReadbackSystem();

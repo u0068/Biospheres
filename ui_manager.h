@@ -90,6 +90,9 @@ public:
     
     // Orientation gizmo visualization
     bool showOrientationGizmos = false;  // Toggle for showing cell orientation gizmos
+    
+    // Adhesion line visualization
+    bool showAdhesionLines = false;      // Toggle for showing adhesion lines between sibling cells
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;

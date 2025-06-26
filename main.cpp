@@ -178,9 +178,13 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
 			checkGLError("renderGizmos");
 			
-			// Render ring gizmos if enabled
-			activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-			checkGLError("renderRingGizmos");
+					// Render ring gizmos if enabled
+		activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+		checkGLError("renderRingGizmos");
+		
+		// Render adhesion lines if enabled
+		activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
+		checkGLError("renderAdhesionLines");
 		}
 		catch (const std::exception &e)
 		{

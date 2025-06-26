@@ -13,6 +13,8 @@ struct GPUMode {
     glm::ivec2 childModes{ 0 };
     float splitInterval{ 5. };
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
+    int parentMakeAdhesion{ 0 };  // Boolean flag for adhesion creation (0 = false, 1 = true)
+    int padding{ 0 };  // Padding to maintain alignment
 };
 
 // Genome Editor Data Structures

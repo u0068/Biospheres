@@ -409,6 +409,9 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     ImGui::Text("Visualization:");
     ImGui::Checkbox("Show Orientation Gizmos", &showOrientationGizmos);
     addTooltip("Display forward (red), up (green), and right (blue) orientation axes for each cell");
+    
+    ImGui::Checkbox("Show Adhesion Lines", &showAdhesionLines);
+    addTooltip("Display orange lines connecting sibling cells when their parent has adhesion enabled");
 
     // Show current selection info
     if (cellManager.hasSelectedCell())    {
@@ -1315,7 +1318,6 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             else
             {
                 // Fallback to old method if keyframes not available
-                std::cout << "Keyframes not available, using full resimulation to time " << targetTime << "s\n";
                 
                 // Reset the simulation
                 cellManager.resetSimulation();

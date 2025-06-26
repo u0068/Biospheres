@@ -29,8 +29,8 @@ static void applyLocalRotation(glm::quat &q, const glm::vec3 &axis, float deltaD
 
 CellManager::CellManager()
 {
-    // Generate sphere mesh
-    sphereMesh.generateSphere(12, 16, 1.0f); // Even lower poly count: 12x16 = 192 triangles
+    // Generate sphere mesh - optimized for high cell counts
+    sphereMesh.generateSphere(8, 12, 1.0f); // Ultra-low poly: 8x12 = 96 triangles for maximum performance
     sphereMesh.setupBuffers();
 
     initializeGPUBuffers();
@@ -60,9 +60,17 @@ CellManager::CellManager()
     ringGizmoExtractShader = new Shader("shaders/ring_gizmo_extract.comp");
     ringGizmoShader = new Shader("shaders/ring_gizmo.vert", "shaders/ring_gizmo.frag");
     
+    // Initialize adhesion line shaders
+    adhesionLineExtractShader = new Shader("shaders/adhesion_line_extract.comp");
+    adhesionLineShader = new Shader("shaders/adhesion_line.vert", "shaders/adhesion_line.frag");
+    
     // Initialize gizmo buffers
     initializeGizmoBuffers();
     initializeRingGizmoBuffers();
+    initializeAdhesionLineBuffers();
+    
+    // Initialize barrier optimization system
+    barrierBatch.setStats(&barrierStats);
 }
 
 CellManager::~CellManager()
@@ -191,9 +199,22 @@ void CellManager::cleanup()
         delete ringGizmoShader;
         ringGizmoShader = nullptr;
     }
+    if (adhesionLineExtractShader)
+    {
+        adhesionLineExtractShader->destroy();
+        delete adhesionLineExtractShader;
+        adhesionLineExtractShader = nullptr;
+    }
+    if (adhesionLineShader)
+    {
+        adhesionLineShader->destroy();
+        delete adhesionLineShader;
+        adhesionLineShader = nullptr;
+    }
     
     cleanupGizmos();
     cleanupRingGizmos();
+    cleanupAdhesionLines();
     sphereMesh.cleanup();
 }
 
@@ -280,7 +301,7 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = static_cast<int>(cells.size());
 
-    std::cout << "Adding " << newCellCount << " cells to GPU buffer. Current cell count: " << cellCount << " -> " << cellCount + newCellCount << "\n";
+
 
     if (cellCount + newCellCount > cellLimit)
     {
@@ -376,6 +397,9 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         // Directly store quaternions (no conversion)
         gmode.orientationA = mode.childA.orientation;  // now a quat already
         gmode.orientationB = mode.childB.orientation;
+        
+        // Store adhesion flag
+        gmode.parentMakeAdhesion = mode.parentMakeAdhesion ? 1 : 0;
 
         gpuModes.push_back(gmode);
     }
@@ -426,10 +450,13 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
 
 void CellManager::updateCells(float deltaTime)
 {
+    // Clear any pending barriers from previous frame
+    clearBarriers();
+    
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     
-    // CRITICAL FIX: Ensure GPU operations are complete before accessing mapped buffer
-    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    // Add buffer update barrier but don't flush yet
+    addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 
     cellCount = countPtr[0];
     gpuPendingCellCount = countPtr[1]; // This is effectively more of a bool than an int due to its horrific inaccuracy, but that's good enough for us
@@ -442,59 +469,57 @@ void CellManager::updateCells(float deltaTime)
 
     if (cellCount > 0) // Don't update cells if there are no cells to update
     {
-	    // Update spatial grid before physics
-    	updateSpatialGrid();
-
-    	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    	// Run physics computation on GPU (reads from previous, writes to current)
-    	runPhysicsCompute(deltaTime);
-
-    	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
+        // Flush barriers before starting compute pipeline
+        flushBarriers();
+        
+        // OPTIMIZED: Batch all simulation compute operations
+        // Update spatial grid before physics
+        updateSpatialGrid(); // This handles its own barriers internally
+        
+        // Run physics computation on GPU (reads from previous, writes to current)
+        runPhysicsCompute(deltaTime);
+        
         // Run position/velocity update on GPU (still working on current buffer)
         runUpdateCompute(deltaTime);
-
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    	// Run cells' internal calculations (this creates new pending cells from mitosis)
-    	runInternalUpdateCompute(deltaTime);
-
-    	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        
+        // Run cells' internal calculations (this creates new pending cells from mitosis)
+        runInternalUpdateCompute(deltaTime);
+        
+        // Single barrier after all simulation compute operations
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
-    // Immediately apply any new cell divisions that occurred this frame
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-    
-    // CRITICAL FIX: Use fence sync to ensure GPU operations are complete before accessing mapped buffer
-    GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    GLenum result = glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000); // Wait up to 1ms
-    glDeleteSync(sync);
-    
-    // If the sync didn't complete in time, fall back to glFinish
-    if (result == GL_TIMEOUT_EXPIRED) {
-        glFinish();
+    // Optimized: Only apply cell additions when actually needed
+    // Use a frame counter to reduce frequency of cell addition checks
+    static int frameCounter = 0;
+    if (++frameCounter % 4 == 0 || gpuPendingCellCount > 0) { // Check every 4 frames or when pending
+        flushBarriers(); // Ensure previous operations complete
+        
+        // Copy cell count data for addition check (non-blocking)
+        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+        
+        // Use targeted barrier instead of expensive fence sync
+        addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        flushBarriers();
+        
+        gpuPendingCellCount = countPtr[1];
+        
+        if (gpuPendingCellCount > 0) {
+            applyCellAdditions(); // Apply mitosis results
+            addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        }
     }
-    
-    gpuPendingCellCount = countPtr[1];
-    
-    //if (gpuPendingCellCount > 0) // Due to an unrelenting bug with gpu-cpu sync i am forced to remove this if statement
-    //{                            // causing 100,000 threads to be dispatched every frame just in case any cells split
-    applyCellAdditions(); // Apply mitosis results immediately
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    //}
 
-    // Run ID manager to recycle dead cell IDs
-    runIDManager();
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    // Run ID manager to recycle dead cell IDs (less frequently)
+    if (frameCounter % 8 == 0) { // Only every 8 frames for ID management
+        flushBarriers(); // Ensure previous operations complete
+        runIDManager();
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
 
-    // Update final cell count after all additions
+    // Final barrier flush and update cell count
+    flushBarriers();
     cellCount = countPtr[0];
-
-    // Log if cells were added (split event occurred)   // This actually logs it a frame late due to aforementioned sync issue
-    if (cellCount > previousCellCount) {
-        std::cout << "Split event occurred! Cell count increased from " << previousCellCount << " to " << cellCount << "\n";
-    }
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
     rotateBuffers();
@@ -527,7 +552,9 @@ void CellManager::runCellCounter()  // This only count active cells in the gpu, 
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure writes are visible
+    // Use optimized barrier for cell counter
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers(); // Ensure writes are visible
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint));
 }
 
@@ -561,9 +588,15 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
 	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
 	    	GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
 	    	extractShader->dispatch(numGroups, 1, 1);
+	    	
+	    	// Add barrier for instance extraction but don't flush yet
+	    	addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	    }
 
         TimerGPU timer("Cell Rendering");
+        
+        // Flush barriers before rendering to ensure instance data is ready
+        flushBarriers();
 
         // Use the sphere shader
         cellShader.use(); // Set up camera matrices (only calculate once per frame, not per cell)
@@ -711,9 +744,14 @@ void CellManager::applyCellAdditions()
     GLuint numGroups = (cellLimit / 2 + 63) / 64; // Horrific over-dispatch but it's better than under-dispatch and surprisingly doesn't hurt performance
     cellAdditionShader->dispatch(numGroups, 1, 1);
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Use optimized barrier for cell additions
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
 
-    GLuint zero = 0;    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
+    GLuint zero = 0;
+    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
 }
@@ -770,7 +808,7 @@ void CellManager::resetSimulation()
     // Sync the staging buffer
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     
-    std::cout << "Reset simulation (buffer rotation reset to 0)\n";
+
 }
 
 void CellManager::spawnCells(int count)
@@ -850,25 +888,25 @@ void CellManager::updateSpatialGrid()
         return;
     TimerGPU timer("Spatial Grid Update");
 
+    // HIGHLY OPTIMIZED: Minimal barriers for spatial grid operations
     // Step 1: Clear grid counts
     runGridClear();
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Step 2: Count cells per grid cell
+    
+    // Step 2: Count cells per grid cell (can run in parallel with clear on some GPUs)
     runGridAssign();
+    
+    // Single barrier after clear and assign - these operations write to different buffers
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
 
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Step 3: Calculate prefix sum for offsets
+    // Step 3: Calculate prefix sum for offsets (depends on assign results)
     runGridPrefixSum();
 
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-    // Step 4: Insert cells into grid
+    // Step 4: Insert cells into grid (depends on prefix sum results)
     runGridInsert();
-
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Add final barrier but don't flush - let caller decide when to flush
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 void CellManager::cleanupSpatialGrid()
@@ -1011,7 +1049,9 @@ void CellManager::updateGizmoData()
     GLuint numGroups = (cellCount + 63) / 64;
     gizmoExtractShader->dispatch(numGroups, 1, 1);
     
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    // Use targeted barrier for buffer copy
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
     
     // Copy data from compute buffer to VBO for rendering
     glCopyNamedBufferSubData(gizmoBuffer, gizmoVBO, 0, 0, cellCount * 6 * sizeof(glm::vec4) * 2);
@@ -1256,14 +1296,16 @@ void CellManager::syncCellPositionsFromGPU()
     if (cellCount == 0)
         return;
 
-    // CRITICAL FIX: Ensure all GPU operations are complete before copying data
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    // OPTIMIZED: Use barrier batching for GPU sync
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
     
     // Copy data from GPU buffer to staging buffer (no GPU->CPU transfer warning)
     glCopyNamedBufferSubData(getCellReadBuffer(), stagingCellBuffer, 0, 0, cellCount * sizeof(ComputeCell));
     
     // Memory barrier to ensure copy is complete
-    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    flushBarriers();
     
     // CRITICAL FIX: Use fence sync with longer timeout to ensure GPU operations are complete
     // This prevents the pixel transfer synchronization warning
@@ -1474,7 +1516,9 @@ void CellManager::updateRingGizmoData()
     GLuint numGroups = (cellCount + 63) / 64;
     ringGizmoExtractShader->dispatch(numGroups, 1, 1);
     
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    // Use targeted barrier for buffer copy
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
     
     // Copy data from compute buffer to VBO for rendering
     glCopyNamedBufferSubData(ringGizmoBuffer, ringGizmoVBO, 0, 0, cellCount * 384 * sizeof(glm::vec4) * 2);
@@ -1623,7 +1667,8 @@ void CellManager::runIDManager()
     GLuint numGroups = (cellCount + 63) / 64;
     idManagerShader->dispatch(numGroups, 1, 1);
     
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    // Add barrier but don't flush - let caller handle it
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
@@ -1656,5 +1701,128 @@ void CellManager::printCellIDs(int maxCells)
             std::cout << "Cell " << i << ": " << parentID << "." << cellID << "." << childChar 
                       << " (raw: 0x" << std::hex << cell.uniqueID << std::dec << ")\n";
         }
+    }
+}
+
+// Adhesion Line Implementation
+
+void CellManager::initializeAdhesionLineBuffers()
+{
+    // Create buffer for adhesion line vertices (each line has 2 vertices)
+    // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
+    glCreateBuffers(1, &adhesionLineBuffer);
+    glNamedBufferData(adhesionLineBuffer,
+        cellLimit * 2 * sizeof(glm::vec4) * 2, // 2 vertices per line, position + color for each vertex
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
+    
+    // Create VAO for adhesion line rendering
+    glCreateVertexArrays(1, &adhesionLineVAO);
+    
+    // Create VBO that will be bound to the adhesion line buffer
+    glCreateBuffers(1, &adhesionLineVBO);
+    glNamedBufferData(adhesionLineVBO,
+        cellLimit * 2 * sizeof(glm::vec4) * 2,
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
+    
+    // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
+    glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineVBO, 0, sizeof(glm::vec4) * 2);
+    
+    // Position attribute (vec4)
+    glEnableVertexArrayAttrib(adhesionLineVAO, 0);
+    glVertexArrayAttribFormat(adhesionLineVAO, 0, 4, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(adhesionLineVAO, 0, 0);
+    
+    // Color attribute (vec4, offset by 16 bytes)
+    glEnableVertexArrayAttrib(adhesionLineVAO, 1);
+    glVertexArrayAttribFormat(adhesionLineVAO, 1, 4, GL_FLOAT, GL_FALSE, sizeof(glm::vec4));
+    glVertexArrayAttribBinding(adhesionLineVAO, 1, 0);
+}
+
+void CellManager::updateAdhesionLineData()
+{
+    if (cellCount == 0) return;
+    
+    TimerGPU timer("Adhesion Line Data Update");
+    
+    adhesionLineExtractShader->use();
+    
+    // Bind cell data as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    // Bind mode data as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+    // Bind adhesion line buffer as output
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionLineBuffer);
+    // Bind cell count buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 63) / 64;
+    adhesionLineExtractShader->dispatch(numGroups, 1, 1);
+    
+    // Use targeted barrier for buffer copy
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
+    
+    // Copy data from compute buffer to VBO for rendering
+    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, cellCount * 2 * sizeof(glm::vec4) * 2);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
+{
+    if (!showAdhesionLines || cellCount == 0) return;
+    
+    // Update adhesion line data from current cell positions and IDs
+    updateAdhesionLineData();
+    
+    TimerGPU timer("Adhesion Line Rendering");
+    
+    adhesionLineShader->use();
+    
+    // Set up camera matrices
+    glm::mat4 view = camera.getViewMatrix();
+    float aspectRatio = resolution.x / resolution.y;
+    if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
+    {
+        aspectRatio = 16.0f / 9.0f;
+    }
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 1000.0f);
+    
+    adhesionLineShader->setMat4("uProjection", projection);
+    adhesionLineShader->setMat4("uView", view);
+    
+    // Enable depth testing for proper 3D rendering
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    
+    // Enable line width for better visibility
+    glLineWidth(3.0f);
+    
+    // Render adhesion lines
+    glBindVertexArray(adhesionLineVAO);
+    glDrawArrays(GL_LINES, 0, cellCount * 2); // 2 vertices per line, one line per cell pair
+    glBindVertexArray(0);
+    
+    // Reset line width
+    glLineWidth(1.0f);
+}
+
+void CellManager::cleanupAdhesionLines()
+{
+    if (adhesionLineBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionLineBuffer);
+        adhesionLineBuffer = 0;
+    }
+    if (adhesionLineVBO != 0)
+    {
+        glDeleteBuffers(1, &adhesionLineVBO);
+        adhesionLineVBO = 0;
+    }
+    if (adhesionLineVAO != 0)
+    {
+        glDeleteVertexArrays(1, &adhesionLineVAO);
+        adhesionLineVAO = 0;
     }
 }
