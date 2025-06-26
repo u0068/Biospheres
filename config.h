@@ -24,9 +24,9 @@ namespace config
 
 	// ========== Spatial Partitioning Configuration ==========
 	constexpr float WORLD_SIZE{100.0f};                          // Size of the simulation world (cube from -50 to +50)
-	constexpr int GRID_RESOLUTION{32};                            // Number of grid cells per dimension (32x32x32 = 32,768 total)
-	constexpr float GRID_CELL_SIZE{WORLD_SIZE / GRID_RESOLUTION}; // Size of each grid cell
-	constexpr int MAX_CELLS_PER_GRID{64};                         // Maximum cells per grid cell
+	constexpr int GRID_RESOLUTION{64};                            // Increased from 32 to 64: 64^3 = 262,144 total grid cells for better distribution
+	constexpr float GRID_CELL_SIZE{WORLD_SIZE / GRID_RESOLUTION}; // Size of each grid cell (~1.56 units)
+	constexpr int MAX_CELLS_PER_GRID{32};                         // Reduced from 64 to 32: better memory access patterns
 	constexpr int TOTAL_GRID_CELLS{GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION};
 	// ========== Runtime Configuration Variables ==========
 	// These can be modified at runtime

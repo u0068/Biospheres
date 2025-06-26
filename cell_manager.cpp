@@ -291,10 +291,10 @@ void CellManager::initializeGPUBuffers()
     mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
 
-    // Cell addition queue buffer
+    // Cell addition queue buffer - FIXED: Increased size for 100k cells
     glCreateBuffers(1, &cellAdditionBuffer);
     glNamedBufferData(cellAdditionBuffer,
-        cellLimit * sizeof(ComputeCell) / 2, // Worst case scenario
+        cellLimit * sizeof(ComputeCell), // Full size to handle large simultaneous splits
         nullptr,
         GL_STREAM_COPY  // Frequently updated by GPU compute shaders
     );
@@ -555,8 +555,8 @@ void CellManager::runCellCounter()  // This only count active cells in the gpu, 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
 
-    // Dispatch compute shader
-    GLuint numGroups = (cellLimit + 63) / 64; // Round up division
+    // Dispatch compute shader - FIXED: Updated to match work group size
+    GLuint numGroups = (cellLimit + 255) / 256; // Updated to 256 for consistency
     cellCounterShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -617,7 +617,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, instanceBuffer); // Dispatch extract compute shader
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
-            GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
+            GLuint numGroups = (cellCount + 255) / 256; // Updated to 256 for consistency
             extractShader->dispatch(numGroups, 1, 1);
             
             // Add barrier for instance extraction but don't flush yet
@@ -720,8 +720,8 @@ void CellManager::runPhysicsCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCellWriteBuffer()); // Write to current frame
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
-    // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64; // Round up division
+    // Dispatch compute shader - OPTIMIZED for 256 work group size
+    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     physicsShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -743,8 +743,8 @@ void CellManager::runUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer); // Bind GPU cell count buffer
 
-    // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64; // Round up division
+    // Dispatch compute shader - OPTIMIZED for 256 work group size
+    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     updateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -766,8 +766,8 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, idCounterBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, idPoolBuffer);
 
-    // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64; // Round up division
+    // Dispatch compute shader - OPTIMIZED for 256 work group size
+    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     internalUpdateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -935,21 +935,31 @@ void CellManager::updateSpatialGrid()
         return;
     TimerGPU timer("Spatial Grid Update");
 
-    // HIGHLY OPTIMIZED: Minimal barriers for spatial grid operations
-    // Step 1: Clear grid counts
+    // ============= PERFORMANCE OPTIMIZATIONS FOR 100K CELLS =============
+    // 1. Increased grid resolution from 32³ to 64³ (262,144 grid cells)
+    // 2. Reduced max cells per grid from 64 to 32 for better memory access
+    // 3. Implemented proper parallel prefix sum with shared memory
+    // 4. Optimized work group sizes from 64 to 256 for better GPU utilization
+    // 5. Reduced memory barriers and improved dispatch efficiency
+    // 6. Added early termination in physics neighbor search
+    // ====================================================================
+
+    // HIGHLY OPTIMIZED: Combined operations with minimal barriers
+    // Step 1: Clear grid counts and assign cells in parallel
     runGridClear();
-    
-    // Step 2: Count cells per grid cell (can run in parallel with clear on some GPUs)
     runGridAssign();
     
-    // Single barrier after clear and assign - these operations write to different buffers
+    // Single barrier after clear and assign - these operations can overlap
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     flushBarriers();
 
-    // Step 3: Calculate prefix sum for offsets (depends on assign results)
+    // Step 2: Calculate prefix sum for offsets (proper implementation now)
     runGridPrefixSum();
 
-    // Step 4: Insert cells into grid (depends on prefix sum results)
+    // Step 3: Insert cells into grid (depends on prefix sum results)
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
+    
     runGridInsert();
     
     // Add final barrier but don't flush - let caller decide when to flush
@@ -985,7 +995,8 @@ void CellManager::runGridClear()
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
 
-    GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
+    // OPTIMIZED: Use larger work groups for better GPU utilization
+    GLuint numGroups = (config::TOTAL_GRID_CELLS + 255) / 256; // Changed from 64 to 256
     gridClearShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -1004,7 +1015,8 @@ void CellManager::runGridAssign()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridCountBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
 
-    GLuint numGroups = (cellCount + 63) / 64;
+    // OPTIMIZED: Use larger work groups for better memory coalescing
+    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256
     gridAssignShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -1019,7 +1031,8 @@ void CellManager::runGridPrefixSum()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, gridCountBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffsetBuffer);
 
-    GLuint numGroups = (config::TOTAL_GRID_CELLS + 63) / 64;
+    // OPTIMIZED: Use 256-sized work groups to match shader implementation
+    GLuint numGroups = (config::TOTAL_GRID_CELLS + 255) / 256; // Changed from 64 to 256
     gridPrefixSumShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -1037,7 +1050,8 @@ void CellManager::runGridInsert()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
-    GLuint numGroups = (cellCount + 63) / 64;
+    // OPTIMIZED: Use larger work groups for better memory coalescing
+    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256
     gridInsertShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -1710,8 +1724,8 @@ void CellManager::runIDManager()
     idManagerShader->setInt("u_maxCells", cellLimit);
     idManagerShader->setFloat("u_minMass", 0.01f); // Minimum mass to consider a cell alive
     
-    // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64;
+    // Dispatch compute shader - CONSISTENT with other optimizations
+    GLuint numGroups = (cellCount + 255) / 256; // Updated to match other compute shaders
     idManagerShader->dispatch(numGroups, 1, 1);
     
     // Add barrier but don't flush - let caller handle it

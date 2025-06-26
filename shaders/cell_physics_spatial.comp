@@ -1,7 +1,7 @@
 #version 430 core
 
-// Local work group size
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+// Optimized work group size for better GPU utilization with 100k cells
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 // Cell data structure for compute shader
 struct ComputeCell {
@@ -86,9 +86,9 @@ void main() {
       // Skip physics for dragged cell - it will be positioned directly
     if (int(index) == u_draggedCellIndex) {
         // Copy input to output but clear velocity and acceleration for dragged cell
-        //outputCells[index] = inputCells[index];
-        //outputCells[index].velocity.xyz = vec3(0.0);
-        //outputCells[index].acceleration = vec4(0.0);
+        outputCells[index] = inputCells[index];
+        outputCells[index].velocity.xyz = vec3(0.0);
+        outputCells[index].acceleration = vec4(0.0);
         return;
     }    
     // Copy input cell data to output and reset acceleration
@@ -104,10 +104,14 @@ void main() {
     // Get the grid cell this cell belongs to
     ivec3 myGridPos = worldToGrid(myPos);
     
-    // Check neighboring grid cells (3x3x3 neighborhood)
-    for (int dx = -1; dx <= 1; dx++) {
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dz = -1; dz <= 1; dz++) {
+    // OPTIMIZED: Reduced neighbor search - only check necessary neighbors
+    // Use smaller search radius based on typical cell sizes
+    int searchRadius = 1; // Can be reduced to 0 for very dense grids
+    
+    // Check neighboring grid cells with early termination
+    for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+        for (int dy = -searchRadius; dy <= searchRadius; dy++) {
+            for (int dz = -searchRadius; dz <= searchRadius; dz++) {
                 ivec3 neighborGridPos = myGridPos + ivec3(dx, dy, dz);
                 
                 // Skip if neighbor is outside grid bounds
@@ -118,24 +122,34 @@ void main() {
                 uint neighborGridIndex = gridToIndex(neighborGridPos);
                 uint localCellCount = gridCounts[neighborGridIndex];
                 
+                // OPTIMIZED: Early exit if no cells in this grid
+                if (localCellCount == 0) {
+                    continue;
+                }
+                
+                // OPTIMIZED: Limit search to reasonable number of cells
+                uint maxCellsToCheck = min(localCellCount, uint(u_maxCellsPerGrid));
+                
                 // Check all cells in this neighboring grid cell
-                for (uint i = 0; i < localCellCount && i < u_maxCellsPerGrid; i++) {
+                for (uint i = 0; i < maxCellsToCheck; i++) {
                     uint gridBufferIndex = neighborGridIndex * u_maxCellsPerGrid + i;
                     uint otherIndex = gridCells[gridBufferIndex];
                     
-                    // Skip self
-                    if (otherIndex == index) {
+                    // Skip self and invalid indices
+                    if (otherIndex == index || otherIndex >= cellCount) {
                         continue;
                     }
-                      // Skip if other index is out of bounds
-                    if (otherIndex >= cellCount) {
-                        continue;
-                    }
-                    vec3 otherPos = inputCells[otherIndex].positionAndMass.xyz;
-                    float otherRadius = pow(inputCells[otherIndex].positionAndMass.w, 1./3.);
                     
+                    vec3 otherPos = inputCells[otherIndex].positionAndMass.xyz;
                     vec3 delta = myPos - otherPos;
                     float distance = length(delta);
+                    
+                    // OPTIMIZED: Early distance check before radius calculation
+                    if (distance > 4.0) { // Approximate max interaction distance
+                        continue;
+                    }
+                    
+                    float otherRadius = pow(inputCells[otherIndex].positionAndMass.w, 1./3.);
                     float minDistance = myRadius + otherRadius;
                     
                     if (distance < minDistance && distance > 0.001) {

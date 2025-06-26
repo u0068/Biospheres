@@ -92,6 +92,11 @@ struct CellManager
     GLuint gridBuffer{};       // SSBO for grid cell data (stores cell indices)
     GLuint gridCountBuffer{};  // SSBO for grid cell counts
     GLuint gridOffsetBuffer{}; // SSBO for grid cell starting offsets
+    
+    // PERFORMANCE OPTIMIZATION: Additional buffers for 100k cells
+    GLuint gridHashBuffer{};   // Hash-based lookup for sparse grids
+    GLuint activeCellsBuffer{}; // Buffer containing only active grid cells
+    uint32_t activeGridCount{0}; // Number of active grid cells
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
