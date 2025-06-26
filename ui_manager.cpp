@@ -692,7 +692,6 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     {
         // Invalidate keyframes when genome changes
         keyframesInitialized = false;
-        std::cout << "Genome changed - keyframes invalidated\n";
         
         // Reset the simulation with the new genome
         cellManager.resetSimulation();
@@ -1305,8 +1304,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 int nearestKeyframeIndex = findNearestKeyframe(targetTime);
                 const SimulationKeyframe& nearestKeyframe = keyframes[nearestKeyframeIndex];
                 
-                std::cout << "Scrubbing to time " << targetTime << "s using keyframe " 
-                          << nearestKeyframeIndex << " (keyframe time: " << nearestKeyframe.time << "s)\n";
+
                 
                 // Restore from nearest keyframe
                 restoreFromKeyframe(cellManager, nearestKeyframeIndex);
@@ -1324,8 +1322,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     float physicsTimeStep = config::physicsTimeStep;
                     int maxSteps = (int)(timeRemaining / physicsTimeStep) + 1;
                     
-                    std::cout << "Fast-forwarding " << timeRemaining << "s from keyframe " 
-                              << nearestKeyframeIndex << " to reach target time " << targetTime << "s\n";
+
                     
                     for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
                     {
@@ -1536,7 +1533,6 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     // Save current time slider position
     float savedCurrentTime = currentTime;
     float savedTargetTime = targetTime;
-    std::cout << "Initializing keyframes for time scrubber...\n";
     
     // Clear existing keyframes
     keyframes.clear();
@@ -1553,7 +1549,6 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     
     // Capture initial keyframe at time 0
     captureKeyframe(cellManager, 0.0f, 0);
-    std::cout << "Captured initial keyframe at time 0.0s\n";
     
     // Calculate time interval between keyframes
     float timeInterval = maxTime / (MAX_KEYFRAMES - 1);
@@ -1577,17 +1572,9 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
         
         // Capture keyframe
         captureKeyframe(cellManager, targetTime, i);
-        
-        // Progress feedback
-        if (i % 10 == 0 || i == MAX_KEYFRAMES - 1)
-        {
-            std::cout << "Captured keyframe " << i << "/" << (MAX_KEYFRAMES - 1) 
-                      << " at time " << targetTime << "s\n";
-        }
     }
     
     keyframesInitialized = true;
-    std::cout << "Keyframe initialization complete!\n";
     // Check for potential timing accuracy issues with keyframe intervals
     checkKeyframeTimingAccuracy();
 
@@ -1603,7 +1590,6 @@ void UIManager::updateKeyframes(CellManager& cellManager, float newMaxTime)
     // Save current time slider position
     float savedCurrentTime = currentTime;
     float savedTargetTime = targetTime;
-    std::cout << "Updating keyframes for new max time: " << newMaxTime << "s\n";
     maxTime = newMaxTime;
     keyframesInitialized = false;
     initializeKeyframes(cellManager);
@@ -1647,8 +1633,7 @@ void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
     if (keyframeIndex < 0 || keyframeIndex >= keyframes.size() || !keyframes[keyframeIndex].isValid)
         return;
     
-    std::cout << "Restoring from keyframe " << keyframeIndex << " (time: " 
-              << keyframes[keyframeIndex].time << "s, " << keyframes[keyframeIndex].cellCount << " cells)\n";
+
     
     // Reset simulation
     cellManager.resetSimulation();
@@ -1657,21 +1642,16 @@ void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
     GenomeData genomeCopy = keyframes[keyframeIndex].genome;
     cellManager.addGenomeToBuffer(genomeCopy);
     
-    // Restore cell states with age correction for accurate timing
-    for (int i = 0; i < keyframes[keyframeIndex].cellCount && i < keyframes[keyframeIndex].cellStates.size(); i++)
-    {
-        ComputeCell restoredCell = keyframes[keyframeIndex].cellStates[i];
+    // CRITICAL FIX: Use direct restoration method that bypasses addition buffer system
+    if (keyframes[keyframeIndex].cellCount > 0) {
+        // Restore cells directly to GPU buffer
+        cellManager.restoreCellsDirectlyToGPUBuffer(keyframes[keyframeIndex].cellStates);
         
-        // CRITICAL FIX: The cell age in the keyframe represents how old the cell was at keyframe time
-        // We need to preserve this relative age for accurate split timing
-        // The age should remain as it was when the keyframe was captured
-        // This ensures cells will split at the same relative times during resimulation
-        
-        cellManager.addCellToStagingBuffer(restoredCell);
+        // Update CPU cell data to match GPU
+        cellManager.setCPUCellData(keyframes[keyframeIndex].cellStates);
     }
     
     // CRITICAL FIX: Ensure proper GPU buffer synchronization
-    cellManager.addStagedCellsToGPUBuffer();
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
     
     // Force update of spatial grid after restoration
@@ -1746,13 +1726,7 @@ void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyfra
     
     keyframe.isValid = true;
     
-    // Debug output for verification
-    if (keyframe.cellCount > 0 && keyframeIndex % 10 == 0) {
-        std::cout << "Keyframe " << keyframeIndex << " captured: " << keyframe.cellCount 
-                  << " cells, first cell pos: (" << keyframe.cellStates[0].positionAndMass.x 
-                  << ", " << keyframe.cellStates[0].positionAndMass.y 
-                  << ", " << keyframe.cellStates[0].positionAndMass.z << ")\n";
-    }
+
 }
 
 void UIManager::checkKeyframeTimingAccuracy()
@@ -1775,15 +1749,7 @@ void UIManager::checkKeyframeTimingAccuracy()
     // Check if keyframe intervals are too large compared to split timing
     float timingRatio = keyframeInterval / shortestSplitInterval;
     
-    if (timingRatio > 0.5f) {
-        std::cout << "WARNING: Keyframe timing accuracy concern detected!\n";
-        std::cout << "Keyframe interval: " << keyframeInterval << "s\n";
-        std::cout << "Shortest split interval: " << shortestSplitInterval << "s\n";
-        std::cout << "Ratio: " << timingRatio << " (>0.5 may cause split timing inaccuracies)\n";
-        std::cout << "Consider reducing max time or increasing keyframe count for better accuracy.\n";
-    } else {
-        std::cout << "Keyframe timing accuracy: Good (ratio: " << timingRatio << ")\n";
-    }
+
 }
 
 // Helper for delta-aware orientation sliders

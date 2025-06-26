@@ -388,6 +388,9 @@ struct CellManager
     void runFrustumCullingLOD(const Camera& camera);
     int getVisibleCellCount() const { return visibleCellCount; }
 
+    void restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell> &cells); // For keyframe restoration
+    void setCPUCellData(const std::vector<ComputeCell> &cells); // For keyframe restoration
+
 private:
     void runPhysicsCompute(float deltaTime);
     void runUpdateCompute(float deltaTime);

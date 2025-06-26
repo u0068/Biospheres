@@ -373,6 +373,61 @@ void CellManager::addStagedCellsToGPUBuffer()
     }
 }
 
+void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell> &cells)
+{
+    // This function is specifically for keyframe restoration
+    // It bypasses the addition buffer system and writes directly to main GPU buffers
+    
+    int newCellCount = static_cast<int>(cells.size());
+    
+    if (newCellCount > cellLimit) {
+        std::cout << "Warning: Restoration cell count exceeds limit!\n";
+        return;
+    }
+    
+    if (newCellCount == 0) {
+        return;
+    }
+    
+    TimerGPU gpuTimer("Restoring Cells Directly to GPU Buffers");
+    
+    // Update main cell buffers directly (both current and previous for consistency)
+    for (int i = 0; i < 3; i++) { // Update all 3 buffers for proper rotation
+        glNamedBufferSubData(cellBuffer[i],
+                             0, // Start from beginning
+                             newCellCount * sizeof(ComputeCell),
+                             cells.data());
+    }
+    
+    // Update cell count directly
+    cellCount = newCellCount;
+    GLuint counts[2] = { static_cast<GLuint>(cellCount), 0 }; // cellCount, pendingCellCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 2, counts);
+    
+    // Sync staging buffer
+    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    
+    // Clear addition buffer since we're not using it
+    glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    
+    // Ensure GPU buffers are synchronized before proceeding
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::setCPUCellData(const std::vector<ComputeCell> &cells)
+{
+    // This function updates the CPU cell storage to match restored GPU data
+    cpuCells.clear();
+    cpuCells.reserve(cells.size());
+    
+    for (const auto& cell : cells) {
+        cpuCells.push_back(cell);
+    }
+    
+    cellCount = static_cast<int>(cells.size());
+    cpuPendingCellCount = 0;
+}
+
 glm::vec3 pitchYawToVec3(float pitch, float yaw) {
     return glm::vec3(
         cos(pitch) * sin(yaw),
@@ -1397,7 +1452,7 @@ void CellManager::syncCellPositionsFromGPU()
             }
         }
 
-        std::cout << "Synced " << cellCount << " cell positions from GPU via staging buffer" << std::endl;
+
     }
     else
     {
