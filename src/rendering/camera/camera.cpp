@@ -1,5 +1,5 @@
 #include "camera.h"
-#include "input.h"
+#include "../../input/input.h"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 

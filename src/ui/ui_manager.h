@@ -3,8 +3,8 @@
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
-#include "camera.h"
-#include "genome.h"
+#include "../rendering/camera/camera.h"
+#include "../simulation/genome/genome.h"
 
 // Forward declarations
 struct CellManager; // Forward declaration to avoid circular dependency

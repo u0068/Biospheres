@@ -4,13 +4,12 @@
 #include <glad/glad.h>
 #include <cstddef> // for offsetof
 
-#include "shader_class.h"
-#include "input.h"
-#include "config.h"
-#include "sphere_mesh.h"
-#include "config.h"
-#include "genome.h"
-#include "frustum_culling.h"
+#include "../../rendering/core/shader_class.h"
+#include "../../input/input.h"
+#include "../../core/config.h"
+#include "../../rendering/core/mesh/sphere_mesh.h"
+#include "../genome/genome.h"
+#include "../../rendering/systems/frustum_culling.h"
 
 // Forward declaration
 class Camera;

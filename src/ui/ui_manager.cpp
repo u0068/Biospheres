@@ -1,6 +1,6 @@
 #include "ui_manager.h"
-#include "cell_manager.h"
-#include "config.h"
+#include "../simulation/cell/cell_manager.h"
+#include "../core/config.h"
 #include "imgui.h"
 #include <algorithm>
 #include <string>
@@ -9,8 +9,8 @@
 #include <cstdio>
 #include <iostream>
 
-#include "audio_engine.h"
-#include "scene_manager.h"
+#include "../audio/audio_engine.h"
+#include "../scene/scene_manager.h"
 
 // Ensure std::min and std::max are available
 #ifdef min
@@ -194,7 +194,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     if (!perfMonitor.frameTimeHistory.empty())
     {
         ImGui::PlotLines("##FrameTime", perfMonitor.frameTimeHistory.data(),
-                         perfMonitor.frameTimeHistory.size(), 0, nullptr,
+                         static_cast<int>(perfMonitor.frameTimeHistory.size()), 0, nullptr,
                          0.0f, 50.0f, ImVec2(0, 80));
     }
 
@@ -202,7 +202,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     if (!perfMonitor.fpsHistory.empty())
     {
         ImGui::PlotLines("##FPS", perfMonitor.fpsHistory.data(),
-                         perfMonitor.fpsHistory.size(), 0, nullptr,
+                         static_cast<int>(perfMonitor.fpsHistory.size()), 0, nullptr,
                          0.0f, 120.0f, ImVec2(0, 80));
     } // === Performance Bars ===
     ImGui::Spacing();
@@ -547,7 +547,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
                 *out_text = genome->modes[idx].name.c_str();
                 return true;
             }
-            return false; }, &currentGenome, currentGenome.modes.size()))
+            return false; }, &currentGenome, static_cast<int>(currentGenome.modes.size())))
     {
         // Initial mode changed
         genomeChanged = true;
@@ -564,8 +564,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     {
         ModeSettings newMode;
         newMode.name = "Mode " + std::to_string(currentGenome.modes.size());
-        newMode.childA.modeNumber = currentGenome.modes.size();
-        newMode.childB.modeNumber = currentGenome.modes.size();
+        newMode.childA.modeNumber = static_cast<int>(currentGenome.modes.size());
+        newMode.childB.modeNumber = static_cast<int>(currentGenome.modes.size());
         currentGenome.modes.push_back(newMode);
         genomeChanged = true;
     }
@@ -577,7 +577,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         {
             currentGenome.modes.erase(currentGenome.modes.begin() + selectedModeIndex);
             if (selectedModeIndex >= currentGenome.modes.size())
-                selectedModeIndex = currentGenome.modes.size() - 1;
+                selectedModeIndex = static_cast<int>(currentGenome.modes.size()) - 1;
             genomeChanged = true;
         }
     }
@@ -585,7 +585,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
 
     // Mode List
     ImGui::BeginChild("ModeList", ImVec2(200, -1), true);
-    for (int i = 0; i < currentGenome.modes.size(); i++)
+    for (int i = 0; i < static_cast<int>(currentGenome.modes.size()); i++)
     {
         // Color the mode tab with the mode's color - keep bright for unselected modes
         ImGui::PushStyleColor(ImGuiCol_Button,
@@ -780,7 +780,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::Text("Pitch");
             float newP = lastPitchA[modeIndex];
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool pitchChanged = ImGui::SliderFloat("##PitchSlider", &newP, -180.0f, 180.0f, "%.0f", 1.0f);
+            bool pitchChanged = ImGui::SliderFloat("##PitchSlider", &newP, -180.0f, 180.0f, "%.0f");
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::PushItemWidth(90.0f);
@@ -797,7 +797,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::Text("Yaw");
             float newY = lastYawA[modeIndex];
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool yawChanged = ImGui::SliderFloat("##YawSlider", &newY, -180.0f, 180.0f, "%.0f", 1.0f);
+            bool yawChanged = ImGui::SliderFloat("##YawSlider", &newY, -180.0f, 180.0f, "%.0f");
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::PushItemWidth(90.0f);
@@ -814,7 +814,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::Text("Roll");
             float newR = lastRollA[modeIndex];
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool rollChanged = ImGui::SliderFloat("##RollSlider", &newR, -180.0f, 180.0f, "%.0f", 1.0f);
+            bool rollChanged = ImGui::SliderFloat("##RollSlider", &newR, -180.0f, 180.0f, "%.0f");
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::PushItemWidth(90.0f);
@@ -851,7 +851,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::Text("Pitch");
             float newP = lastPitchB[modeIndex];
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool pitchChanged = ImGui::SliderFloat("##PitchSliderB", &newP, -180.0f, 180.0f, "%.0f", 1.0f);
+            bool pitchChanged = ImGui::SliderFloat("##PitchSliderB", &newP, -180.0f, 180.0f, "%.0f");
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::PushItemWidth(90.0f);
@@ -868,7 +868,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::Text("Yaw");
             float newY = lastYawB[modeIndex];
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool yawChanged = ImGui::SliderFloat("##YawSliderB", &newY, -180.0f, 180.0f, "%.0f", 1.0f);
+            bool yawChanged = ImGui::SliderFloat("##YawSliderB", &newY, -180.0f, 180.0f, "%.0f");
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::PushItemWidth(90.0f);
@@ -885,7 +885,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::Text("Roll");
             float newR = lastRollB[modeIndex];
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool rollChanged = ImGui::SliderFloat("##RollSliderB", &newR, -180.0f, 180.0f, "%.0f", 1.0f);
+            bool rollChanged = ImGui::SliderFloat("##RollSliderB", &newR, -180.0f, 180.0f, "%.0f");
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::PushItemWidth(90.0f);
@@ -984,12 +984,12 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
                              *out_text = uiManager->currentGenome.modes[idx].name.c_str();
                              return true;
                          }
-                         return false; }, this, currentGenome.modes.size()))
+                         return false; }, this, static_cast<int>(currentGenome.modes.size())))
     {
         // Mode selection changed - clamp to valid range
         if (child.modeNumber >= currentGenome.modes.size())
         {
-            child.modeNumber = currentGenome.modes.size() - 1;
+            child.modeNumber = static_cast<int>(currentGenome.modes.size()) - 1;
         }
         if (child.modeNumber < 0)
         {

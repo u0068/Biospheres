@@ -2,9 +2,17 @@
 
 A high-performance 3D cellular simulation using GPU compute shaders and instanced rendering in OpenGL. This project demonstrates real-time physics simulation of thousands of spherical cells with efficient GPU-based rendering.
 
-## Recent Code Cleanup (June 2025)
+## Recent Updates (June 2025)
 
-This project has undergone significant code cleanup and refactoring to improve maintainability, readability, and organization:
+This project has undergone significant organizational improvements and code cleanup to improve maintainability, readability, and scalability:
+
+### 📁 Project Reorganization (Latest)
+- **Complete directory restructure**: Moved all source files from root into organized `src/` directories
+- **Functional organization**: Grouped files by purpose (rendering, simulation, audio, UI, etc.)
+- **Dependency consolidation**: Unified all external libraries under `third_party/`
+- **Shader organization**: Categorized shaders by usage (cell physics, rendering, spatial operations)
+- **Build separation**: Moved project files to dedicated `build_files/` directory
+- **Documentation**: Created comprehensive `PROJECT_STRUCTURE.md` guide
 
 ### 🧹 Code Organization Improvements
 - **Modularized main.cpp**: Extracted window state management, performance monitoring, input processing, and rendering into separate functions
@@ -77,24 +85,29 @@ This project has undergone significant code cleanup and refactoring to improve m
 4. **Instance Rendering**: Extract position/radius data for instanced sphere rendering
 5. **Fragment Shading**: Per-pixel lighting and color calculation
 
-### File Structure (Updated)
+### File Structure (Reorganized)
 ```
+Bio-Spheres/
 ├── main.cpp                 # Application entry point with modularized main loop
-│   ├── Window state management functions
-│   ├── Performance monitoring utilities  
-│   ├── Input processing pipeline
-│   └── Rendering pipeline functions
-├── cell_manager.*          # Cell simulation and GPU buffer management (cleaned up)
-├── sphere_mesh.*           # Instanced sphere geometry generation
-├── camera.*                # 3D camera implementation
-├── shader_class.*          # Shader compilation with improved error handling
-├── config.h                # Organized configuration constants with clear sections
-├── shaders/
-│   ├── sphere.vert         # Instanced sphere vertex shader
-│   ├── sphere.frag         # Sphere fragment shader with lighting
-│   ├── cell_physics.comp   # Physics computation shader
-│   └── cell_update.comp    # Position/velocity update shader
-└── Libraries/              # External dependencies
+├── PROJECT_STRUCTURE.md     # Detailed project organization documentation
+├── src/                     # 🚀 SOURCE CODE (organized by functionality)
+│   ├── core/               # Core system configuration and utilities
+│   ├── rendering/          # Camera, shaders, OpenGL helpers, mesh generation
+│   ├── simulation/         # Cell management, genome system, physics
+│   ├── ui/                 # User interface and ImGui integration
+│   ├── audio/              # Audio engine and synthesizer
+│   ├── input/              # Input handling system
+│   ├── scene/              # Scene management
+│   └── utils/              # Utility functions and timing
+├── shaders/                # 🎨 SHADER FILES (organized by usage)
+│   ├── cell/               # Cell physics, lifecycle, and management
+│   ├── rendering/          # Sphere rendering, culling, debug visualizations
+│   ├── spatial/            # Spatial partitioning and grid operations
+│   └── common/             # Shared shader utilities
+├── third_party/            # 📦 EXTERNAL DEPENDENCIES (ImGui, OpenGL, etc.)
+├── Biospheres.sln          # 🔧 Visual Studio solution file
+├── Biospheres.vcxproj*     # 🔧 Visual Studio project files
+└── docs/                   # 📚 DOCUMENTATION
 ```
 
 ## Dependencies

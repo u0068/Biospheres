@@ -1,7 +1,7 @@
 #include "cell_manager.h"
-#include "camera.h"
-#include "config.h"
-#include "ui_manager.h"
+#include "../../rendering/camera/camera.h"
+#include "../../core/config.h"
+#include "../../ui/ui_manager.h"
 #include <iostream>
 #include <cassert>
 #include <cfloat>
@@ -16,8 +16,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-#include "genome.h"
-#include "timer.h"
+#include "../genome/genome.h"
+#include "../../utils/timer.h"
 
 // ——— simple "delta" rotation around a local axis ———
 static void applyLocalRotation(glm::quat &q, const glm::vec3 &axis, float deltaDeg) {
@@ -38,31 +38,31 @@ CellManager::CellManager()
     initializeIDSystem();
 
     // Initialize compute shaders
-    physicsShader = new Shader("shaders/cell_physics_spatial.comp"); // Use spatial partitioning version
-    updateShader = new Shader("shaders/cell_update.comp");
-    internalUpdateShader = new Shader("shaders/cell_update_internal.comp");
-    extractShader = new Shader("shaders/extract_instances.comp");
-    cellCounterShader = new Shader("shaders/cell_counter.comp");
-    cellAdditionShader = new Shader("shaders/apply_additions.comp");
-    idManagerShader = new Shader("shaders/id_manager.comp");
+    physicsShader = new Shader("shaders/cell/physics/cell_physics_spatial.comp"); // Use spatial partitioning version
+    updateShader = new Shader("shaders/cell/physics/cell_update.comp");
+    internalUpdateShader = new Shader("shaders/cell/physics/cell_update_internal.comp");
+    extractShader = new Shader("shaders/cell/management/extract_instances.comp");
+    cellCounterShader = new Shader("shaders/cell/physics/cell_counter.comp");
+    cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
+    idManagerShader = new Shader("shaders/cell/management/id_manager.comp");
 
     // Initialize spatial grid shaders
-    gridClearShader = new Shader("shaders/grid_clear.comp");
-    gridAssignShader = new Shader("shaders/grid_assign.comp");
-    gridPrefixSumShader = new Shader("shaders/grid_prefix_sum.comp");
-    gridInsertShader = new Shader("shaders/grid_insert.comp");
+    gridClearShader = new Shader("shaders/spatial/grid_clear.comp");
+    gridAssignShader = new Shader("shaders/spatial/grid_assign.comp");
+    gridPrefixSumShader = new Shader("shaders/spatial/grid_prefix_sum.comp");
+    gridInsertShader = new Shader("shaders/spatial/grid_insert.comp");
     
     // Initialize gizmo shaders
-    gizmoExtractShader = new Shader("shaders/gizmo_extract.comp");
-    gizmoShader = new Shader("shaders/gizmo.vert", "shaders/gizmo.frag");
+    gizmoExtractShader = new Shader("shaders/rendering/debug/gizmo_extract.comp");
+    gizmoShader = new Shader("shaders/rendering/debug/gizmo.vert", "shaders/rendering/debug/gizmo.frag");
     
     // Initialize ring gizmo shaders
-    ringGizmoExtractShader = new Shader("shaders/ring_gizmo_extract.comp");
-    ringGizmoShader = new Shader("shaders/ring_gizmo.vert", "shaders/ring_gizmo.frag");
+    ringGizmoExtractShader = new Shader("shaders/rendering/debug/ring_gizmo_extract.comp");
+    ringGizmoShader = new Shader("shaders/rendering/debug/ring_gizmo.vert", "shaders/rendering/debug/ring_gizmo.frag");
     
     // Initialize adhesion line shaders
-    adhesionLineExtractShader = new Shader("shaders/adhesion_line_extract.comp");
-    adhesionLineShader = new Shader("shaders/adhesion_line.vert", "shaders/adhesion_line.frag");
+    adhesionLineExtractShader = new Shader("shaders/rendering/debug/adhesion_line_extract.comp");
+    adhesionLineShader = new Shader("shaders/rendering/debug/adhesion_line.vert", "shaders/rendering/debug/adhesion_line.frag");
     
     // Initialize gizmo buffers
     initializeGizmoBuffers();
@@ -1948,8 +1948,8 @@ void CellManager::cleanupAdhesionLines()
 void CellManager::initializeLODSystem()
 {
     // Initialize LOD shaders
-    lodComputeShader = new Shader("shaders/sphere_lod.comp");
-    lodVertexShader = new Shader("shaders/sphere_lod.vert", "shaders/sphere_lod.frag");
+    lodComputeShader = new Shader("shaders/rendering/sphere/sphere_lod.comp");
+    lodVertexShader = new Shader("shaders/rendering/sphere/sphere_lod.vert", "shaders/rendering/sphere/sphere_lod.frag");
     
     // Generate LOD sphere meshes
     sphereMesh.generateLODSpheres(1.0f);
@@ -2192,8 +2192,8 @@ int CellManager::getTotalVertexCount() const {
 void CellManager::initializeFrustumCulling()
 {
     // Initialize frustum culling compute shaders
-    frustumCullShader = new Shader("shaders/frustum_cull.comp");
-    frustumCullLODShader = new Shader("shaders/frustum_cull_lod.comp");
+    frustumCullShader = new Shader("shaders/rendering/culling/frustum_cull.comp");
+    frustumCullLODShader = new Shader("shaders/rendering/culling/frustum_cull_lod.comp");
     
     // Create buffer for visible instances after frustum culling
     glCreateBuffers(1, &visibleInstanceBuffer);

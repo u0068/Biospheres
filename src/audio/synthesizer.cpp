@@ -1,5 +1,5 @@
 #include "synthesizer.h"
-#include "config.h"
+#include "../core/config.h"
 
 SynthEngine::SynthEngine(double sampleRate)
     : sampleRate(sampleRate), phase(0), time(0), noteTime(0), currentNote(0) {

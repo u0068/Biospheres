@@ -1,7 +1,8 @@
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "shader_class.h"
+// Third-party includes
+#define WIN32_LEAN_AND_MEAN
+#include "third_party/imgui/imgui.h"
+#include "third_party/imgui/imgui_impl_glfw.h"
+#include "third_party/imgui/imgui_impl_opengl3.h"
 
 #include <iostream>
 #include <glad/glad.h>
@@ -11,19 +12,35 @@
 #include <thread>
 #include <chrono>
 
+// Core includes
+#include "src/core/config.h"
+
+// Audio includes
 #define MINIAUDIO_IMPLEMENTATION
-#include "audio_engine.h"
-#include "cell_manager.h"
-#include "glad_helpers.h"
-#include "glfw_helpers.h"
-#include "imgui_helpers.h"
-#include "config.h"
-#include "input.h"
-#include "ui_manager.h"
-#include "camera.h"
-#include "timer.h"
-#include "synthesizer.h"
-#include "scene_manager.h"
+#include "src/audio/audio_engine.h"
+#include "src/audio/synthesizer.h"
+
+// Simulation includes
+#include "src/simulation/cell/cell_manager.h"
+
+// Rendering includes
+#include "src/rendering/core/shader_class.h"
+#include "src/rendering/core/glad_helpers.h"
+#include "src/rendering/core/glfw_helpers.h"
+#include "src/rendering/camera/camera.h"
+
+// UI includes
+#include "src/ui/ui_manager.h"
+#include "src/ui/imgui_helpers.h"
+
+// Input includes
+#include "src/input/input.h"
+
+// Utility includes
+#include "src/utils/timer.h"
+
+// Scene includes
+#include "src/scene/scene_manager.h"
 
 // Simple OpenGL error checking function
 void checkGLError(const char *operation)
@@ -288,7 +305,7 @@ int main()
 	initGLAD(window);
 	setupGLFWDebugFlags();
 	// Load the sphere shader for instanced rendering
-	Shader sphereShader("shaders/sphere.vert", "shaders/sphere.frag");
+	    Shader sphereShader("shaders/rendering/sphere/sphere.vert", "shaders/rendering/sphere/sphere.frag");
 
 		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
 		Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene

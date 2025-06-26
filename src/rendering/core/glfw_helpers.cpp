@@ -1,6 +1,6 @@
 #include <glad/glad.h>
 #include "glfw_helpers.h"
-#include "config.h"
+#include "../../core/config.h"
 
 void initGLFW()
 {

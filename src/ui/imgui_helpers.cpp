@@ -1,5 +1,5 @@
 #include "imgui_helpers.h"
-#include "config.h"
+#include "../core/config.h"
 
 ImGuiIO& initImGui(GLFWwindow* window)
 {

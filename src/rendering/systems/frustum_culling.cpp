@@ -1,5 +1,5 @@
 #include "frustum_culling.h"
-#include "camera.h"
+#include "../camera/camera.h"
 
 namespace FrustumCulling {
     
