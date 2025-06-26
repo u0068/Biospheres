@@ -429,6 +429,9 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     
     ImGui::Checkbox("Show Adhesion Lines", &showAdhesionLines);
     addTooltip("Display orange lines connecting sibling cells when their parent has adhesion enabled");
+    
+    ImGui::Checkbox("Wireframe Mode", &wireframeMode);
+    addTooltip("Render cells in wireframe mode to verify back face culling is working");
 
     // Show current selection info
     if (cellManager.hasSelectedCell())    {

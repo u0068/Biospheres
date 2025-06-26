@@ -163,7 +163,7 @@ struct CellManager
     void initializeGPUBuffers();
     void resetSimulation();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
-    void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera);
+    void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera, bool wireframe = false);
     // Gizmo orientation visualization
     GLuint gizmoBuffer{};           // Buffer for gizmo line vertices
     GLuint gizmoVAO{};              // VAO for gizmo rendering
@@ -362,7 +362,7 @@ struct CellManager
     void initializeLODSystem();
     void cleanupLODSystem();
     void updateLODLevels(const Camera& camera);
-    void renderCellsLOD(glm::vec2 resolution, const Camera& camera);
+    void renderCellsLOD(glm::vec2 resolution, const Camera& camera, bool wireframe = false);
     void runLODCompute(const Camera& camera);
 
 private:

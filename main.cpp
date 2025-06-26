@@ -171,7 +171,7 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 	{		// Render the active simulation with its camera
 		try
 		{
-			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera);
+			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera, uiManager.wireframeMode);
 			checkGLError("renderCells");
 			
 			// Render gizmos if enabled

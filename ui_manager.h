@@ -93,6 +93,9 @@ public:
     
     // Adhesion line visualization
     bool showAdhesionLines = false;      // Toggle for showing adhesion lines between sibling cells
+    
+    // Wireframe rendering mode
+    bool wireframeMode = false;          // Toggle for wireframe rendering mode
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;

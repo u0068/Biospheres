@@ -563,11 +563,11 @@ void CellManager::runCellCounter()  // This only count active cells in the gpu, 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint));
 }
 
-void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera)
+void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera, bool wireframe)
 {
     // Use LOD system if enabled, otherwise fall back to regular rendering
     if (useLODSystem) {
-        renderCellsLOD(resolution, camera);
+        renderCellsLOD(resolution, camera, wireframe);
         return;
     }
     
@@ -628,8 +628,8 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         cellShader.setMat4("uProjection", projection);
         cellShader.setMat4("uView", view);
         cellShader.setVec3("uCameraPos", camera.getPosition());
-        cellShader.setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
-
+        // Set fixed world-space directional light (like sunlight)
+        cellShader.setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
         // Set selection highlighting uniforms
         if (selectedCell.isValid)
         {
@@ -645,9 +645,29 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         }
         cellShader.setFloat("uTime", static_cast<float>(glfwGetTime())); // Enable depth testing for proper 3D rendering (don't clear here - already done in main loop)
         glEnable(GL_DEPTH_TEST);
+        
+        // Enable back face culling for better performance
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glFrontFace(GL_CCW);
+        
+        // Set polygon mode based on wireframe flag
+        if (wireframe) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            // Keep culling enabled in wireframe mode to see the effect of back face culling
+            // Uncomment the next line ONLY if you want to see all triangles (front and back)
+            // glDisable(GL_CULL_FACE);
+        } else {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
 
         // Render instanced spheres
         sphereMesh.render(cellCount);
+        
+        // Restore OpenGL state - disable culling for other rendering operations
+        glDisable(GL_CULL_FACE);
+        // Restore polygon mode to fill
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
     catch (const std::exception &e)
     {
@@ -1947,7 +1967,7 @@ void CellManager::updateLODLevels(const Camera& camera)
     flushBarriers();
 }
 
-void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
+void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera, bool wireframe)
 {
     if (cellCount == 0 || !useLODSystem) {
         return;
@@ -1979,7 +1999,8 @@ void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
         lodVertexShader->setMat4("uProjection", projection);
         lodVertexShader->setMat4("uView", view);
         lodVertexShader->setVec3("uCameraPos", camera.getPosition());
-        lodVertexShader->setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
+        // Set fixed world-space directional light (like sunlight)
+        lodVertexShader->setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
         
         // Selection highlighting uniforms
         if (selectedCell.isValid) {
@@ -1996,6 +2017,21 @@ void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
         // Enable depth testing
         glEnable(GL_DEPTH_TEST);
         
+        // Enable back face culling for better performance
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glFrontFace(GL_CCW);
+        
+        // Set polygon mode based on wireframe flag
+        if (wireframe) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            // Keep culling enabled in wireframe mode to see the effect of back face culling
+            // Uncomment the next line ONLY if you want to see all triangles (front and back)
+            // glDisable(GL_CULL_FACE);
+        } else {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
+        
         // Render each LOD level with its appropriate mesh detail and instance data
         for (int lodLevel = 0; lodLevel < 4; lodLevel++) {
             if (lodInstanceCounts[lodLevel] > 0) {
@@ -2004,6 +2040,11 @@ void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
                 sphereMesh.renderLOD(lodLevel, lodInstanceCounts[lodLevel], 0);
             }
         }
+        
+        // Restore OpenGL state - disable culling for other rendering operations
+        glDisable(GL_CULL_FACE);
+        // Restore polygon mode to fill
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         
     } catch (const std::exception &e) {
         std::cerr << "Exception in renderCellsLOD: " << e.what() << "\n";

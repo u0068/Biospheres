@@ -50,15 +50,15 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
             int current = lat * (longitudeSegments + 1) + lon;
             int next = current + longitudeSegments + 1;
             
-            // First triangle
+            // First triangle (counter-clockwise from outside)
             indices[0].push_back(current);
-            indices[0].push_back(next);
             indices[0].push_back(current + 1);
+            indices[0].push_back(next);
             
-            // Second triangle
+            // Second triangle (counter-clockwise from outside)
             indices[0].push_back(current + 1);
-            indices[0].push_back(next);
             indices[0].push_back(next + 1);
+            indices[0].push_back(next);
         }
     }
     
@@ -103,15 +103,15 @@ void SphereMesh::generateLODSpheres(float radius) {
                 int current = lat * (lonSegments + 1) + lon;
                 int next = current + lonSegments + 1;
                 
-                // First triangle
+                // First triangle (counter-clockwise from outside)
                 indices[lod].push_back(current);
-                indices[lod].push_back(next);
                 indices[lod].push_back(current + 1);
+                indices[lod].push_back(next);
                 
-                // Second triangle
+                // Second triangle (counter-clockwise from outside)
                 indices[lod].push_back(current + 1);
-                indices[lod].push_back(next);
                 indices[lod].push_back(next + 1);
+                indices[lod].push_back(next);
             }
         }
         

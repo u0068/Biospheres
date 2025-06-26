@@ -25,11 +25,16 @@ void main() {
     // Normalize the normal (interpolation might have changed its length)
     vec3 normal = normalize(vNormal);
     
+    // DEBUG: Visualize normals as colors (comment out for normal rendering)
+    // fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+    // return;
+    
     // Simple lighting calculation
     vec3 lightDir = normalize(uLightDir);
+    vec3 viewDir = normalize(vCameraPos - vWorldPos);
+    
     float lambertian = max(0.1, dot(normal, lightDir));
       // Add some specular reflection
-    vec3 viewDir = normalize(vCameraPos - vWorldPos);
     vec3 reflectDir = reflect(-lightDir, normal);
     float specular = pow(max(0.0, dot(viewDir, reflectDir)), 32.0) * 0.3;
     

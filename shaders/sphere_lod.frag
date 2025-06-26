@@ -20,7 +20,7 @@ void main() {
     vec3 lightDir = normalize(uLightDir);
     
     // Base diffuse lighting
-    float diffuse = max(dot(normal, lightDir), 0.0);
+    float diffuse = max(dot(normal, lightDir), 0.1);
     
     // Standard Phong shading (LOD handled by mesh complexity)
     vec3 viewDir = normalize(vCameraPos - vWorldPos);
