@@ -2,7 +2,12 @@
 #include <cmath>
 #include <iostream>
 
-SphereMesh::SphereMesh() : VAO(0), VBO(0), EBO(0), instanceVBO(0), indexCount(0) {
+SphereMesh::SphereMesh() {
+    // Initialize arrays
+    for (int i = 0; i < LOD_LEVELS; i++) {
+        VAO[i] = VBO[i] = EBO[i] = instanceVBO[i] = 0;
+        indexCount[i] = 0;
+    }
 }
 
 SphereMesh::~SphereMesh() {
@@ -10,8 +15,9 @@ SphereMesh::~SphereMesh() {
 }
 
 void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, float radius) {
-    vertices.clear();
-    indices.clear();
+    // Legacy function - generate only LOD 0
+    vertices[0].clear();
+    indices[0].clear();
     
     const float PI = 3.14159265359f;
     
@@ -34,7 +40,7 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
             // Normal is the same as position for a unit sphere
             vertex.normal = glm::normalize(vertex.position);
             
-            vertices.push_back(vertex);
+            vertices[0].push_back(vertex);
         }
     }
     
@@ -45,98 +51,238 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
             int next = current + longitudeSegments + 1;
             
             // First triangle
-            indices.push_back(current);
-            indices.push_back(next);
-            indices.push_back(current + 1);
+            indices[0].push_back(current);
+            indices[0].push_back(next);
+            indices[0].push_back(current + 1);
             
             // Second triangle
-            indices.push_back(current + 1);
-            indices.push_back(next);
-            indices.push_back(next + 1);
+            indices[0].push_back(current + 1);
+            indices[0].push_back(next);
+            indices[0].push_back(next + 1);
         }
     }
     
-    indexCount = static_cast<int>(indices.size());
+    indexCount[0] = static_cast<int>(indices[0].size());
+}
+
+void SphereMesh::generateLODSpheres(float radius) {
+    const float PI = 3.14159265359f;
     
-    std::cout << "Generated sphere with " << vertices.size() << " vertices and " 
-              << indices.size() << " indices\n";
+    // Generate spheres for all LOD levels
+    for (int lod = 0; lod < LOD_LEVELS; lod++) {
+        vertices[lod].clear();
+        indices[lod].clear();
+        
+        int latSegments = LOD_SEGMENTS[lod];
+        int lonSegments = LOD_SEGMENTS[lod];
+        
+        // Generate vertices for this LOD
+        for (int lat = 0; lat <= latSegments; ++lat) {
+            float theta = lat * PI / latSegments;
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            
+            for (int lon = 0; lon <= lonSegments; ++lon) {
+                float phi = lon * 2 * PI / lonSegments;
+                float sinPhi = sin(phi);
+                float cosPhi = cos(phi);
+                
+                Vertex vertex;
+                vertex.position.x = radius * sinTheta * cosPhi;
+                vertex.position.y = radius * cosTheta;
+                vertex.position.z = radius * sinTheta * sinPhi;
+                
+                vertex.normal = glm::normalize(vertex.position);
+                vertices[lod].push_back(vertex);
+            }
+        }
+        
+        // Generate indices for this LOD
+        for (int lat = 0; lat < latSegments; ++lat) {
+            for (int lon = 0; lon < lonSegments; ++lon) {
+                int current = lat * (lonSegments + 1) + lon;
+                int next = current + lonSegments + 1;
+                
+                // First triangle
+                indices[lod].push_back(current);
+                indices[lod].push_back(next);
+                indices[lod].push_back(current + 1);
+                
+                // Second triangle
+                indices[lod].push_back(current + 1);
+                indices[lod].push_back(next);
+                indices[lod].push_back(next + 1);
+            }
+        }
+        
+        indexCount[lod] = static_cast<int>(indices[lod].size());
+    }
 }
 
 void SphereMesh::setupBuffers() {
-    glCreateVertexArrays(1, &VAO); // DSA way of creating VAO
+    // Legacy function - setup only LOD 0
+    if (vertices[0].empty() || indices[0].empty()) {
+        std::cerr << "Error: Cannot setup buffers with empty vertex/index data\n";
+        return;
+    }
 
-    // Create and populate VBO with DSA
-    glCreateBuffers(1, &VBO);
-    glNamedBufferData(VBO, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+    glGenVertexArrays(1, &VAO[0]);
+    glGenBuffers(1, &VBO[0]);
+    glGenBuffers(1, &EBO[0]);
 
-    // Link VBO to VAO slot 0
-    glVertexArrayVertexBuffer(VAO, 0, VBO, 0, sizeof(Vertex));
+    glBindVertexArray(VAO[0]);
 
-    // Set attribute 0 (position) from slot 0
-    glEnableVertexArrayAttrib(VAO, 0);
-    glVertexArrayAttribFormat(VAO, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
-    glVertexArrayAttribBinding(VAO, 0, 0);
+    // Vertex buffer
+    glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices[0].size() * sizeof(Vertex)), vertices[0].data(), GL_STATIC_DRAW);
 
-    // Set attribute 1 (normal) from slot 0
-    glEnableVertexArrayAttrib(VAO, 1);
-    glVertexArrayAttribFormat(VAO, 1, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal));
-    glVertexArrayAttribBinding(VAO, 1, 0);
+    // Element buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO[0]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices[0].size() * sizeof(unsigned int)), indices[0].data(), GL_STATIC_DRAW);
 
-    // Create and populate EBO (element/index buffer)
-    glCreateBuffers(1, &EBO);
-    glNamedBufferData(EBO, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-    glVertexArrayElementBuffer(VAO, EBO); // Attach index buffer to VAO
+    // Vertex attributes
+    // Position
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    
+    // Normal
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+
+    glBindVertexArray(0);
+}
+
+void SphereMesh::setupLODBuffers() {
+    for (int lod = 0; lod < LOD_LEVELS; lod++) {
+        if (vertices[lod].empty() || indices[lod].empty()) {
+            std::cerr << "Error: Cannot setup LOD " << lod << " buffers with empty vertex/index data\n";
+            continue;
+        }
+
+        glGenVertexArrays(1, &VAO[lod]);
+        glGenBuffers(1, &VBO[lod]);
+        glGenBuffers(1, &EBO[lod]);
+
+        glBindVertexArray(VAO[lod]);
+
+        // Vertex buffer
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[lod]);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices[lod].size() * sizeof(Vertex)), vertices[lod].data(), GL_STATIC_DRAW);
+
+        // Element buffer
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO[lod]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices[lod].size() * sizeof(unsigned int)), indices[lod].data(), GL_STATIC_DRAW);
+
+        // Vertex attributes
+        // Position
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+        
+        // Normal
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+
+        glBindVertexArray(0);
+    }
 }
 
 void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
-    // Associate instance buffer with slot 1 (now 3 vec4s: position+radius, color, orientation)
-    glVertexArrayVertexBuffer(VAO, 1, instanceDataBuffer, 0, 3*sizeof(glm::vec4));
+    // Legacy function - setup only for LOD 0
+    instanceVBO[0] = instanceDataBuffer;
+    
+    glBindVertexArray(VAO[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceDataBuffer);
 
-    // Attribute 2: positionAndRadius (offset 0)
-    glEnableVertexArrayAttrib(VAO, 2);
-    glVertexArrayAttribFormat(VAO, 2, 4, GL_FLOAT, GL_FALSE, 0);
-    glVertexArrayAttribBinding(VAO, 2, 1);
+    // Instance position and radius (vec4)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)0);
+    glVertexAttribDivisor(2, 1);
 
-    // Attribute 3: color (offset sizeof(vec4))
-    glEnableVertexArrayAttrib(VAO, 3);
-    glVertexArrayAttribFormat(VAO, 3, 4, GL_FLOAT, GL_FALSE, sizeof(glm::vec4));
-    glVertexArrayAttribBinding(VAO, 3, 1);
+    // Instance color (vec4)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(4 * sizeof(float)));
+    glVertexAttribDivisor(3, 1);
 
-    // Attribute 4: orientation (offset 2*sizeof(vec4))
-    glEnableVertexArrayAttrib(VAO, 4);
-    glVertexArrayAttribFormat(VAO, 4, 4, GL_FLOAT, GL_FALSE, 2*sizeof(glm::vec4));
-    glVertexArrayAttribBinding(VAO, 4, 1);
+    // Instance orientation (vec4 quaternion)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(8 * sizeof(float)));
+    glVertexAttribDivisor(4, 1);
 
-    // Set divisor to 1 for instancing
-    glVertexArrayBindingDivisor(VAO, 1, 1);
+    glBindVertexArray(0);
+}
+
+void SphereMesh::setupLODInstanceBuffer(GLuint instanceDataBuffer) {
+    // Setup instance buffer for all LOD levels (using standard instance format)
+    for (int lod = 0; lod < LOD_LEVELS; lod++) {
+        instanceVBO[lod] = instanceDataBuffer;
+        
+        glBindVertexArray(VAO[lod]);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceDataBuffer);
+
+        // Standard instance data structure: positionAndRadius (vec4), color (vec4), orientation (vec4)
+        size_t stride = 12 * sizeof(float); // 3 vec4s = 12 floats
+
+        // Instance position and radius (vec4)
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, (void*)0);
+        glVertexAttribDivisor(2, 1);
+
+        // Instance color (vec4)
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(float)));
+        glVertexAttribDivisor(3, 1);
+
+        // Instance orientation (vec4 quaternion)
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+        glVertexAttribDivisor(4, 1);
+
+        glBindVertexArray(0);
+    }
 }
 
 void SphereMesh::render(int instanceCount) const {
-    if (VAO == 0 || indexCount == 0) {
-        std::cerr << "SphereMesh not properly initialized!\n";
-        return;
+    if (VAO[0] == 0 || indexCount[0] == 0 || instanceCount <= 0) return;
+
+    glBindVertexArray(VAO[0]);
+    glDrawElementsInstanced(GL_TRIANGLES, indexCount[0], GL_UNSIGNED_INT, 0, instanceCount);
+    glBindVertexArray(0);
+}
+
+void SphereMesh::renderLOD(int lodLevel, int instanceCount, int instanceOffset) const {
+    if (lodLevel < 0 || lodLevel >= LOD_LEVELS || VAO[lodLevel] == 0 || 
+        indexCount[lodLevel] == 0 || instanceCount <= 0) return;
+
+    glBindVertexArray(VAO[lodLevel]);
+    
+    if (instanceOffset > 0) {
+        // Use glDrawElementsInstancedBaseInstance for offset rendering
+        glDrawElementsInstancedBaseInstance(GL_TRIANGLES, indexCount[lodLevel], GL_UNSIGNED_INT, 
+                                          0, instanceCount, instanceOffset);
+    } else {
+        glDrawElementsInstanced(GL_TRIANGLES, indexCount[lodLevel], GL_UNSIGNED_INT, 0, instanceCount);
     }
     
-    glBindVertexArray(VAO);
-    glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0, instanceCount);
     glBindVertexArray(0);
 }
 
 void SphereMesh::cleanup() {
-    if (EBO != 0) {
-        glDeleteBuffers(1, &EBO);
-        EBO = 0;
+    for (int lod = 0; lod < LOD_LEVELS; lod++) {
+        if (EBO[lod] != 0) {
+            glDeleteBuffers(1, &EBO[lod]);
+            EBO[lod] = 0;
+        }
+        if (VBO[lod] != 0) {
+            glDeleteBuffers(1, &VBO[lod]);
+            VBO[lod] = 0;
+        }
+        if (VAO[lod] != 0) {
+            glDeleteVertexArrays(1, &VAO[lod]);
+            VAO[lod] = 0;
+        }
+        
+        vertices[lod].clear();
+        indices[lod].clear();
+        indexCount[lod] = 0;
     }
-    if (VBO != 0) {
-        glDeleteBuffers(1, &VBO);
-        VBO = 0;
-    }
-    if (VAO != 0) {
-        glDeleteVertexArrays(1, &VAO);
-        VAO = 0;
-    }
-    
-    vertices.clear();
-    indices.clear();
-    indexCount = 0;
 }

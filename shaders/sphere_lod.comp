@@ -1,0 +1,91 @@
+#version 430 core
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader (must match CellManager)
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;
+    vec4 acceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    uint uniqueID;
+    uint padding1;
+    uvec2 padding2;
+};
+
+// mode data structure for compute shader
+struct GPUMode {
+    vec4 color;             // r, g, b, padding
+    vec4 orientationA;      // quaternion
+    vec4 orientationB;      // quaternion
+    vec4 splitDirection;  // x, y, z, padding
+    ivec2 childModes;
+    float splitInterval;
+    int genomeOffset;
+};
+
+// Instance data structure for rendering
+struct InstanceData {
+    vec4 positionAndRadius;
+    vec4 color;
+    vec4 orientation;
+};
+
+// Input buffers
+layout(std430, binding = 0) buffer CellBuffer {
+    ComputeCell cellData[];
+};
+
+layout(std430, binding = 1) buffer ModeBuffer {
+    GPUMode modes[];
+};
+
+layout(std430, binding = 2) buffer CellCountBuffer {
+    uint cellCount;
+    uint pendingCellCount;
+};
+
+// Output buffer (same as regular instance buffer for compatibility)
+layout(std430, binding = 3) buffer InstanceBuffer {
+    InstanceData instanceData[];
+};
+
+// Uniforms
+uniform vec3 u_cameraPos;
+uniform float u_lodDistances[4];  // Distance thresholds for LOD levels
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index >= cellCount) return;
+    
+    // Calculate cell radius and position
+    vec3 cellPos = cellData[index].positionAndMass.xyz;
+    float cellRadius = pow(cellData[index].positionAndMass.w, 1.0/3.0);
+    
+    // Calculate distance from camera to cell surface
+    float distanceToCamera = distance(u_cameraPos, cellPos) - cellRadius;
+    
+    // Determine LOD level based on distance
+    uint lodLevel = 3; // Default to lowest detail
+    if (distanceToCamera < u_lodDistances[0]) {
+        lodLevel = 0; // Highest detail
+    } else if (distanceToCamera < u_lodDistances[1]) {
+        lodLevel = 1; // High detail
+    } else if (distanceToCamera < u_lodDistances[2]) {
+        lodLevel = 2; // Medium detail
+    }
+    // else lodLevel = 3 (lowest detail)
+    
+    // Write instance data directly (LOD handled by multiple draw calls)
+    instanceData[index].positionAndRadius = vec4(cellPos, cellRadius);
+    instanceData[index].color = modes[cellData[index].modeIndex].color;
+    instanceData[index].orientation = cellData[index].orientation;
+} 

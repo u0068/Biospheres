@@ -69,6 +69,9 @@ CellManager::CellManager()
     initializeRingGizmoBuffers();
     initializeAdhesionLineBuffers();
     
+    // Initialize LOD system
+    initializeLODSystem();
+    
     // Initialize barrier optimization system
     barrierBatch.setStats(&barrierStats);
 }
@@ -122,6 +125,7 @@ void CellManager::cleanup()
 
     cleanupSpatialGrid();
     cleanupIDSystem();
+    cleanupLODSystem();
 
     if (extractShader)
     {
@@ -560,6 +564,12 @@ void CellManager::runCellCounter()  // This only count active cells in the gpu, 
 
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera)
 {
+    // Use LOD system if enabled, otherwise fall back to regular rendering
+    if (useLODSystem) {
+        renderCellsLOD(resolution, camera);
+        return;
+    }
+    
     if (cellCount == 0)
         return;
 
@@ -1824,5 +1834,154 @@ void CellManager::cleanupAdhesionLines()
     {
         glDeleteVertexArrays(1, &adhesionLineVAO);
         adhesionLineVAO = 0;
+    }
+}
+
+// LOD System Implementation
+
+void CellManager::initializeLODSystem()
+{
+    // Initialize LOD shaders
+    lodComputeShader = new Shader("shaders/sphere_lod.comp");
+    lodVertexShader = new Shader("shaders/sphere_lod.vert", "shaders/sphere_lod.frag");
+    
+    // Generate LOD sphere meshes
+    sphereMesh.generateLODSpheres(1.0f);
+    sphereMesh.setupLODBuffers();
+    sphereMesh.setupLODInstanceBuffer(instanceBuffer); // Use existing instance buffer
+    
+    std::cout << "LOD system initialized with " << SphereMesh::LOD_LEVELS << " detail levels\n";
+}
+
+void CellManager::cleanupLODSystem()
+{
+    delete lodComputeShader;
+    delete lodVertexShader;
+    lodComputeShader = nullptr;
+    lodVertexShader = nullptr;
+}
+
+void CellManager::runLODCompute(const Camera& camera)
+{
+    if (cellCount == 0) return;
+    
+    TimerGPU timer("LOD Instance Extraction");
+    
+    lodComputeShader->use();
+    
+    // Set uniforms
+    lodComputeShader->setVec3("u_cameraPos", camera.getPosition());
+    lodComputeShader->setFloat("u_lodDistances[0]", lodDistances[0]);
+    lodComputeShader->setFloat("u_lodDistances[1]", lodDistances[1]);
+    lodComputeShader->setFloat("u_lodDistances[2]", lodDistances[2]);
+    lodComputeShader->setFloat("u_lodDistances[3]", lodDistances[3]);
+    
+    // Bind buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, instanceBuffer);
+    
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 63) / 64;
+    lodComputeShader->dispatch(numGroups, 1, 1);
+    
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::updateLODLevels(const Camera& camera)
+{
+    if (!useLODSystem || cellCount == 0) return;
+    
+    // Run LOD compute to generate instance data with LOD information
+    runLODCompute(camera);
+    
+    flushBarriers();
+}
+
+void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
+{
+    if (cellCount == 0 || !useLODSystem) {
+        return;
+    }
+
+    // Safety checks
+    if (resolution.x <= 0 || resolution.y <= 0 || resolution.x < 1 || resolution.y < 1) {
+        return;
+    }
+
+    try {
+        // Update instance data with LOD information
+        updateLODLevels(camera);
+        
+        TimerGPU timer("LOD Cell Rendering");
+        
+        // Use LOD shaders
+        lodVertexShader->use();
+        
+        // Set up camera matrices
+        glm::mat4 view = camera.getViewMatrix();
+        float aspectRatio = resolution.x / resolution.y;
+        if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio)) {
+            aspectRatio = 16.0f / 9.0f;
+        }
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 1000.0f);
+        
+        // Set uniforms
+        lodVertexShader->setMat4("uProjection", projection);
+        lodVertexShader->setMat4("uView", view);
+        lodVertexShader->setVec3("uCameraPos", camera.getPosition());
+        lodVertexShader->setVec3("uLightDir", glm::vec3(1.0f, 1.0f, 1.0f));
+        
+        // Selection highlighting uniforms
+        if (selectedCell.isValid) {
+            glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndMass);
+            float selectedRadius = selectedCell.cellData.getRadius();
+            lodVertexShader->setVec3("uSelectedCellPos", selectedPos);
+            lodVertexShader->setFloat("uSelectedCellRadius", selectedRadius);
+        } else {
+            lodVertexShader->setVec3("uSelectedCellPos", glm::vec3(-9999.0f));
+            lodVertexShader->setFloat("uSelectedCellRadius", 0.0f);
+        }
+        lodVertexShader->setFloat("uTime", static_cast<float>(glfwGetTime()));
+        
+        // Enable depth testing
+        glEnable(GL_DEPTH_TEST);
+        
+        // For the consolidated LOD system, we render all cells with different mesh detail levels
+        // based on their average distance from camera. This is a simplified approach that
+        // provides good performance without complex GPU sorting.
+        
+        glm::vec3 cameraPos = camera.getPosition();
+        
+        // Calculate average distance to determine which LOD level to use for most cells
+        float avgDistance = glm::length(cameraPos) / std::max(1.0f, std::sqrt(static_cast<float>(cellCount)));
+        
+        int primaryLOD = 3; // Default to lowest detail
+        if (avgDistance < lodDistances[0]) {
+            primaryLOD = 0; // Highest detail
+        } else if (avgDistance < lodDistances[1]) {
+            primaryLOD = 1; // High detail
+        } else if (avgDistance < lodDistances[2]) {
+            primaryLOD = 2; // Medium detail
+        }
+        
+        // Render all cells using the primary LOD level
+        sphereMesh.renderLOD(primaryLOD, cellCount, 0);
+        
+        // For nearby cells, also render with higher detail (additive approach)
+        if (primaryLOD > 0 && avgDistance < lodDistances[primaryLOD-1] * 2.0f) {
+            // Render subset with higher detail for close objects
+            int nearbyCount = std::min(cellCount / 4, 1000); // Limit for performance
+            sphereMesh.renderLOD(primaryLOD - 1, nearbyCount, 0);
+        }
+        
+    } catch (const std::exception &e) {
+        std::cerr << "Exception in renderCellsLOD: " << e.what() << "\n";
+        // Fall back to regular rendering
+        useLODSystem = false;
+    } catch (...) {
+        std::cerr << "Unknown exception in renderCellsLOD\n";
+        useLODSystem = false;
     }
 }

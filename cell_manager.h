@@ -95,6 +95,14 @@ struct CellManager
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
 
+    // LOD system shaders
+    Shader* lodComputeShader = nullptr;       // Compute shader for LOD calculation
+    Shader* lodVertexShader = nullptr;        // LOD vertex/fragment shader
+    
+    // LOD configuration
+    float lodDistances[4] = {5.0f, 15.0f, 50.0f, 200.0f}; // Distance thresholds for LOD levels
+    bool useLODSystem = true;                 // Enable/disable LOD system
+
     // Asynchronous readback system for performance monitoring
     //GLuint readbackBuffer = 0;      // Buffer for async GPU->CPU data transfer
     //GLsync readbackFence = nullptr; // Sync object for async operations
@@ -340,6 +348,13 @@ struct CellManager
 
     void setCellLimit(int limit) { cellLimit = limit; }
     int getCellLimit() const { return cellLimit; }
+    
+    // LOD system functions
+    void initializeLODSystem();
+    void cleanupLODSystem();
+    void updateLODLevels(const Camera& camera);
+    void renderCellsLOD(glm::vec2 resolution, const Camera& camera);
+    void runLODCompute(const Camera& camera);
 
 private:
     void runPhysicsCompute(float deltaTime);
