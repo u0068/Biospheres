@@ -219,6 +219,7 @@ void CellManager::cleanup()
     cleanupGizmos();
     cleanupRingGizmos();
     cleanupAdhesionLines();
+    cleanupLODSystem();
     sphereMesh.cleanup();
 }
 
@@ -1848,7 +1849,29 @@ void CellManager::initializeLODSystem()
     // Generate LOD sphere meshes
     sphereMesh.generateLODSpheres(1.0f);
     sphereMesh.setupLODBuffers();
-    sphereMesh.setupLODInstanceBuffer(instanceBuffer); // Use existing instance buffer
+    
+    // Create separate instance buffers for each LOD level
+    glCreateBuffers(4, lodInstanceBuffers);
+    for (int i = 0; i < 4; i++) {
+        glNamedBufferStorage(
+            lodInstanceBuffers[i],
+            MAX_CELLS * sizeof(float) * 12, // 3 vec4s per instance (positionAndRadius, color, orientation)
+            nullptr,
+            GL_DYNAMIC_STORAGE_BIT
+        );
+    }
+    
+    // Create LOD count buffer
+    glCreateBuffers(1, &lodCountBuffer);
+    glNamedBufferStorage(
+        lodCountBuffer,
+        4 * sizeof(uint32_t), // 4 LOD levels
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+    
+    // Setup instance buffers for each LOD level
+    sphereMesh.setupLODInstanceBuffers(lodInstanceBuffers);
     
     std::cout << "LOD system initialized with " << SphereMesh::LOD_LEVELS << " detail levels\n";
 }
@@ -1859,6 +1882,20 @@ void CellManager::cleanupLODSystem()
     delete lodVertexShader;
     lodComputeShader = nullptr;
     lodVertexShader = nullptr;
+    
+    // Cleanup LOD instance buffers
+    for (int i = 0; i < 4; i++) {
+        if (lodInstanceBuffers[i] != 0) {
+            glDeleteBuffers(1, &lodInstanceBuffers[i]);
+            lodInstanceBuffers[i] = 0;
+        }
+    }
+    
+    // Cleanup LOD count buffer
+    if (lodCountBuffer != 0) {
+        glDeleteBuffers(1, &lodCountBuffer);
+        lodCountBuffer = 0;
+    }
 }
 
 void CellManager::runLODCompute(const Camera& camera)
@@ -1868,6 +1905,10 @@ void CellManager::runLODCompute(const Camera& camera)
     TimerGPU timer("LOD Instance Extraction");
     
     lodComputeShader->use();
+    
+    // Clear LOD count buffer before computation
+    uint32_t zeroCounts[4] = {0, 0, 0, 0};
+    glNamedBufferSubData(lodCountBuffer, 0, sizeof(zeroCounts), zeroCounts);
     
     // Set uniforms
     lodComputeShader->setVec3("u_cameraPos", camera.getPosition());
@@ -1880,13 +1921,20 @@ void CellManager::runLODCompute(const Camera& camera)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, instanceBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lodInstanceBuffers[0]); // LOD 0
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, lodInstanceBuffers[1]); // LOD 1
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lodInstanceBuffers[2]); // LOD 2
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, lodInstanceBuffers[3]); // LOD 3
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, lodCountBuffer);        // LOD counts
     
     // Dispatch compute shader
     GLuint numGroups = (cellCount + 63) / 64;
     lodComputeShader->dispatch(numGroups, 1, 1);
     
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Read back LOD counts for rendering
+    glGetNamedBufferSubData(lodCountBuffer, 0, sizeof(lodInstanceCounts), lodInstanceCounts);
 }
 
 void CellManager::updateLODLevels(const Camera& camera)
@@ -1948,32 +1996,13 @@ void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
         // Enable depth testing
         glEnable(GL_DEPTH_TEST);
         
-        // For the consolidated LOD system, we render all cells with different mesh detail levels
-        // based on their average distance from camera. This is a simplified approach that
-        // provides good performance without complex GPU sorting.
-        
-        glm::vec3 cameraPos = camera.getPosition();
-        
-        // Calculate average distance to determine which LOD level to use for most cells
-        float avgDistance = glm::length(cameraPos) / std::max(1.0f, std::sqrt(static_cast<float>(cellCount)));
-        
-        int primaryLOD = 3; // Default to lowest detail
-        if (avgDistance < lodDistances[0]) {
-            primaryLOD = 0; // Highest detail
-        } else if (avgDistance < lodDistances[1]) {
-            primaryLOD = 1; // High detail
-        } else if (avgDistance < lodDistances[2]) {
-            primaryLOD = 2; // Medium detail
-        }
-        
-        // Render all cells using the primary LOD level
-        sphereMesh.renderLOD(primaryLOD, cellCount, 0);
-        
-        // For nearby cells, also render with higher detail (additive approach)
-        if (primaryLOD > 0 && avgDistance < lodDistances[primaryLOD-1] * 2.0f) {
-            // Render subset with higher detail for close objects
-            int nearbyCount = std::min(cellCount / 4, 1000); // Limit for performance
-            sphereMesh.renderLOD(primaryLOD - 1, nearbyCount, 0);
+        // Render each LOD level with its appropriate mesh detail and instance data
+        for (int lodLevel = 0; lodLevel < 4; lodLevel++) {
+            if (lodInstanceCounts[lodLevel] > 0) {
+                // Render this LOD level with its specific mesh detail and instance count
+                // The instance buffer for each LOD level was already set up during initialization
+                sphereMesh.renderLOD(lodLevel, lodInstanceCounts[lodLevel], 0);
+            }
         }
         
     } catch (const std::exception &e) {
@@ -1984,4 +2013,36 @@ void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera)
         std::cerr << "Unknown exception in renderCellsLOD\n";
         useLODSystem = false;
     }
+}
+
+int CellManager::getTotalTriangleCount() const {
+    if (!useLODSystem) {
+        // Fallback to old calculation for non-LOD rendering
+        return 192 * cellCount; // 8x12 segments = 96 triangles, but comment says 192?
+    }
+    
+    // Calculate triangles based on actual LOD distribution
+    int totalTriangles = 0;
+    for (int lod = 0; lod < 4; lod++) {
+        int segments = SphereMesh::LOD_SEGMENTS[lod];
+        int trianglesPerSphere = segments * segments * 2; // 2 triangles per quad
+        totalTriangles += trianglesPerSphere * lodInstanceCounts[lod];
+    }
+    return totalTriangles;
+}
+
+int CellManager::getTotalVertexCount() const {
+    if (!useLODSystem) {
+        // Fallback to old calculation for non-LOD rendering  
+        return 96 * cellCount; // Approximate vertex count for low-poly sphere
+    }
+    
+    // Calculate vertices based on actual LOD distribution
+    int totalVertices = 0;
+    for (int lod = 0; lod < 4; lod++) {
+        int segments = SphereMesh::LOD_SEGMENTS[lod];
+        int verticesPerSphere = (segments + 1) * (segments + 1); // Vertices in a sphere mesh
+        totalVertices += verticesPerSphere * lodInstanceCounts[lod];
+    }
+    return totalVertices;
 }

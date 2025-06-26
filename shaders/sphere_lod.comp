@@ -52,9 +52,26 @@ layout(std430, binding = 2) buffer CellCountBuffer {
     uint pendingCellCount;
 };
 
-// Output buffer (same as regular instance buffer for compatibility)
-layout(std430, binding = 3) buffer InstanceBuffer {
-    InstanceData instanceData[];
+// Output buffers - separate for each LOD level
+layout(std430, binding = 3) buffer InstanceBufferLOD0 {
+    InstanceData instanceDataLOD0[];
+};
+
+layout(std430, binding = 4) buffer InstanceBufferLOD1 {
+    InstanceData instanceDataLOD1[];
+};
+
+layout(std430, binding = 5) buffer InstanceBufferLOD2 {
+    InstanceData instanceDataLOD2[];
+};
+
+layout(std430, binding = 6) buffer InstanceBufferLOD3 {
+    InstanceData instanceDataLOD3[];
+};
+
+// LOD count buffer to track instances per LOD level
+layout(std430, binding = 7) buffer LODCountBuffer {
+    uint lodCounts[4];  // Count of instances for each LOD level
 };
 
 // Uniforms
@@ -84,8 +101,23 @@ void main() {
     }
     // else lodLevel = 3 (lowest detail)
     
-    // Write instance data directly (LOD handled by multiple draw calls)
-    instanceData[index].positionAndRadius = vec4(cellPos, cellRadius);
-    instanceData[index].color = modes[cellData[index].modeIndex].color;
-    instanceData[index].orientation = cellData[index].orientation;
+    // Create instance data
+    InstanceData instance;
+    instance.positionAndRadius = vec4(cellPos, cellRadius);
+    instance.color = modes[cellData[index].modeIndex].color;
+    instance.orientation = cellData[index].orientation;
+    
+    // Atomically increment the count for this LOD level and get the write index
+    uint writeIndex = atomicAdd(lodCounts[lodLevel], 1);
+    
+    // Write instance data to the appropriate LOD buffer
+    if (lodLevel == 0) {
+        instanceDataLOD0[writeIndex] = instance;
+    } else if (lodLevel == 1) {
+        instanceDataLOD1[writeIndex] = instance;
+    } else if (lodLevel == 2) {
+        instanceDataLOD2[writeIndex] = instance;
+    } else { // lodLevel == 3
+        instanceDataLOD3[writeIndex] = instance;
+    }
 } 

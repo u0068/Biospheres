@@ -100,8 +100,17 @@ struct CellManager
     Shader* lodVertexShader = nullptr;        // LOD vertex/fragment shader
     
     // LOD configuration
-    float lodDistances[4] = {5.0f, 15.0f, 50.0f, 200.0f}; // Distance thresholds for LOD levels
+    float lodDistances[4] = {20.0f, 60.0f, 150.0f, 250.0f}; // Distance thresholds for LOD levels
     bool useLODSystem = true;                 // Enable/disable LOD system
+    
+    // LOD instance buffers - separate buffer for each LOD level
+    GLuint lodInstanceBuffers[4]{};           // Instance buffers for each LOD level
+    GLuint lodCountBuffer{};                  // Buffer to track instance counts per LOD level
+    int lodInstanceCounts[4]{};               // CPU-side copy of LOD instance counts
+    
+    // LOD statistics functions
+    int getTotalTriangleCount() const;        // Calculate total triangles across all LOD levels
+    int getTotalVertexCount() const;          // Calculate total vertices across all LOD levels
 
     // Asynchronous readback system for performance monitoring
     //GLuint readbackBuffer = 0;      // Buffer for async GPU->CPU data transfer

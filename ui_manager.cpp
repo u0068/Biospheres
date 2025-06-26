@@ -320,8 +320,8 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
     ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
-    ImGui::Text("Triangles: ~%i", 192 * cellCount); // This should be changed to always accurately reflect the mesh
-    ImGui::Text("Vertices: ~%i", 96 * cellCount); // Assuming sphere has ~96 vertices
+    ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
+    ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
 
     // Memory estimate
     float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
@@ -348,6 +348,23 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         ImGui::Text("Update Interval: %.3f s", perfMonitor.perfUpdateInterval);
         ImGui::Text("Last Update: %.3f s ago", perfMonitor.lastPerfUpdate);
         ImGui::Text("History Size: %zu entries", perfMonitor.frameTimeHistory.size());
+        
+        // LOD distribution information
+        if (ImGui::CollapsingHeader("LOD Distribution"))
+        {
+            const int* lodCounts = cellManager.lodInstanceCounts;
+            ImGui::Text("LOD 0 (32x32): %d cells", lodCounts[0]);
+            ImGui::Text("LOD 1 (16x16): %d cells", lodCounts[1]);
+            ImGui::Text("LOD 2 (8x8):   %d cells", lodCounts[2]);
+            ImGui::Text("LOD 3 (4x4):   %d cells", lodCounts[3]);
+            
+            int totalLodCells = lodCounts[0] + lodCounts[1] + lodCounts[2] + lodCounts[3];
+            if (totalLodCells > 0) {
+                ImGui::Text("LOD Coverage: %d / %d cells (%.1f%%)", 
+                    totalLodCells, cellCount, 
+                    (float)totalLodCells / cellCount * 100.0f);
+            }
+        }
 
         //// Readback system status if available
         //if (cellManager.isReadbackSystemHealthy())

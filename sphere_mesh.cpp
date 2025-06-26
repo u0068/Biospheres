@@ -241,6 +241,36 @@ void SphereMesh::setupLODInstanceBuffer(GLuint instanceDataBuffer) {
     }
 }
 
+void SphereMesh::setupLODInstanceBuffers(GLuint lodInstanceBuffers[4]) {
+    // Setup separate instance buffer for each LOD level
+    for (int lod = 0; lod < LOD_LEVELS; lod++) {
+        instanceVBO[lod] = lodInstanceBuffers[lod];
+        
+        glBindVertexArray(VAO[lod]);
+        glBindBuffer(GL_ARRAY_BUFFER, lodInstanceBuffers[lod]);
+
+        // Standard instance data structure: positionAndRadius (vec4), color (vec4), orientation (vec4)
+        size_t stride = 12 * sizeof(float); // 3 vec4s = 12 floats
+
+        // Instance position and radius (vec4)
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, (void*)0);
+        glVertexAttribDivisor(2, 1);
+
+        // Instance color (vec4)
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(float)));
+        glVertexAttribDivisor(3, 1);
+
+        // Instance orientation (vec4 quaternion)
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+        glVertexAttribDivisor(4, 1);
+
+        glBindVertexArray(0);
+    }
+}
+
 void SphereMesh::render(int instanceCount) const {
     if (VAO[0] == 0 || indexCount[0] == 0 || instanceCount <= 0) return;
 
