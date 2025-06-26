@@ -17,7 +17,7 @@
 mono_crash.*
 
 # Build results
-[Dd]ebug/
+# [Dd]ebug/	# This also ignored folders that shouldnt be ignored so i removed it
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
