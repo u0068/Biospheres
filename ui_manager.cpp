@@ -365,6 +365,20 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
                     (float)totalLodCells / cellCount * 100.0f);
             }
         }
+        
+        // Frustum culling information
+        if (ImGui::CollapsingHeader("Frustum Culling"))
+        {
+            ImGui::Text("Enabled: %s", cellManager.useFrustumCulling ? "Yes" : "No");
+            if (cellManager.useFrustumCulling) {
+                int visibleCells = cellManager.getVisibleCellCount();
+                ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
+                if (cellCount > 0) {
+                    float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
+                    ImGui::Text("Culled: %.1f%%", cullingRatio);
+                }
+            }
+        }
 
         //// Readback system status if available
         //if (cellManager.isReadbackSystemHealthy())
@@ -432,6 +446,12 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     
     ImGui::Checkbox("Wireframe Mode", &wireframeMode);
     addTooltip("Render cells in wireframe mode to verify back face culling is working");
+    
+    ImGui::Checkbox("Frustum Culling", &enableFrustumCulling);
+    addTooltip("Enable frustum culling to improve performance by only rendering visible cells");
+    
+    // Sync frustum culling setting with cell manager
+    cellManager.useFrustumCulling = enableFrustumCulling;
 
     // Show current selection info
     if (cellManager.hasSelectedCell())    {

@@ -96,6 +96,9 @@ public:
     
     // Wireframe rendering mode
     bool wireframeMode = false;          // Toggle for wireframe rendering mode
+    
+    // Frustum culling toggle
+    bool enableFrustumCulling = true;    // Toggle for frustum culling
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;

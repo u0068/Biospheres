@@ -72,6 +72,9 @@ CellManager::CellManager()
     // Initialize LOD system
     initializeLODSystem();
     
+    // Initialize frustum culling system
+    initializeFrustumCulling();
+    
     // Initialize barrier optimization system
     barrierBatch.setStats(&barrierStats);
 }
@@ -126,6 +129,7 @@ void CellManager::cleanup()
     cleanupSpatialGrid();
     cleanupIDSystem();
     cleanupLODSystem();
+    cleanupFrustumCulling();
 
     if (extractShader)
     {
@@ -586,23 +590,42 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         return;
     }
     try
-    { // Use compute shader to efficiently extract instance data
-	    {
-		    TimerGPU timer("Instance extraction");
+    {
+        // Calculate aspect ratio for frustum culling
+        float aspectRatio = resolution.x / resolution.y;
+        if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
+        {
+            aspectRatio = 16.0f / 9.0f;
+        }
+        
+        // Use frustum culling if enabled, otherwise fall back to regular extraction
+        if (useFrustumCulling) {
+            // Update frustum and perform culling
+            updateFrustum(camera, 45.0f, aspectRatio, 0.1f, 1000.0f);
+            runFrustumCulling();
+            
+            // Setup sphere mesh to use the frustum-culled instance buffer
+            sphereMesh.setupInstanceBuffer(visibleInstanceBuffer);
+        } else {
+            // Use compute shader to efficiently extract instance data (original method)
+            TimerGPU timer("Instance extraction");
 
-	    	extractShader->use();
+            extractShader->use();
 
-	    	// Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
-	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
-	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, instanceBuffer); // Dispatch extract compute shader
-	    	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
-	    	GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
-	    	extractShader->dispatch(numGroups, 1, 1);
-	    	
-	    	// Add barrier for instance extraction but don't flush yet
-	    	addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-	    }
+            // Bind current buffers for compute shader (read from current cell buffer, write to current instance buffer)
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, instanceBuffer); // Dispatch extract compute shader
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
+            GLuint numGroups = (cellCount + 63) / 64;                                  // 64 threads per group
+            extractShader->dispatch(numGroups, 1, 1);
+            
+            // Add barrier for instance extraction but don't flush yet
+            addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            
+            // Setup sphere mesh to use the regular instance buffer
+            sphereMesh.setupInstanceBuffer(instanceBuffer);
+        }
 
         TimerGPU timer("Cell Rendering");
         
@@ -610,16 +633,8 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         flushBarriers();
 
         // Use the sphere shader
-        cellShader.use(); // Set up camera matrices (only calculate once per frame, not per cell)
+        cellShader.use();         // Set up camera matrices (only calculate once per frame, not per cell)
         glm::mat4 view = camera.getViewMatrix();
-
-        // Calculate aspect ratio with safety check
-        float aspectRatio = resolution.x / resolution.y;
-        if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
-        {
-            // Use a default aspect ratio if calculation fails
-            aspectRatio = 16.0f / 9.0f;
-        }
 
         glm::mat4 projection = glm::perspective(glm::radians(45.0f),
                                                 aspectRatio,
@@ -661,8 +676,9 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 
-        // Render instanced spheres
-        sphereMesh.render(cellCount);
+        // Render instanced spheres with appropriate count
+        int renderCount = useFrustumCulling ? visibleCellCount : cellCount;
+        sphereMesh.render(renderCount);
         
         // Restore OpenGL state - disable culling for other rendering operations
         glDisable(GL_CULL_FACE);
@@ -1961,8 +1977,13 @@ void CellManager::updateLODLevels(const Camera& camera)
 {
     if (!useLODSystem || cellCount == 0) return;
     
-    // Run LOD compute to generate instance data with LOD information
-    runLODCompute(camera);
+    if (useFrustumCulling) {
+        // Use combined frustum culling + LOD compute
+        runFrustumCullingLOD(camera);
+    } else {
+        // Run regular LOD compute without frustum culling
+        runLODCompute(camera);
+    }
     
     flushBarriers();
 }
@@ -1979,7 +2000,16 @@ void CellManager::renderCellsLOD(glm::vec2 resolution, const Camera& camera, boo
     }
 
     try {
-        // Update instance data with LOD information
+        // Update frustum if frustum culling is enabled
+        if (useFrustumCulling) {
+            float aspectRatio = resolution.x / resolution.y;
+            if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio)) {
+                aspectRatio = 16.0f / 9.0f;
+            }
+            updateFrustum(camera, 45.0f, aspectRatio, 0.1f, 1000.0f);
+        }
+        
+        // Update instance data with LOD information (and frustum culling if enabled)
         updateLODLevels(camera);
         
         TimerGPU timer("LOD Cell Rendering");
@@ -2086,4 +2116,153 @@ int CellManager::getTotalVertexCount() const {
         totalVertices += verticesPerSphere * lodInstanceCounts[lod];
     }
     return totalVertices;
+}
+
+// Frustum Culling Implementation
+
+void CellManager::initializeFrustumCulling()
+{
+    // Initialize frustum culling compute shaders
+    frustumCullShader = new Shader("shaders/frustum_cull.comp");
+    frustumCullLODShader = new Shader("shaders/frustum_cull_lod.comp");
+    
+    // Create buffer for visible instances after frustum culling
+    glCreateBuffers(1, &visibleInstanceBuffer);
+    glNamedBufferStorage(
+        visibleInstanceBuffer,
+        cellLimit * sizeof(float) * 12, // 3 vec4s per instance (positionAndRadius, color, orientation)
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+    
+    // Create buffer for visible count
+    glCreateBuffers(1, &visibleCountBuffer);
+    glNamedBufferStorage(
+        visibleCountBuffer,
+        sizeof(uint32_t),
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+    
+    std::cout << "Frustum culling system initialized\n";
+}
+
+void CellManager::cleanupFrustumCulling()
+{
+    if (frustumCullShader) {
+        frustumCullShader->destroy();
+        delete frustumCullShader;
+        frustumCullShader = nullptr;
+    }
+    
+    if (frustumCullLODShader) {
+        frustumCullLODShader->destroy();
+        delete frustumCullLODShader;
+        frustumCullLODShader = nullptr;
+    }
+    
+    if (visibleInstanceBuffer != 0) {
+        glDeleteBuffers(1, &visibleInstanceBuffer);
+        visibleInstanceBuffer = 0;
+    }
+    
+    if (visibleCountBuffer != 0) {
+        glDeleteBuffers(1, &visibleCountBuffer);
+        visibleCountBuffer = 0;
+    }
+}
+
+void CellManager::updateFrustum(const Camera& camera, float fov, float aspectRatio, float nearPlane, float farPlane)
+{
+    if (!useFrustumCulling) return;
+    
+    // Create frustum from camera parameters
+    currentFrustum = FrustumCulling::createFrustum(camera, fov, aspectRatio, nearPlane, farPlane);
+}
+
+void CellManager::runFrustumCulling()
+{
+    if (!useFrustumCulling || cellCount == 0) return;
+    
+    TimerGPU timer("Frustum Culling");
+    
+    frustumCullShader->use();
+    
+    // Clear visible count buffer
+    uint32_t zeroCount = 0;
+    glNamedBufferSubData(visibleCountBuffer, 0, sizeof(uint32_t), &zeroCount);
+    
+    // Set frustum planes as uniforms
+    const auto& planes = currentFrustum.getPlanes();
+    for (int i = 0; i < 6; i++) {
+        std::string uniformName = "u_frustumPlanes[" + std::to_string(i) + "]";
+        frustumCullShader->setVec3(uniformName + ".normal", planes[i].normal);
+        frustumCullShader->setFloat(uniformName + ".distance", planes[i].distance);
+    }
+    
+    // Bind buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, visibleInstanceBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, visibleCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
+    
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 63) / 64;
+    frustumCullShader->dispatch(numGroups, 1, 1);
+    
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Read back visible count
+    glGetNamedBufferSubData(visibleCountBuffer, 0, sizeof(uint32_t), &visibleCellCount);
+}
+
+void CellManager::runFrustumCullingLOD(const Camera& camera)
+{
+    if (!useFrustumCulling || cellCount == 0) return;
+    
+    TimerGPU timer("Frustum Culling + LOD");
+    
+    frustumCullLODShader->use();
+    
+    // Clear LOD count buffer before computation
+    uint32_t zeroCounts[4] = {0, 0, 0, 0};
+    glNamedBufferSubData(lodCountBuffer, 0, sizeof(zeroCounts), zeroCounts);
+    
+    // Set camera and LOD uniforms
+    frustumCullLODShader->setVec3("u_cameraPos", camera.getPosition());
+    frustumCullLODShader->setFloat("u_lodDistances[0]", lodDistances[0]);
+    frustumCullLODShader->setFloat("u_lodDistances[1]", lodDistances[1]);
+    frustumCullLODShader->setFloat("u_lodDistances[2]", lodDistances[2]);
+    frustumCullLODShader->setFloat("u_lodDistances[3]", lodDistances[3]);
+    
+    // Set frustum planes as uniforms
+    const auto& planes = currentFrustum.getPlanes();
+    for (int i = 0; i < 6; i++) {
+        std::string uniformName = "u_frustumPlanes[" + std::to_string(i) + "]";
+        frustumCullLODShader->setVec3(uniformName + ".normal", planes[i].normal);
+        frustumCullLODShader->setFloat(uniformName + ".distance", planes[i].distance);
+    }
+    
+    // Bind buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lodInstanceBuffers[0]); // LOD 0
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, lodInstanceBuffers[1]); // LOD 1
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lodInstanceBuffers[2]); // LOD 2
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, lodInstanceBuffers[3]); // LOD 3
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, lodCountBuffer);        // LOD counts
+    
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 63) / 64;
+    frustumCullLODShader->dispatch(numGroups, 1, 1);
+    
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Read back LOD counts for rendering
+    glGetNamedBufferSubData(lodCountBuffer, 0, sizeof(lodInstanceCounts), lodInstanceCounts);
+    
+    // Calculate total visible cells for statistics
+    visibleCellCount = lodInstanceCounts[0] + lodInstanceCounts[1] + lodInstanceCounts[2] + lodInstanceCounts[3];
 }

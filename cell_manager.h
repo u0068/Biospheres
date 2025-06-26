@@ -10,6 +10,7 @@
 #include "sphere_mesh.h"
 #include "config.h"
 #include "genome.h"
+#include "frustum_culling.h"
 
 // Forward declaration
 class Camera;
@@ -107,6 +108,15 @@ struct CellManager
     GLuint lodInstanceBuffers[4]{};           // Instance buffers for each LOD level
     GLuint lodCountBuffer{};                  // Buffer to track instance counts per LOD level
     int lodInstanceCounts[4]{};               // CPU-side copy of LOD instance counts
+    
+    // Frustum culling system
+    Shader* frustumCullShader = nullptr;      // Compute shader for frustum culling
+    Shader* frustumCullLODShader = nullptr;   // Compute shader for frustum culling with LOD
+    GLuint visibleInstanceBuffer{};           // Buffer for frustum-culled instances
+    GLuint visibleCountBuffer{};              // Buffer for visible instance count
+    bool useFrustumCulling = true;            // Enable/disable frustum culling
+    Frustum currentFrustum;                   // Current camera frustum
+    int visibleCellCount{0};                  // Number of visible cells after culling
     
     // LOD statistics functions
     int getTotalTriangleCount() const;        // Calculate total triangles across all LOD levels
@@ -364,6 +374,14 @@ struct CellManager
     void updateLODLevels(const Camera& camera);
     void renderCellsLOD(glm::vec2 resolution, const Camera& camera, bool wireframe = false);
     void runLODCompute(const Camera& camera);
+    
+    // Frustum culling functions
+    void initializeFrustumCulling();
+    void cleanupFrustumCulling();
+    void updateFrustum(const Camera& camera, float fov, float aspectRatio, float nearPlane, float farPlane);
+    void runFrustumCulling();
+    void runFrustumCullingLOD(const Camera& camera);
+    int getVisibleCellCount() const { return visibleCellCount; }
 
 private:
     void runPhysicsCompute(float deltaTime);

@@ -165,6 +165,7 @@
     <ClCompile Include="audio_engine.cpp" />
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="cell_manager.cpp" />
+    <ClCompile Include="frustum_culling.cpp" />
     <ClCompile Include="genome.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="glad_helpers.cpp" />
@@ -190,6 +191,7 @@
     <ClInclude Include="camera.h" />
     <ClInclude Include="cell_manager.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="frustum_culling.h" />
     <ClInclude Include="genome.h" />
     <ClInclude Include="glad_helpers.h" />
     <ClInclude Include="glfw_helpers.h" />
@@ -220,6 +222,8 @@
     <None Include="shaders\cell_update.comp" />
     <None Include="shaders\cell_update_internal.comp" />
     <None Include="shaders\extract_instances.comp" />
+    <None Include="shaders\frustum_cull.comp" />
+    <None Include="shaders\frustum_cull_lod.comp" />
     <None Include="shaders\gizmo.frag" />
     <None Include="shaders\gizmo.vert" />
     <None Include="shaders\gizmo_extract.comp" />
