@@ -55,11 +55,6 @@ void main() {
     inputCells[targetIndex] = queuedCell;
     outputCells[targetIndex] = queuedCell;
     
-    // Synchronize threads before updating count
-    barrier();
-    
-    // Only the first thread updates the cell count after all cells are added
-    if (index == 0) {
-        atomicAdd(cellCount, pendingCellCount);
-    }
+    // Count this cell as successfully added
+    atomicAdd(cellCount, 1);
 }

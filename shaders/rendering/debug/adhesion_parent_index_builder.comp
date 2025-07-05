@@ -96,8 +96,13 @@ void main() {
         
         // Check if it's our sibling (same parent, different child flag)
         if (otherParentID == parentID && otherChildFlag == 1) {
-            siblingIndex = i;
-            break;
+            // Additional verification: ensure both cells have similar ages
+            // This helps prevent connecting cells from different division events
+            float ageDifference = abs(currentCell.age - otherCell.age);
+            if (ageDifference < 1.0) { // Allow small age difference for timing variations
+                siblingIndex = i;
+                break;
+            }
         }
     }
     
@@ -105,6 +110,9 @@ void main() {
     if (siblingIndex == 0xFFFFFFFF) {
         return;
     }
+    
+    // Debug: We found a valid parent-child relationship
+    // Note: We can't output from compute shaders, but we can ensure this creates a parent index
     
     // Use atomic operation to get a unique parent index
     uint parentIndex = atomicAdd(parentCount, 1);

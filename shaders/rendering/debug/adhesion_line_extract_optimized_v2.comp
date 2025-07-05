@@ -120,6 +120,13 @@ void main() {
         return; // Invalid parent-child relationship
     }
     
+    // Additional verification: ensure both cells have similar ages
+    // This helps prevent connecting cells from different division events
+    float ageDifference = abs(childA.age - childB.age);
+    if (ageDifference >= 1.0) { // Reject if age difference is too large
+        return;
+    }
+    
     // OPTIMIZED: Instead of searching through all modes (which is very expensive),
     // we'll check if either child's mode has parentMakeAdhesion enabled.
     // This is a reasonable approximation since children inherit properties from their parent.

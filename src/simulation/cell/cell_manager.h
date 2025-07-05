@@ -34,7 +34,7 @@ struct ComputeCell {
     // Unique ID system: X.Y.Z format
     // X = parent ID (16 bits), Y = cell ID (15 bits), Z = child flag (1 bit, 0=A, 1=B)
     uint32_t uniqueID{ 0 };              // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint32_t padding1{ 0 };              // Padding to maintain 16-byte alignment
+    uint32_t justSplit{ 0 };              // Use this as the justSplit flag
     uint64_t padding2{ 0 };              // Additional padding to ensure 16-byte alignment
     
     float getRadius() const
@@ -421,6 +421,8 @@ struct CellManager
 
     void restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell> &cells); // For keyframe restoration
     void setCPUCellData(const std::vector<ComputeCell> &cells); // For keyframe restoration
+
+    Shader* clearJustSplitShader = nullptr; // Compute shader to clear justSplit flag
 
 private:
     void runPhysicsCompute(float deltaTime);

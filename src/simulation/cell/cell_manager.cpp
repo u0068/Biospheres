@@ -85,6 +85,8 @@ CellManager::CellManager()
     
     // Initialize barrier optimization system
     barrierBatch.setStats(&barrierStats);
+
+    clearJustSplitShader = new Shader("shaders/cell/management/clear_just_split.comp");
 }
 
 CellManager::~CellManager()
@@ -322,14 +324,12 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = static_cast<int>(cells.size());
 
-
-
-    if (cellCount + newCellCount > cellLimit)
+    // Check against total cells (current + pending + new)
+    if (cellCount + gpuPendingCellCount + newCellCount > cellLimit)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
     }
-
 
     TimerGPU gpuTimer("Adding Cells to GPU Buffers");
     // Update both cell buffers to keep them synchronized
@@ -360,7 +360,8 @@ void CellManager::addCellToGPUBuffer(const ComputeCell &newCell)
 
 void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
 {
-    if (cellCount + 1 > cellLimit)
+    // Check against total cells (current + pending + new)
+    if (cellCount + gpuPendingCellCount + 1 > cellLimit)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -999,7 +1000,7 @@ void CellManager::spawnCells(int count)
 {
     TimerCPU cpuTimer("Spawning Cells");
 
-    for (int i = 0; i < count && cellCount < cellLimit; ++i)
+    for (int i = 0; i < count && (cellCount + gpuPendingCellCount) < cellLimit; ++i)
     {
         // Random position within spawn radius
         float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
@@ -1463,6 +1464,9 @@ void CellManager::dragSelectedCell(const glm::vec3 &newWorldPosition)
                              sizeof(ComputeCell),
                              &cpuCells[selectedCell.cellIndex]);
     }
+    
+    // Don't update adhesion lines during dragging - only when drag ends
+    // This prevents the adhesion lines from disappearing during continuous dragging
 }
 
 void CellManager::clearSelection()
@@ -1487,6 +1491,9 @@ void CellManager::endDrag()
                                  sizeof(ComputeCell),
                                  &cpuCells[selectedCell.cellIndex]);
         }
+        
+        // Mark adhesion index for update since cell position changed during drag
+        adhesionIndexNeedsUpdate = true;
     }
 
     isDraggingCell = false;
@@ -2425,6 +2432,13 @@ void CellManager::establishAdhesionConnections()
 
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    // Clear justSplit flag for all cells
+    clearJustSplitShader->use();
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
+    GLuint clearGroups = (cellCount + 255) / 256;
+    clearJustSplitShader->dispatch(clearGroups, 1, 1);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::cleanupAdhesionConnectionSystem()
@@ -2478,9 +2492,9 @@ void CellManager::initializeOptimizedAdhesionLineSystem()
     adhesionParentIndexBuilderShader = new Shader("shaders/rendering/debug/adhesion_parent_index_builder.comp");
     adhesionLineOptimizedShader = new Shader("shaders/rendering/debug/adhesion_line_extract_optimized_v2.comp");
     
-    adhesionParentIndexCount = 0;
+
     
-    std::cout << "Initialized optimized adhesion line system with spatial indexing\n";
+    adhesionParentIndexCount = 0;
 }
 
 void CellManager::updateSpatialIndexAdhesionLineData()
@@ -2505,6 +2519,8 @@ void CellManager::updateSpatialIndexAdhesionLineData()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionParentIndexCounterBuffer);
     // Bind cell count buffer
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    
+
     
     // Reset parent index counter
     GLuint zero = 0;
@@ -2544,10 +2560,14 @@ void CellManager::renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution,
         adhesionIndexNeedsUpdate = false;
     }
     
+    // DEBUG: Force update every frame to see if that helps
+    // updateSpatialIndexAdhesionLineData();
+    
+
+    
     if (adhesionParentIndexCount == 0) {
         return;
     }
-    
     TimerGPU timer("Spatial Index Adhesion Line Rendering");
     
     // Use the optimized adhesion line extract shader to generate vertices from spatial index

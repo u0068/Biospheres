@@ -26,7 +26,7 @@ struct ComputeCell {
     float nitrates;
     // Unique ID system
     uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint padding1;     // Padding to maintain alignment
+    uint justSplit;    // Use this as the justSplit flag
     uvec2 padding2;    // Additional padding to ensure 16-byte alignment
 };
 
@@ -100,31 +100,26 @@ uint packUniqueID(uint parentID, uint cellID, uint childFlag) {
 // Allocate a new cell ID from the pool or generate new one
 uint allocateCellID() {
     uint newCellID;
-    
-    // Try to get a recycled ID first
-    if (recycledIDCount > 0) {
-        uint recycleIndex = atomicAdd(recycledIDCount, -1) - 1;
-        if (recycleIndex < recycledIDCount + 1) { // Check bounds
-            newCellID = availableIDs[recycleIndex];
-        } else {
-            // Fallback to new ID if race condition occurred
-            newCellID = atomicAdd(nextAvailableID, 1);
-            if (newCellID > maxCellID) {
-                // Wrap around if we've exceeded max ID
-                atomicExchange(nextAvailableID, 1);
-                newCellID = 1;
-            }
-        }
-    } else {
-        // No recycled IDs available, use next available
+    uint nextID = nextAvailableID;
+
+    if (nextID <= maxCellID) {
+        // Use new IDs until we reach the max
         newCellID = atomicAdd(nextAvailableID, 1);
-        if (newCellID > maxCellID) {
-            // Wrap around if we've exceeded max ID
-            atomicExchange(nextAvailableID, 1);
-            newCellID = 1;
+    } else {
+        // Only after all IDs are used, start recycling
+        if (recycledIDCount > 0) {
+            uint recycleIndex = atomicAdd(recycledIDCount, -1) - 1;
+            if (recycleIndex < recycledIDCount + 1) { // Check bounds
+                newCellID = availableIDs[recycleIndex];
+            } else {
+                // Fallback: out of IDs, handle error (e.g., return 0 or 0xFFFFFFFFu)
+                newCellID = 0xFFFFFFFFu;
+            }
+        } else {
+            // Fallback: out of IDs, handle error
+            newCellID = 0xFFFFFFFFu;
         }
     }
-    
     return newCellID;
 }
 
@@ -138,28 +133,19 @@ void main() {
 
     cell.age += u_deltaTime;
     if (cell.age >= mode.splitInterval) {
-        // Estimate new total number of cells
-        uint currentTotal = atomicAdd(pendingCellCount, 0); // Read current pending count
-        if (cellCount + currentTotal < u_maxCells) {
-            // Atomically reserve a slot in the addition queue
-            uint queueIdx = atomicAdd(pendingCellCount, 1);
+        // Atomically check limit and reserve space in a single operation
+        uint queueIdx = atomicAdd(pendingCellCount, 1);
+        if (cellCount + queueIdx < u_maxCells) {
             vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
 
-            // Both child cells should start with the same age after the split
-            // Since we already aged the parent cell by deltaTime this frame,
-            // we need to subtract the excess age beyond the split interval
             float startAge = cell.age - mode.splitInterval;
 
-            // Apply rotation deltas to parent orientation
             vec4 q_parent = cell.orientation;
             vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
             vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
 
-            // Allocate new cell IDs for both children
             uint childACellID = allocateCellID();
             uint childBCellID = allocateCellID();
-            
-            // Get parent's cell ID to use as parent ID for children
             uint parentCellID = getCellID(cell.uniqueID);
 
             ComputeCell childA = cell;
@@ -167,24 +153,26 @@ void main() {
             childA.age = startAge;
             childA.modeIndex = mode.childModes.x;
             childA.orientation = q_childA;
-            childA.uniqueID = packUniqueID(parentCellID, childACellID, 0u); // A child
+            childA.uniqueID = packUniqueID(parentCellID, childACellID, 0u);
+            childA.justSplit = 1;
 
             ComputeCell childB = cell;
             childB.positionAndMass.xyz -= offset;
             childB.age = startAge;
             childB.modeIndex = mode.childModes.y;
             childB.orientation = q_childB;
-            childB.uniqueID = packUniqueID(parentCellID, childBCellID, 1u); // B child
+            childB.uniqueID = packUniqueID(parentCellID, childBCellID, 1u);
+            childB.justSplit = 1;
 
-            // Store new cells
             cells[index] = childA;
             newCells[queueIdx] = childB;
         } else {
-            // Can't divide just continue aging
+            atomicAdd(pendingCellCount, -1);
+            cell.justSplit = 0;
             cells[index] = cell;
         }
     } else {
-        // Not ready to divide age normally
+        cell.justSplit = 0;
         cells[index] = cell;
     }
 }

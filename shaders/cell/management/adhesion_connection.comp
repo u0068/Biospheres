@@ -19,6 +19,7 @@ struct ComputeCell {
     uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
     uint padding1;     // Padding to maintain alignment
     uvec2 padding2;    // Additional padding to ensure 16-byte alignment
+    int justSplit;     // Boolean flag for cell division
 };
 
 // GPU Mode structure
@@ -151,6 +152,11 @@ void main() {
     if (childFlag != 0) {
         return; // Skip child B
     }
+
+    // Only allow connections for cells that just split
+    if (currentCell.justSplit != 1) {
+        return;
+    }
     
     // Debug: If we get here, we have a child A cell with adhesion enabled
     // We can't output from compute shaders, but we can ensure this cell tries to find its sibling
@@ -190,8 +196,10 @@ void main() {
                     
                     // Check if it's our sibling (same parent, different child flag)
                     if (otherParentID == parentID && otherChildFlag == 1) {
-                        siblingIndex = otherCellIndex;
-                        break;
+                        if (otherCell.justSplit == 1) {
+                            siblingIndex = otherCellIndex;
+                            break;
+                        }
                     }
                 }
                 
