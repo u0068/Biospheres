@@ -15,7 +15,7 @@ namespace config
 	constexpr const char* GLSL_VERSION{"#version 460"};
 	constexpr const char* APPLICATION_NAME{"Biospheres"};
 	constexpr bool PLAY_STARTUP_JINGLE{false};
-	constexpr bool VSYNC{ true };
+	constexpr bool VSYNC{ false };
 
 	// ========== Cell Simulation Configuration ==========
 	constexpr int MAX_CELLS{100000};

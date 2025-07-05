@@ -86,6 +86,48 @@ uint getChildFlag(uint64_t uniqueID) {
     return uint(uniqueID & 0x1);
 }
 
+// Convert quaternion to rotation matrix
+mat3 quatToMat3(vec4 quat) {
+    float x = quat.x, y = quat.y, z = quat.z, w = quat.w;
+    float x2 = x + x, y2 = y + y, z2 = z + z;
+    float xx = x * x2, xy = x * y2, xz = x * z2;
+    float yy = y * y2, yz = y * z2, zz = z * z2;
+    float wx = w * x2, wy = w * y2, wz = w * z2;
+
+    return mat3(
+        1.0 - (yy + zz), xy + wz, xz - wy,
+        xy - wz, 1.0 - (xx + zz), yz + wx,
+        xz + wy, yz - wx, 1.0 - (xx + yy)
+    );
+}
+
+// Determine zone color based on position relative to split plane
+vec4 getZoneColor(vec3 position, vec3 splitPlaneNormal, vec3 splitPlanePoint) {
+    // Calculate distance from position to split plane
+    vec3 toPosition = position - splitPlanePoint;
+    float distance = dot(toPosition, splitPlaneNormal);
+    
+    // Calculate angle between the vector from midpoint to position and the split plane normal
+    vec3 directionFromMidpoint = normalize(toPosition);
+    float angle = acos(abs(dot(directionFromMidpoint, splitPlaneNormal)));
+    float angleDegrees = degrees(angle);
+    
+    // Zone C: within 10 degrees of being parallel to split plane (red)
+    // A line is parallel to the split plane when it's perpendicular to the split plane normal
+    // So we check if the angle is close to 90 degrees (perpendicular)
+    if (abs(angleDegrees - 90.0) <= 10.0) {
+        return vec4(1.0, 0.0, 0.0, 1.0); // Red
+    }
+    // Zone A: positive side of split plane (green)
+    else if (distance > 0.0) {
+        return vec4(0.0, 1.0, 0.0, 1.0); // Green
+    }
+    // Zone B: negative side of split plane (blue)
+    else {
+        return vec4(0.0, 0.0, 1.0, 1.0); // Blue
+    }
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
@@ -133,19 +175,20 @@ void main() {
     // This is a reasonable approximation since children inherit properties from their parent.
     
     bool parentAllowsAdhesion = false;
+    GPUMode parentMode;
     
     // Check child A's mode
     if (childA.modeIndex >= 0 && childA.modeIndex < modes.length()) {
-        GPUMode modeA = modes[childA.modeIndex];
-        if (modeA.parentMakeAdhesion == 1) {
+        parentMode = modes[childA.modeIndex];
+        if (parentMode.parentMakeAdhesion == 1) {
             parentAllowsAdhesion = true;
         }
     }
     
     // Check child B's mode if child A didn't have it
     if (!parentAllowsAdhesion && childB.modeIndex >= 0 && childB.modeIndex < modes.length()) {
-        GPUMode modeB = modes[childB.modeIndex];
-        if (modeB.parentMakeAdhesion == 1) {
+        parentMode = modes[childB.modeIndex];
+        if (parentMode.parentMakeAdhesion == 1) {
             parentAllowsAdhesion = true;
         }
     }
@@ -157,19 +200,38 @@ void main() {
     // Calculate line vertices
     vec3 posA = childA.positionAndMass.xyz;
     vec3 posB = childB.positionAndMass.xyz;
+    vec3 midpoint = (posA + posB) * 0.5;
     
-    // Use a distinctive color for adhesion lines (orange/amber)
-    vec4 lineColor = vec4(1.0, 0.6, 0.2, 1.0); // Orange color
+    // Calculate split plane
+    // Use child A's orientation to get the world-space split direction
+    mat3 childARotMatrix = quatToMat3(childA.orientation);
+    vec3 worldSplitDirection = normalize(childARotMatrix * parentMode.splitDirection.xyz);
     
-    // Each parent generates one line (2 vertices)
-    uint lineIndex = index * 2;
+    // The split plane is perpendicular to the split direction
+    // The split plane normal is the split direction, with the midpoint as the plane point
+    vec3 splitPlaneNormal = worldSplitDirection;
+    vec3 splitPlanePoint = midpoint;
     
-    // Store the line vertices
-    if (lineIndex < lineVertices.length() && lineIndex + 1 < lineVertices.length()) {
+    // Create two line segments: childA to midpoint, and midpoint to childB
+    // Each parent now generates two lines (4 vertices total)
+    uint lineIndex = index * 4;
+    
+    // Store the line vertices with zone-based coloring
+    if (lineIndex + 3 < lineVertices.length()) {
+        // First segment: childA to midpoint
+        vec4 colorA = getZoneColor(posA, splitPlaneNormal, splitPlanePoint);
         lineVertices[lineIndex].position = vec4(posA, 1.0);
-        lineVertices[lineIndex].color = lineColor;
+        lineVertices[lineIndex].color = colorA;
         
-        lineVertices[lineIndex + 1].position = vec4(posB, 1.0);
-        lineVertices[lineIndex + 1].color = lineColor;
+        lineVertices[lineIndex + 1].position = vec4(midpoint, 1.0);
+        lineVertices[lineIndex + 1].color = colorA;
+        
+        // Second segment: midpoint to childB
+        vec4 colorB = getZoneColor(posB, splitPlaneNormal, splitPlanePoint);
+        lineVertices[lineIndex + 2].position = vec4(midpoint, 1.0);
+        lineVertices[lineIndex + 2].color = colorB;
+        
+        lineVertices[lineIndex + 3].position = vec4(posB, 1.0);
+        lineVertices[lineIndex + 3].color = colorB;
     }
 } 

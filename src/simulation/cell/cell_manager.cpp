@@ -1916,11 +1916,11 @@ void CellManager::printCellIDs(int maxCells)
 
 void CellManager::initializeAdhesionLineBuffers()
 {
-    // Create buffer for adhesion line vertices (each line has 2 vertices)
+    // Create buffer for adhesion line vertices (each parent now has 4 vertices - 2 line segments)
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &adhesionLineBuffer);
     glNamedBufferData(adhesionLineBuffer,
-        cellLimit * 2 * sizeof(glm::vec4) * 2, // 2 vertices per line, position + color for each vertex
+        cellLimit * 4 * sizeof(glm::vec4) * 2, // 4 vertices per parent, position + color for each vertex
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for adhesion line rendering
@@ -1929,7 +1929,7 @@ void CellManager::initializeAdhesionLineBuffers()
     // Create VBO that will be bound to the adhesion line buffer
     glCreateBuffers(1, &adhesionLineVBO);
     glNamedBufferData(adhesionLineVBO,
-        cellLimit * 2 * sizeof(glm::vec4) * 2,
+        cellLimit * 4 * sizeof(glm::vec4) * 2,
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
@@ -2626,7 +2626,7 @@ void CellManager::renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution,
     glBindVertexArray(adhesionLineVAO);
     // Temporarily update the VAO to use the compute buffer instead of the VBO
     glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineBuffer, 0, sizeof(glm::vec4) * 2);
-    glDrawArrays(GL_LINES, 0, adhesionParentIndexCount * 2); // 2 vertices per line
+    glDrawArrays(GL_LINES, 0, adhesionParentIndexCount * 4); // 4 vertices per parent (2 line segments)
     // Restore the VAO to use the original VBO
     glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineVBO, 0, sizeof(glm::vec4) * 2);
     glBindVertexArray(0);

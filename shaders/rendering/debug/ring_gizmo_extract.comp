@@ -131,19 +131,19 @@ void main() {
         
         // Triangle 1: inner1, inner2, outer1 (reversed winding)
         ringVertices[blueBase + i * 6 + 0].position = vec4(inner1, 1.0);
-        ringVertices[blueBase + i * 6 + 0].color = vec4(1.0, 0.0, 0.0, 1.0);
+        ringVertices[blueBase + i * 6 + 0].color = vec4(0.0, 1.0, 0.0, 1.0);
         ringVertices[blueBase + i * 6 + 1].position = vec4(inner2, 1.0);
-        ringVertices[blueBase + i * 6 + 1].color = vec4(1.0, 0.0, 0.0, 1.0);
+        ringVertices[blueBase + i * 6 + 1].color = vec4(0.0, 1.0, 0.0, 1.0);
         ringVertices[blueBase + i * 6 + 2].position = vec4(outer1, 1.0);
-        ringVertices[blueBase + i * 6 + 2].color = vec4(1.0, 0.0, 0.0, 1.0);
+        ringVertices[blueBase + i * 6 + 2].color = vec4(0.0, 1.0, 0.0, 1.0);
         
         // Triangle 2: outer1, inner2, outer2 (reversed winding)
         ringVertices[blueBase + i * 6 + 3].position = vec4(outer1, 1.0);
-        ringVertices[blueBase + i * 6 + 3].color = vec4(1.0, 0.0, 0.0, 1.0);
+        ringVertices[blueBase + i * 6 + 3].color = vec4(0.0, 1.0, 0.0, 1.0);
         ringVertices[blueBase + i * 6 + 4].position = vec4(inner2, 1.0);
-        ringVertices[blueBase + i * 6 + 4].color = vec4(1.0, 0.0, 0.0, 1.0);
+        ringVertices[blueBase + i * 6 + 4].color = vec4(0.0, 1.0, 0.0, 1.0);
         ringVertices[blueBase + i * 6 + 5].position = vec4(outer2, 1.0);
-        ringVertices[blueBase + i * 6 + 5].color = vec4(1.0, 0.0, 0.0, 1.0);
+        ringVertices[blueBase + i * 6 + 5].color = vec4(0.0, 1.0, 0.0, 1.0);
     }
     
     // --- Red Ring ---
