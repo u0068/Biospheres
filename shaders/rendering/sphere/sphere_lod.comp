@@ -1,4 +1,5 @@
 #version 430 core
+#extension GL_ARB_gpu_shader_int64 : enable
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -15,9 +16,9 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
-    uint uniqueID;
-    uint padding1;
-    uvec2 padding2;
+    uint64_t uniqueID;
+    uint64_t padding1;
+    uint padding2[4];
 };
 
 // mode data structure for compute shader

@@ -1,4 +1,5 @@
 #version 430 core
+#extension GL_ARB_gpu_shader_int64 : enable
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -16,9 +17,9 @@ struct ComputeCell {
     float toxins;
     float nitrates;
     // Unique ID system
-    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint padding1;     // Padding to maintain alignment
-    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
+    uint64_t uniqueID;     // Packed ID: [parent(32)] [cell(31)] [child(1)]
+    uint64_t padding1;     // Padding to maintain alignment
+    uint padding2[4];    // Additional padding to ensure 16-byte alignment
 };
 
 // Spatial index structure - maps parent ID to child indices
@@ -52,13 +53,13 @@ layout(std430, binding = 3) buffer CellCountBuffer {
 };
 
 // Extract parent ID from unique ID
-uint getParentID(uint uniqueID) {
-    return (uniqueID >> 16) & 0xFFFF;
+uint getParentID(uint64_t uniqueID) {
+    return uint((uniqueID >> 32) & 0xFFFFFFFF);
 }
 
 // Extract child flag from unique ID (0 = child A, 1 = child B)
-uint getChildFlag(uint uniqueID) {
-    return uniqueID & 0x1;
+uint getChildFlag(uint64_t uniqueID) {
+    return uint(uniqueID & 0x1);
 }
 
 void main() {

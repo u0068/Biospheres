@@ -1,4 +1,5 @@
 #version 430 core
+#extension GL_ARB_gpu_shader_int64 : enable
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -15,10 +16,9 @@ struct ComputeCell {
     float age;                     // Cell age
     float toxins;                  // Toxin level
     float nitrates;                // Nitrate level
-    uint uniqueID;                 // Unique cell ID
-    uint padding1;                 // Padding
-    uint padding2_low;             // Low 32 bits of padding2
-    uint padding2_high;            // High 32 bits of padding2
+    uint64_t uniqueID;                 // Unique cell ID
+    uint64_t padding1;                 // Padding
+    uint padding2[4];                  // Additional padding to ensure 16-byte alignment
 };
 
 // Instance data structure for rendering

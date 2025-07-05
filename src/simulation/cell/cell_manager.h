@@ -32,10 +32,10 @@ struct ComputeCell {
     float nitrates{ 1 };
     
     // Unique ID system: X.Y.Z format
-    // X = parent ID (16 bits), Y = cell ID (15 bits), Z = child flag (1 bit, 0=A, 1=B)
-    uint32_t uniqueID{ 0 };              // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint32_t justSplit{ 0 };              // Use this as the justSplit flag
-    uint64_t padding2{ 0 };              // Additional padding to ensure 16-byte alignment
+    // X = parent ID (32 bits), Y = cell ID (31 bits), Z = child flag (1 bit, 0=A, 1=B)
+    uint64_t uniqueID{ 0 };              // Packed ID: [parent(32)] [cell(31)] [child(1)]
+    uint64_t justSplit{ 0 };              // Use this as the justSplit flag
+    uint32_t padding2[4]{ 0, 0, 0, 0 };  // Additional padding to ensure 16-byte alignment
     
     float getRadius() const
     {
@@ -43,20 +43,20 @@ struct ComputeCell {
     }
     
     // ID utility functions
-    uint16_t getParentID() const { return static_cast<uint16_t>((uniqueID >> 16) & 0xFFFF); }
-    uint16_t getCellID() const { return static_cast<uint16_t>((uniqueID >> 1) & 0x7FFF); }
+    uint32_t getParentID() const { return static_cast<uint32_t>((uniqueID >> 32) & 0xFFFFFFFF); }
+    uint32_t getCellID() const { return static_cast<uint32_t>((uniqueID >> 1) & 0x7FFFFFFF); }
     uint8_t getChildFlag() const { return static_cast<uint8_t>(uniqueID & 0x1); }
     
-    void setUniqueID(uint16_t parentID, uint16_t cellID, uint8_t childFlag) {
-        uniqueID = (static_cast<uint32_t>(parentID) << 16) | 
-                   (static_cast<uint32_t>(cellID & 0x7FFF) << 1) | 
+    void setUniqueID(uint32_t parentID, uint32_t cellID, uint8_t childFlag) {
+        uniqueID = (static_cast<uint64_t>(parentID) << 32) | 
+                   (static_cast<uint64_t>(cellID & 0x7FFFFFFF) << 1) | 
                    (childFlag & 0x1);
     }
 };
 
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
-static_assert(offsetof(ComputeCell, uniqueID) % 4 == 0, "uniqueID must be 4-byte aligned");
+static_assert(offsetof(ComputeCell, uniqueID) % 8 == 0, "uniqueID must be 8-byte aligned");
 
 struct CellManager
 {

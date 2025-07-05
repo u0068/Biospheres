@@ -971,7 +971,7 @@ void CellManager::resetSimulation()
     struct IDCounters {
         uint32_t nextAvailableID = 1;      // Start from 1 (0 is reserved)
         uint32_t recycledIDCount = 0;      // No recycled IDs initially
-        uint32_t maxCellID = 32767;        // Maximum cell ID (15 bits)
+        uint32_t maxCellID = 2147483647;   // Maximum cell ID (31 bits)
         uint32_t deadCellCount = 0;        // Dead cells found this frame
     } resetCounters;
     if (idCounterBuffer != 0) {
@@ -1027,11 +1027,11 @@ void CellManager::spawnCells(int count)
         
         // Assign unique ID (for spawned cells, parent ID = 0, cell ID = sequential, child flag = 0)
         // This is a simple approach for initial spawning - GPU will handle more complex ID management
-        static uint16_t nextSpawnID = 1;
+        static uint32_t nextSpawnID = 1;
         newCell.setUniqueID(0, nextSpawnID++, 0);
         
         // Wrap around if we exceed the maximum ID
-        if (nextSpawnID > 32767) {
+        if (nextSpawnID > 2147483647) {
             nextSpawnID = 1;
         }
 
@@ -1820,7 +1820,7 @@ void CellManager::initializeIDSystem()
     struct IDCounters {
         uint32_t nextAvailableID = 1;      // Start from 1 (0 is reserved)
         uint32_t recycledIDCount = 0;      // No recycled IDs initially
-        uint32_t maxCellID = 32767;        // Maximum cell ID (15 bits)
+        uint32_t maxCellID = 2147483647;   // Maximum cell ID (31 bits)
         uint32_t deadCellCount = 0;        // Dead cells found this frame
     } initialCounters;
     
@@ -1901,8 +1901,8 @@ void CellManager::printCellIDs(int maxCells)
     for (int i = 0; i < std::min(maxCells, cellCount); i++) {
         if (i < static_cast<int>(cellStagingBuffer.size())) {
             const ComputeCell& cell = cellStagingBuffer[i];
-            uint16_t parentID = cell.getParentID();
-            uint16_t cellID = cell.getCellID();
+            uint32_t parentID = cell.getParentID();
+            uint32_t cellID = cell.getCellID();
             uint8_t childFlag = cell.getChildFlag();
             char childChar = (childFlag == 0) ? 'A' : 'B';
             
