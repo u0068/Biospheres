@@ -147,7 +147,7 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 		activeCellManager = &mainCellManager;
 	}
 	
-	if (!ImGui::GetIO().WantCaptureMouse && activeCamera && activeCellManager)
+	if (!ImGui::GetIO().WantCaptureMouse && !ImGui::GetIO().WantCaptureKeyboard && activeCamera && activeCellManager)
 	{
 		TimerCPU cpuTimer("Input Processing");
 		activeCamera->processInput(input, deltaTime);
@@ -159,6 +159,9 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 
 		activeCellManager->handleMouseInput(mousePos, glm::vec2(width, height), *activeCamera,
 											isLeftMousePressed, isLeftMouseDown, scrollDelta);
+		
+		// Handle keyboard input for cell rotation
+		activeCellManager->handleKeyboardInput(deltaTime);
 	}
 	
 	synthEngine.generateSample();

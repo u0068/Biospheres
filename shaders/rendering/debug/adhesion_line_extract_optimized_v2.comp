@@ -101,15 +101,23 @@ mat3 quatToMat3(vec4 quat) {
     );
 }
 
-// Determine zone color based on position relative to split plane
-vec4 getZoneColor(vec3 position, vec3 splitPlaneNormal, vec3 splitPlanePoint) {
+// Determine zone color based on position relative to cell's own split plane
+vec4 getZoneColor(vec3 position, ComputeCell cell, GPUMode mode) {
+    // Calculate the cell's own split plane based on its orientation
+    mat3 cellRotMatrix = quatToMat3(cell.orientation);
+    vec3 worldSplitDirection = normalize(cellRotMatrix * mode.splitDirection.xyz);
+    
+    // The split plane normal is the split direction, with the cell position as the plane point
+    vec3 splitPlaneNormal = worldSplitDirection;
+    vec3 splitPlanePoint = cell.positionAndMass.xyz;
+    
     // Calculate distance from position to split plane
     vec3 toPosition = position - splitPlanePoint;
     float distance = dot(toPosition, splitPlaneNormal);
     
-    // Calculate angle between the vector from midpoint to position and the split plane normal
-    vec3 directionFromMidpoint = normalize(toPosition);
-    float angle = acos(abs(dot(directionFromMidpoint, splitPlaneNormal)));
+    // Calculate angle between the vector from cell position to the given position and the split plane normal
+    vec3 directionFromCell = normalize(toPosition);
+    float angle = acos(abs(dot(directionFromCell, splitPlaneNormal)));
     float angleDegrees = degrees(angle);
     
     // Zone C: within 10 degrees of being parallel to split plane (red)
@@ -118,13 +126,13 @@ vec4 getZoneColor(vec3 position, vec3 splitPlaneNormal, vec3 splitPlanePoint) {
     if (abs(angleDegrees - 90.0) <= 10.0) {
         return vec4(1.0, 0.0, 0.0, 1.0); // Red
     }
-    // Zone A: positive side of split plane (green)
+    // Zone A: positive side of split plane (blue)
     else if (distance > 0.0) {
-        return vec4(0.0, 1.0, 0.0, 1.0); // Green
-    }
-    // Zone B: negative side of split plane (blue)
-    else {
         return vec4(0.0, 0.0, 1.0, 1.0); // Blue
+    }
+    // Zone B: negative side of split plane (green)
+    else {
+        return vec4(0.0, 1.0, 0.0, 1.0); // Green
     }
 }
 
@@ -202,32 +210,32 @@ void main() {
     vec3 posB = childB.positionAndMass.xyz;
     vec3 midpoint = (posA + posB) * 0.5;
     
-    // Calculate split plane
-    // Use child A's orientation to get the world-space split direction
-    mat3 childARotMatrix = quatToMat3(childA.orientation);
-    vec3 worldSplitDirection = normalize(childARotMatrix * parentMode.splitDirection.xyz);
-    
-    // The split plane is perpendicular to the split direction
-    // The split plane normal is the split direction, with the midpoint as the plane point
-    vec3 splitPlaneNormal = worldSplitDirection;
-    vec3 splitPlanePoint = midpoint;
-    
     // Create two line segments: childA to midpoint, and midpoint to childB
     // Each parent now generates two lines (4 vertices total)
     uint lineIndex = index * 4;
     
     // Store the line vertices with zone-based coloring
     if (lineIndex + 3 < lineVertices.length()) {
-        // First segment: childA to midpoint
-        vec4 colorA = getZoneColor(posA, splitPlaneNormal, splitPlanePoint);
+        // Get the mode for each child (they might have different modes)
+        // Add bounds checking for mode indices
+        if (childA.modeIndex < 0 || childA.modeIndex >= modes.length() ||
+            childB.modeIndex < 0 || childB.modeIndex >= modes.length()) {
+            return; // Skip if mode indices are invalid
+        }
+        
+        GPUMode childAMode = modes[childA.modeIndex];
+        GPUMode childBMode = modes[childB.modeIndex];
+        
+        // First segment: childA to midpoint - color based on midpoint position relative to childA's split plane
+        vec4 colorA = getZoneColor(midpoint, childA, childAMode);
         lineVertices[lineIndex].position = vec4(posA, 1.0);
         lineVertices[lineIndex].color = colorA;
         
         lineVertices[lineIndex + 1].position = vec4(midpoint, 1.0);
         lineVertices[lineIndex + 1].color = colorA;
         
-        // Second segment: midpoint to childB
-        vec4 colorB = getZoneColor(posB, splitPlaneNormal, splitPlanePoint);
+        // Second segment: midpoint to childB - color based on midpoint position relative to childB's split plane
+        vec4 colorB = getZoneColor(midpoint, childB, childBMode);
         lineVertices[lineIndex + 2].position = vec4(midpoint, 1.0);
         lineVertices[lineIndex + 2].color = colorB;
         

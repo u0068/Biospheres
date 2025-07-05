@@ -36,6 +36,7 @@ struct ComputeCell {
     uint64_t uniqueID{ 0 };              // Packed ID: [parent(32)] [cell(31)] [child(1)]
     uint64_t justSplit{ 0 };              // Use this as the justSplit flag
     uint32_t padding2[4]{ 0, 0, 0, 0 };  // Additional padding to ensure 16-byte alignment
+    // Note: padding2[0] is used as a flag: 1 = cell is being manually rotated
     
     float getRadius() const
     {
@@ -52,6 +53,10 @@ struct ComputeCell {
                    (static_cast<uint64_t>(cellID & 0x7FFFFFFF) << 1) | 
                    (childFlag & 0x1);
     }
+    
+    // Rotation flag utilities
+    bool isBeingRotated() const { return padding2[0] == 1; }
+    void setBeingRotated(bool rotated) { padding2[0] = rotated ? 1 : 0; }
 };
 
 // Ensure struct alignment is correct for GPU usage
@@ -301,6 +306,9 @@ struct CellManager
 
     // Handle the end of dragging (restore physics)
     void endDrag();
+
+    // Handle keyboard input for cell rotation
+    void handleKeyboardInput(float deltaTime);
 
     // GPU synchronization for selection (synchronous readback for immediate use)
     void syncCellPositionsFromGPU();

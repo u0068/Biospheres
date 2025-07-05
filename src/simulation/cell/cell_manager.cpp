@@ -512,8 +512,8 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
             selectedCell.cellData = newData;
         }
 
-        // Update the specific cell in both GPU buffers to keep them synchronized
-        for (int i = 0; i < 2; i++)
+        // Update the specific cell in all 3 GPU buffers to keep them synchronized
+        for (int i = 0; i < 3; i++)
         {
             glNamedBufferSubData(cellBuffer[i],
                                  index * sizeof(ComputeCell),
@@ -1478,25 +1478,17 @@ void CellManager::clearSelection()
 
 void CellManager::endDrag()
 {
-    if (isDraggingCell && selectedCell.isValid)
+    if (selectedCell.isValid)
     {
-        // Reset velocity to zero when ending drag to prevent sudden jumps
-        cpuCells[selectedCell.cellIndex].velocity.x = 0.0f;
-        cpuCells[selectedCell.cellIndex].velocity.y = 0.0f;
-        cpuCells[selectedCell.cellIndex].velocity.z = 0.0f; // Update the GPU buffers with the final state
-        for (int i = 0; i < 3; i++)
-        {
-            glNamedBufferSubData(cellBuffer[i],
-                                 selectedCell.cellIndex * sizeof(ComputeCell),
-                                 sizeof(ComputeCell),
-                                 &cpuCells[selectedCell.cellIndex]);
-        }
+        // Restore physics for the dragged cell
+        syncCellPositionsFromGPU();
         
-        // Mark adhesion index for update since cell position changed during drag
-        adhesionIndexNeedsUpdate = true;
+        // Update the cell data with the final position
+        cpuCells[selectedCell.cellIndex] = selectedCell.cellData;
+        
+        // Mark the cell as no longer being dragged
+        isDraggingCell = false;
     }
-
-    isDraggingCell = false;
 }
 
 void CellManager::syncCellPositionsFromGPU()
@@ -2659,4 +2651,70 @@ void CellManager::cleanupOptimizedAdhesionLineSystem()
     adhesionLineOptimizedShader = nullptr;
     
     adhesionParentIndexCount = 0;
+}
+
+void CellManager::handleKeyboardInput(float deltaTime)
+{
+    if (!selectedCell.isValid) {
+        return;
+    }
+    
+    const float rotationSpeed = 20.0f; // degrees per second
+    const float rotationAmount = glm::radians(rotationSpeed * deltaTime);
+    
+    // Get current cell data
+    ComputeCell cell = selectedCell.cellData;
+    bool rotationApplied = false;
+    
+    // Check arrow keys and apply rotation
+    if (Input::isKeyPressed(GLFW_KEY_LEFT))
+    {
+        // Rotate around Y-axis (left/right)
+        glm::quat rotation = glm::angleAxis(rotationAmount, glm::vec3(0.0f, 1.0f, 0.0f));
+        cell.orientation = glm::normalize(cell.orientation * rotation);
+        rotationApplied = true;
+    }
+    
+    if (Input::isKeyPressed(GLFW_KEY_RIGHT))
+    {
+        // Rotate around Y-axis (left/right) - opposite direction
+        glm::quat rotation = glm::angleAxis(-rotationAmount, glm::vec3(0.0f, 1.0f, 0.0f));
+        cell.orientation = glm::normalize(cell.orientation * rotation);
+        rotationApplied = true;
+    }
+    
+    if (Input::isKeyPressed(GLFW_KEY_UP))
+    {
+        // Rotate around X-axis (up/down)
+        glm::quat rotation = glm::angleAxis(rotationAmount, glm::vec3(1.0f, 0.0f, 0.0f));
+        cell.orientation = glm::normalize(cell.orientation * rotation);
+        rotationApplied = true;
+    }
+    
+    if (Input::isKeyPressed(GLFW_KEY_DOWN))
+    {
+        // Rotate around X-axis (up/down) - opposite direction
+        glm::quat rotation = glm::angleAxis(-rotationAmount, glm::vec3(1.0f, 0.0f, 0.0f));
+        cell.orientation = glm::normalize(cell.orientation * rotation);
+        rotationApplied = true;
+    }
+    
+    // Set or clear the rotation flag
+    cell.setBeingRotated(rotationApplied);
+    
+    if (rotationApplied)
+    {
+        // Update the selected cell data
+        selectedCell.cellData = cell;
+        
+        // Update the cell in the GPU buffer
+        updateCellData(selectedCell.cellIndex, cell);
+    }
+    else if (cell.isBeingRotated())
+    {
+        // Clear the rotation flag if no keys are pressed
+        cell.setBeingRotated(false);
+        selectedCell.cellData = cell;
+        updateCellData(selectedCell.cellIndex, cell);
+    }
 }
