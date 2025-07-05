@@ -334,6 +334,10 @@ int main()
 		// Ensure both simulations have proper initial state by running one update cycle
 		previewCellManager.updateCells(config::physicsTimeStep);
 		mainCellManager.updateCells(config::physicsTimeStep);
+		
+		// Establish initial adhesion connections
+		previewCellManager.establishAdhesionConnections();
+		mainCellManager.establishAdhesionConnections();
 
 	AudioEngine audioEngine;
 	audioEngine.init();

@@ -1,6 +1,6 @@
 #version 430 core
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 // Cell data structure matching the one in the main simulation
 struct ComputeCell {
@@ -34,6 +34,14 @@ struct GPUMode {
     int padding;          // Padding to maintain alignment
 };
 
+// Spatial index structure - maps parent ID to child indices
+struct ParentIndex {
+    uint parentID;        // Parent ID
+    uint childAIndex;     // Index of child A (child flag = 0)
+    uint childBIndex;     // Index of child B (child flag = 1)
+    uint isActive;        // Whether this parent has active children
+};
+
 // Adhesion line vertex data - each line has 2 vertices
 struct AdhesionLineVertex {
     vec4 position;    // World position (w unused, but needed for alignment)
@@ -50,25 +58,26 @@ layout(std430, binding = 1) buffer ModeBuffer {
     GPUMode modes[];
 };
 
+// Input: Spatial index (pre-computed parent lookup table)
+layout(std430, binding = 2) buffer ParentIndexBuffer {
+    ParentIndex parentIndices[];
+};
+
 // Output: Adhesion line vertices
-layout(std430, binding = 2) buffer AdhesionLineBuffer {
+layout(std430, binding = 3) buffer AdhesionLineBuffer {
     AdhesionLineVertex lineVertices[];
 };
 
-// Cell count
-layout(std430, binding = 3) buffer CellCountBuffer {
+// Cell count and parent index count
+layout(std430, binding = 4) buffer CountBuffer {
     uint cellCount;
-    uint pendingCellCount;
+    uint parentIndexCount;
+    uint padding[2];
 };
 
 // Extract parent ID from unique ID
 uint getParentID(uint uniqueID) {
     return (uniqueID >> 16) & 0xFFFF;
-}
-
-// Extract cell ID from unique ID
-uint getCellID(uint uniqueID) {
-    return (uniqueID >> 1) & 0x7FFF;
 }
 
 // Extract child flag from unique ID (0 = child A, 1 = child B)
@@ -79,69 +88,72 @@ uint getChildFlag(uint uniqueID) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= cellCount) {
+    if (index >= parentIndexCount) {
         return;
     }
     
-    ComputeCell currentCell = cells[index];
+    ParentIndex parentIndex = parentIndices[index];
     
-    // Skip cells with no parent (initial spawned cells)
-    uint parentID = getParentID(currentCell.uniqueID);
-    if (parentID == 0) {
+    // Skip inactive parents
+    if (parentIndex.isActive == 0) {
         return;
     }
     
-    // Get the parent's mode to check if adhesion is enabled
-    if (currentCell.modeIndex < 0 || currentCell.modeIndex >= modes.length()) {
+    // Validate child indices
+    if (parentIndex.childAIndex >= cellCount || parentIndex.childBIndex >= cellCount) {
         return;
     }
     
-    GPUMode parentMode = modes[currentCell.modeIndex];
+    // Get the child cells
+    ComputeCell childA = cells[parentIndex.childAIndex];
+    ComputeCell childB = cells[parentIndex.childBIndex];
     
-    // Skip if parent doesn't make adhesion
-    if (parentMode.parentMakeAdhesion == 0) {
-        return;
+    // Verify these are actually the children of this parent
+    uint childAParentID = getParentID(childA.uniqueID);
+    uint childBParentID = getParentID(childB.uniqueID);
+    uint childAFlag = getChildFlag(childA.uniqueID);
+    uint childBFlag = getChildFlag(childB.uniqueID);
+    
+    if (childAParentID != parentIndex.parentID || 
+        childBParentID != parentIndex.parentID ||
+        childAFlag != 0 || childBFlag != 1) {
+        return; // Invalid parent-child relationship
     }
     
-    // Only process child A to avoid duplicate lines (child B will be found by child A)
-    uint childFlag = getChildFlag(currentCell.uniqueID);
-    if (childFlag != 0) {
-        return; // Skip child B
-    }
+    // OPTIMIZED: Instead of searching through all modes (which is very expensive),
+    // we'll check if either child's mode has parentMakeAdhesion enabled.
+    // This is a reasonable approximation since children inherit properties from their parent.
     
-    // Look for sibling (child B with same parent ID)
-    uint siblingIndex = 0xFFFFFFFF; // Invalid index
+    bool parentAllowsAdhesion = false;
     
-    for (uint i = 0; i < cellCount; i++) {
-        if (i == index) continue; // Skip self
-        
-        ComputeCell otherCell = cells[i];
-        uint otherParentID = getParentID(otherCell.uniqueID);
-        uint otherChildFlag = getChildFlag(otherCell.uniqueID);
-        
-        // Check if it's our sibling (same parent, different child flag)
-        if (otherParentID == parentID && otherChildFlag == 1) {
-            siblingIndex = i;
-            break;
+    // Check child A's mode
+    if (childA.modeIndex >= 0 && childA.modeIndex < modes.length()) {
+        GPUMode modeA = modes[childA.modeIndex];
+        if (modeA.parentMakeAdhesion == 1) {
+            parentAllowsAdhesion = true;
         }
     }
     
-    // If no sibling found, no line to draw
-    if (siblingIndex == 0xFFFFFFFF) {
+    // Check child B's mode if child A didn't have it
+    if (!parentAllowsAdhesion && childB.modeIndex >= 0 && childB.modeIndex < modes.length()) {
+        GPUMode modeB = modes[childB.modeIndex];
+        if (modeB.parentMakeAdhesion == 1) {
+            parentAllowsAdhesion = true;
+        }
+    }
+    
+    if (!parentAllowsAdhesion) {
         return;
     }
     
-    ComputeCell siblingCell = cells[siblingIndex];
-    
     // Calculate line vertices
-    vec3 posA = currentCell.positionAndMass.xyz;
-    vec3 posB = siblingCell.positionAndMass.xyz;
+    vec3 posA = childA.positionAndMass.xyz;
+    vec3 posB = childB.positionAndMass.xyz;
     
     // Use a distinctive color for adhesion lines (orange/amber)
     vec4 lineColor = vec4(1.0, 0.6, 0.2, 1.0); // Orange color
     
-    // Each cell pair generates one line (2 vertices)
-    // We use the current cell's index to determine where to store the line
+    // Each parent generates one line (2 vertices)
     uint lineIndex = index * 2;
     
     // Store the line vertices

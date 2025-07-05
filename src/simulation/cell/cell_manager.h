@@ -196,9 +196,28 @@ struct CellManager
     GLuint adhesionLineBuffer{};        // Buffer for adhesion line vertices  
     GLuint adhesionLineVAO{};           // VAO for adhesion line rendering
     GLuint adhesionLineVBO{};           // VBO for adhesion line vertices
-    Shader* adhesionLineExtractShader = nullptr; // Compute shader for generating adhesion line data
+
     Shader* adhesionLineShader = nullptr;        // Vertex/fragment shaders for rendering adhesion lines
     
+
+    
+    // Adhesion connection system - permanent connections between sibling cells
+    GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesion connections
+    Shader* adhesionConnectionShader = nullptr;  // Compute shader for establishing initial connections
+    int adhesionConnectionCount{0};
+    
+    // Optimized adhesion line system with spatial indexing
+    GLuint adhesionParentIndexBuffer{};  // Buffer for spatial index (parent lookup table)
+    GLuint adhesionParentIndexCounterBuffer{};  // Counter buffer for parent index building
+    GLuint adhesionOptimizedCountBuffer{};  // Count buffer for optimized shader (cellCount, parentIndexCount)
+    Shader* adhesionParentIndexBuilderShader = nullptr;  // Compute shader for building spatial index
+    Shader* adhesionLineOptimizedShader = nullptr;  // Optimized adhesion line extract shader
+    int adhesionParentIndexCount{0};  // Number of parent indices
+    bool adhesionIndexNeedsUpdate{true};  // Flag to track when index needs rebuilding
+    
+    // Rendering optimization flags
+    bool useSpatialIndexing{true};  // Use spatial indexing for O(1) sibling lookup
+
     void initializeGizmoBuffers();
     void updateGizmoData();
     void cleanupGizmos();
@@ -213,8 +232,21 @@ struct CellManager
     // Adhesion line methods
     void renderAdhesionLines(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
     void initializeAdhesionLineBuffers();
-    void updateAdhesionLineData();
     void cleanupAdhesionLines();
+    
+    // Optimized adhesion line methods (spatial indexing)
+    void renderOptimizedAdhesionLines(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
+    
+    // Adhesion connection methods
+    void initializeAdhesionConnectionSystem();
+    void establishAdhesionConnections();
+    void cleanupAdhesionConnectionSystem();
+    
+    // Optimized adhesion line methods with spatial indexing
+    void initializeOptimizedAdhesionLineSystem();
+    void updateSpatialIndexAdhesionLineData();
+    void renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
+    void cleanupOptimizedAdhesionLineSystem();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
