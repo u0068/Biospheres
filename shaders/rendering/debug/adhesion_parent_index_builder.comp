@@ -97,13 +97,8 @@ void main() {
         
         // Check if it's our sibling (same parent, different child flag)
         if (otherParentID == parentID && otherChildFlag == 1) {
-            // Additional verification: ensure both cells have similar ages
-            // This helps prevent connecting cells from different division events
-            float ageDifference = abs(currentCell.age - otherCell.age);
-            if (ageDifference < 1.0) { // Allow small age difference for timing variations
-                siblingIndex = i;
-                break;
-            }
+            siblingIndex = i;
+            break;
         }
     }
     
