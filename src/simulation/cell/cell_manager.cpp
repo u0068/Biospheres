@@ -45,7 +45,6 @@ CellManager::CellManager()
     cellCounterShader = new Shader("shaders/cell/physics/cell_counter.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
     idManagerShader = new Shader("shaders/cell/management/id_manager.comp");
-    childPairPhysicsShader = new Shader("shaders/cell/physics/cell_child_pair_physics.comp");
 
     // Initialize spatial grid shaders
     gridClearShader = new Shader("shaders/spatial/grid_clear.comp");
@@ -77,7 +76,6 @@ CellManager::CellManager()
     initializeAdhesionLineBuffers();
     initializeOptimizedAdhesionLineSystem();
     initializeAdhesionConnectionSystem();
-    initializeChildPairDebugSystem();
     
     // Initialize LOD system
     initializeLODSystem();
@@ -89,8 +87,6 @@ CellManager::CellManager()
     barrierBatch.setStats(&barrierStats);
 
     clearJustSplitShader = new Shader("shaders/cell/management/clear_just_split.comp");
-
-    initializeParentChildrenSystem();
 }
 
 CellManager::~CellManager()
@@ -169,12 +165,6 @@ void CellManager::cleanup()
         delete idManagerShader;
         idManagerShader = nullptr;
     }
-    if (childPairPhysicsShader)
-    {
-        childPairPhysicsShader->destroy();
-        delete childPairPhysicsShader;
-        childPairPhysicsShader = nullptr;
-    }
 
     // Cleanup spatial grid shaders
     if (gridClearShader)
@@ -247,7 +237,6 @@ void CellManager::cleanup()
     cleanupAdhesionLines();
     cleanupOptimizedAdhesionLineSystem();
     cleanupAdhesionConnectionSystem();
-    cleanupChildPairDebugSystem();
     cleanupLODSystem();
     sphereMesh.cleanup();
 }
@@ -625,11 +614,6 @@ void CellManager::updateCells(float deltaTime)
     flushBarriers();
     cellCount = countPtr[0];
 
-    // Run debug logging if enabled
-    if (debugChildPairs) {
-        runChildPairDebugLogging();
-    }
-
     // Swap buffers for next frame (current becomes previous, previous becomes current)
     rotateBuffers();
 }
@@ -903,7 +887,7 @@ void CellManager::applyCellAdditions()
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     
     // Mark adhesion index for update since cells may have split
-    // adhesionIndexNeedsUpdate = true;
+    adhesionIndexNeedsUpdate = true;
 }
 
 void CellManager::resetSimulation()
@@ -943,12 +927,8 @@ void CellManager::resetSimulation()
     glClearNamedBufferData(gridBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     glClearNamedBufferData(gridCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     glClearNamedBufferData(gridOffsetBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    if (gridHashBuffer != 0) {
-        glClearNamedBufferData(gridHashBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    if (activeCellsBuffer != 0) {
-        glClearNamedBufferData(activeCellsBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
+    glClearNamedBufferData(gridHashBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glClearNamedBufferData(activeCellsBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     
     // Clear adhesion line buffer to prevent lingering lines after reset
     if (adhesionLineBuffer != 0) {
@@ -1008,12 +988,12 @@ void CellManager::resetSimulation()
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
     
     // Mark adhesion index for update since cells may have split
-    // adhesionIndexNeedsUpdate = true;
+    adhesionIndexNeedsUpdate = true;
     
 
     
     // Reset adhesion index update flag
-    // adhesionIndexNeedsUpdate = true;
+    adhesionIndexNeedsUpdate = true;
 }
 
 void CellManager::spawnCells(int count)
@@ -1059,7 +1039,7 @@ void CellManager::spawnCells(int count)
     }
     
     // Mark adhesion index for update since new cells were spawned
-    // adhesionIndexNeedsUpdate = true;
+    adhesionIndexNeedsUpdate = true;
 }
 
 // Spatial partitioning
@@ -1081,18 +1061,6 @@ void CellManager::initializeSpatialGrid()
     // Create double buffered grid offset buffers for prefix sum calculations
     glCreateBuffers(1, &gridOffsetBuffer);
     glNamedBufferData(gridOffsetBuffer,
-                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
-
-    // Create grid hash buffer for sparse grid lookup
-    glCreateBuffers(1, &gridHashBuffer);
-    glNamedBufferData(gridHashBuffer,
-                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
-                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
-
-    // Create active cells buffer for storing only active grid cells
-    glCreateBuffers(1, &activeCellsBuffer);
-    glNamedBufferData(activeCellsBuffer,
                       config::TOTAL_GRID_CELLS * sizeof(GLuint),
                       nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
 
@@ -1157,16 +1125,6 @@ void CellManager::cleanupSpatialGrid()
     {
         glDeleteBuffers(1, &gridOffsetBuffer);
         gridOffsetBuffer = 0;
-    }
-    if (gridHashBuffer != 0)
-    {
-        glDeleteBuffers(1, &gridHashBuffer);
-        gridHashBuffer = 0;
-    }
-    if (activeCellsBuffer != 0)
-    {
-        glDeleteBuffers(1, &activeCellsBuffer);
-        activeCellsBuffer = 0;
     }
 }
 
@@ -2499,54 +2457,133 @@ void CellManager::cleanupAdhesionConnectionSystem()
 
 void CellManager::initializeOptimizedAdhesionLineSystem()
 {
-    // Create count buffer for optimized shader (cellCount, parentTableSize, padding[2])
-    glCreateBuffers(1, &adhesionOptimizedCountBuffer);
-    glNamedBufferData(adhesionOptimizedCountBuffer,
-        sizeof(GLuint) * 4, // cellCount, parentTableSize, padding[2]
+    // Create buffer for parent index data (spatial lookup table)
+    // Each parent index stores: parentID, childAIndex, childBIndex, isActive = 16 bytes
+    glCreateBuffers(1, &adhesionParentIndexBuffer);
+    glNamedBufferData(adhesionParentIndexBuffer,
+        cellLimit * sizeof(GLuint) * 4, // Maximum possible parent indices
         nullptr, GL_DYNAMIC_COPY);
     
-    // Create shader
+    // Create counter buffer for parent index building
+    glCreateBuffers(1, &adhesionParentIndexCounterBuffer);
+    glNamedBufferData(adhesionParentIndexCounterBuffer,
+        sizeof(GLuint) * 4, // Counter + padding for alignment
+        nullptr, GL_DYNAMIC_COPY);
+    
+    // Initialize counter to 0
+    GLuint zero = 0;
+    glNamedBufferSubData(adhesionParentIndexCounterBuffer, 0, sizeof(GLuint), &zero);
+    
+    // Create count buffer for optimized shader (cellCount, parentIndexCount, padding[2])
+    glCreateBuffers(1, &adhesionOptimizedCountBuffer);
+    glNamedBufferData(adhesionOptimizedCountBuffer,
+        sizeof(GLuint) * 4, // cellCount, parentIndexCount, padding[2]
+        nullptr, GL_DYNAMIC_COPY);
+    
+    // Create shaders
+    adhesionParentIndexBuilderShader = new Shader("shaders/rendering/debug/adhesion_parent_index_builder.comp");
     adhesionLineOptimizedShader = new Shader("shaders/rendering/debug/adhesion_line_extract_optimized_v2.comp");
+    
+
+    
+    adhesionParentIndexCount = 0;
 }
 
+void CellManager::updateSpatialIndexAdhesionLineData()
+{
+    if (cellCount == 0) return;
+    
+    // Check if optimized system is initialized
+    if (adhesionParentIndexBuilderShader == nullptr) {
+        return;
+    }
+    
+    TimerGPU timer("Spatial Index Adhesion Line Data Update");
+    
+    // Step 1: Build spatial index (parent lookup table)
+    adhesionParentIndexBuilderShader->use();
+    
+    // Bind cell data as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    // Bind parent index buffer as output
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, adhesionParentIndexBuffer);
+    // Bind counter buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionParentIndexCounterBuffer);
+    // Bind cell count buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    
 
+    
+    // Reset parent index counter
+    GLuint zero = 0;
+    glNamedBufferSubData(adhesionParentIndexCounterBuffer, 0, sizeof(GLuint), &zero);
+    
+    // Dispatch compute shader to build spatial index
+    GLuint numGroups = (cellCount + 255) / 256;
+    adhesionParentIndexBuilderShader->dispatch(numGroups, 1, 1);
+    
+    // Use targeted barrier for buffer access
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
+    
+    // Read back the parent index count
+    GLuint parentCount;
+    glGetNamedBufferSubData(adhesionParentIndexCounterBuffer, 0, sizeof(GLuint), &parentCount);
+    adhesionParentIndexCount = static_cast<int>(parentCount);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
 
 void CellManager::renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
 {
-    if (!showAdhesionLines || cellCount == 0) {
+    if (!showAdhesionLines) {
         return;
     }
     
     // Check if optimized system is initialized
-    if (adhesionLineOptimizedShader == nullptr) {
+    if (adhesionLineOptimizedShader == nullptr || adhesionParentIndexBuilderShader == nullptr) {
         return;
     }
     
-    // First, build the parent-children mapping (if not already done)
-    runParentChildrenReport();
+    // OPTIMIZED: Only update spatial index when needed
+    // This avoids rebuilding the index every frame
+    if (adhesionIndexNeedsUpdate) {
+        updateSpatialIndexAdhesionLineData();
+        adhesionIndexNeedsUpdate = false;
+    }
     
-    TimerGPU timer("Fast Adhesion Line Rendering");
+    // DEBUG: Force update every frame to see if that helps
+    // updateSpatialIndexAdhesionLineData();
     
-    // Use the optimized adhesion line extract shader with fast parent-children lookup
+
+    
+    if (adhesionParentIndexCount == 0) {
+        return;
+    }
+    TimerGPU timer("Spatial Index Adhesion Line Rendering");
+    
+    // Use the optimized adhesion line extract shader to generate vertices from spatial index
     adhesionLineOptimizedShader->use();
     
     // Bind cell data as input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     // Bind mode data as input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
-    // Bind parent-children mapping as input (O(1) lookup)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, parentChildrenBuffer);
+    // Bind spatial index as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionParentIndexBuffer);
     // Bind adhesion line buffer as output
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, adhesionLineBuffer);
-    // Update the count buffer with current cell count and parent table size
-    GLuint countData[4] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(parentChildrenTableSize), 0, 0 };
+    // Update the count buffer with current cell count and parent index count
+    GLuint countData[4] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionParentIndexCount), 0, 0 };
     glNamedBufferSubData(adhesionOptimizedCountBuffer, 0, sizeof(GLuint) * 4, countData);
     
     // Bind count buffer
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionOptimizedCountBuffer);
     
-    // Dispatch compute shader to generate line vertices using fast parent-children lookup
-    GLuint numGroups = (parentChildrenTableSize + 255) / 256;
+    // No uniforms needed for the optimized shader
+    
+    // Dispatch compute shader to generate line vertices from spatial index
+    GLuint numGroups = (adhesionParentIndexCount + 255) / 256;
     adhesionLineOptimizedShader->dispatch(numGroups, 1, 1);
     
     // Use targeted barrier for buffer access
@@ -2581,7 +2618,7 @@ void CellManager::renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution,
     glBindVertexArray(adhesionLineVAO);
     // Temporarily update the VAO to use the compute buffer instead of the VBO
     glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineBuffer, 0, sizeof(glm::vec4) * 2);
-    glDrawArrays(GL_LINES, 0, parentChildrenTableSize * 4); // 4 vertices per parent (2 line segments)
+    glDrawArrays(GL_LINES, 0, adhesionParentIndexCount * 4); // 4 vertices per parent (2 line segments)
     // Restore the VAO to use the original VBO
     glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineVBO, 0, sizeof(glm::vec4) * 2);
     glBindVertexArray(0);
@@ -2592,18 +2629,28 @@ void CellManager::renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution,
 
 void CellManager::cleanupOptimizedAdhesionLineSystem()
 {
+    if (adhesionParentIndexBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionParentIndexBuffer);
+        adhesionParentIndexBuffer = 0;
+    }
+    if (adhesionParentIndexCounterBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionParentIndexCounterBuffer);
+        adhesionParentIndexCounterBuffer = 0;
+    }
     if (adhesionOptimizedCountBuffer != 0)
     {
         glDeleteBuffers(1, &adhesionOptimizedCountBuffer);
         adhesionOptimizedCountBuffer = 0;
     }
     
-    if (adhesionLineOptimizedShader)
-    {
-        adhesionLineOptimizedShader->destroy();
-        delete adhesionLineOptimizedShader;
-        adhesionLineOptimizedShader = nullptr;
-    }
+    delete adhesionParentIndexBuilderShader;
+    delete adhesionLineOptimizedShader;
+    adhesionParentIndexBuilderShader = nullptr;
+    adhesionLineOptimizedShader = nullptr;
+    
+    adhesionParentIndexCount = 0;
 }
 
 void CellManager::handleKeyboardInput(float deltaTime)
@@ -2669,238 +2716,5 @@ void CellManager::handleKeyboardInput(float deltaTime)
         cell.setBeingRotated(false);
         selectedCell.cellData = cell;
         updateCellData(selectedCell.cellIndex, cell);
-    }
-}
-
-// Child pair debug logging system implementation
-void CellManager::initializeChildPairDebugSystem()
-{
-    // Create buffer for child pair debug data
-    // Each debug entry stores: parentID, childAIndex, childBIndex, childAUniqueID, childBUniqueID, 
-    // childAPosition, childBPosition, distance, isValid, padding
-    glCreateBuffers(1, &childPairDebugBuffer);
-    glNamedBufferData(childPairDebugBuffer,
-        cellLimit * sizeof(ChildPairDebugInfo), // Maximum possible child pairs
-        nullptr, GL_DYNAMIC_COPY);
-    
-    // Create counter buffer for debug operations
-    glCreateBuffers(1, &childPairDebugCounterBuffer);
-    glNamedBufferData(childPairDebugCounterBuffer,
-        sizeof(GLuint) * 4, // Counter + padding for alignment
-        nullptr, GL_DYNAMIC_COPY);
-    
-    // Initialize counter to 0
-    GLuint zero = 0;
-    glNamedBufferSubData(childPairDebugCounterBuffer, 0, sizeof(GLuint), &zero);
-    
-    // Create count buffer for cell count
-    glCreateBuffers(1, &childPairDebugCountBuffer);
-    glNamedBufferData(childPairDebugCountBuffer,
-        sizeof(GLuint) * 4, // cellCount, pendingCellCount, padding[2]
-        nullptr, GL_DYNAMIC_COPY);
-    
-    // Create shaders
-    childPairDebugOptimizedShader = new Shader("shaders/rendering/debug/child_pair_debug_logger_gpu.comp");
-    
-    childPairDebugCount = 0;
-    debugChildPairs = false; // Start disabled
-}
-
-void CellManager::runChildPairDebugLogging()
-{
-    if (!debugChildPairs || cellCount == 0) {
-        return;
-    }
-    
-    // Check if debug system is initialized
-    if (childPairDebugOptimizedShader == nullptr) {
-        return;
-    }
-    
-    // First, build the parent-children mapping (if not already done)
-    runParentChildrenReport();
-    
-    // Reset debug counter
-    GLuint zero = 0;
-    glNamedBufferSubData(childPairDebugCounterBuffer, 0, sizeof(GLuint), &zero);
-    
-    // Update cell count buffer
-    GLuint countData[4] = { static_cast<GLuint>(cellCount), 0, 0, 0 };
-    glNamedBufferSubData(childPairDebugCountBuffer, 0, sizeof(GLuint) * 4, countData);
-    
-    // Use the optimized GPU-only debug shader for O(1) lookup
-    childPairDebugOptimizedShader->use();
-    
-    // Bind cell data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    // Bind parent-children mapping as input (GPU-only, no CPU sync)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, parentChildrenBuffer);
-    // Bind debug buffer as output
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, childPairDebugBuffer);
-    // Bind counter buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, childPairDebugCounterBuffer);
-    // Bind cell count buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, childPairDebugCountBuffer);
-    
-    // Dispatch compute shader to find child pairs using O(1) lookup
-    GLuint numGroups = (cellCount + 255) / 256;
-    childPairDebugOptimizedShader->dispatch(numGroups, 1, 1);
-    
-    // Use targeted barrier for buffer access
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    flushBarriers();
-    
-    // Read back the debug pair count
-    GLuint pairCount;
-    glGetNamedBufferSubData(childPairDebugCounterBuffer, 0, sizeof(GLuint), &pairCount);
-    childPairDebugCount = static_cast<int>(pairCount);
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    
-    // Log the found pairs
-    logChildPairs();
-}
-
-void CellManager::logChildPairs()
-{
-    if (childPairDebugCount == 0) {
-        std::cout << "[DEBUG] No child pairs found in current frame.\n";
-        return;
-    }
-    
-    std::cout << "[DEBUG] Found " << childPairDebugCount << " child pairs:\n";
-    
-    // Read back the debug data
-    std::vector<ChildPairDebugInfo> debugData(childPairDebugCount);
-    glGetNamedBufferSubData(childPairDebugBuffer, 0, 
-        childPairDebugCount * sizeof(ChildPairDebugInfo), 
-        debugData.data());
-    
-    for (int i = 0; i < childPairDebugCount; ++i) {
-        const auto& pair = debugData[i];
-        if (pair.isValid) {
-            std::cout << "  Pair " << (i + 1) << ":\n";
-            std::cout << "    Parent ID: " << pair.parentID << "\n";
-            
-            // Debug: Extract and display the components
-            uint32_t childAParentID = static_cast<uint32_t>((pair.childAUniqueID >> 32) & 0xFFFFFFFF);
-            uint32_t childACellID = static_cast<uint32_t>((pair.childAUniqueID >> 1) & 0x7FFFFFFF);
-            uint8_t childAFlag = static_cast<uint8_t>(pair.childAUniqueID & 0x1);
-            
-            uint32_t childBParentID = static_cast<uint32_t>((pair.childBUniqueID >> 32) & 0xFFFFFFFF);
-            uint32_t childBCellID = static_cast<uint32_t>((pair.childBUniqueID >> 1) & 0x7FFFFFFF);
-            uint8_t childBFlag = static_cast<uint8_t>(pair.childBUniqueID & 0x1);
-            
-            // Format IDs in the expected format: parentID.cellID.childChar
-            char childAChar = (childAFlag == 0) ? 'A' : 'B';
-            char childBChar = (childBFlag == 0) ? 'A' : 'B';
-            
-            std::cout << "    Child A: Index=" << pair.childAIndex 
-                      << ", ID=" << childAParentID << "." << childACellID << "." << childAChar
-                      << ", Pos=(" << pair.childAPosition.x << ", " << pair.childAPosition.y << ", " << pair.childAPosition.z << ")\n";
-            std::cout << "    Child B: Index=" << pair.childBIndex 
-                      << ", ID=" << childBParentID << "." << childBCellID << "." << childBChar
-                      << ", Pos=(" << pair.childBPosition.x << ", " << pair.childBPosition.y << ", " << pair.childBPosition.z << ")\n";
-            std::cout << "    Distance: " << pair.distance << "\n";
-            
-            std::cout << "    Child A Components: ParentID=" << childAParentID 
-                      << ", CellID=" << childACellID << ", Flag=" << (int)childAFlag << "\n";
-            std::cout << "    Child B Components: ParentID=" << childBParentID 
-                      << ", CellID=" << childBCellID << ", Flag=" << (int)childBFlag << "\n";
-            std::cout << "\n";
-        }
-    }
-}
-
-void CellManager::cleanupChildPairDebugSystem()
-{
-    if (childPairDebugBuffer != 0) {
-        glDeleteBuffers(1, &childPairDebugBuffer);
-        childPairDebugBuffer = 0;
-    }
-    if (childPairDebugCounterBuffer != 0) {
-        glDeleteBuffers(1, &childPairDebugCounterBuffer);
-        childPairDebugCounterBuffer = 0;
-    }
-    if (childPairDebugCountBuffer != 0) {
-        glDeleteBuffers(1, &childPairDebugCountBuffer);
-        childPairDebugCountBuffer = 0;
-    }
-    
-    if (childPairDebugOptimizedShader) {
-        childPairDebugOptimizedShader->destroy();
-        delete childPairDebugOptimizedShader;
-        childPairDebugOptimizedShader = nullptr;
-    }
-    
-    childPairDebugCount = 0;
-    debugChildPairs = false;
-}
-
-void CellManager::initializeParentChildrenSystem()
-{
-    // Assume parent IDs are dense and <= cellLimit
-    parentChildrenTableSize = cellLimit;
-    
-    // Create GPU buffer with initial data (all 0xFFFFFFFF)
-    glCreateBuffers(1, &parentChildrenBuffer);
-    glNamedBufferData(parentChildrenBuffer, parentChildrenTableSize * sizeof(ParentChildren), nullptr, GL_DYNAMIC_COPY);
-    
-    // Initialize buffer to 0xFFFFFFFF
-    std::vector<ParentChildren> initData(parentChildrenTableSize);
-    for (auto& entry : initData) {
-        entry.childAIndex = 0xFFFFFFFF;
-        entry.childBIndex = 0xFFFFFFFF;
-        entry.isActive = 0;
-        entry.padding = 0;
-    }
-    glNamedBufferSubData(parentChildrenBuffer, 0, parentChildrenTableSize * sizeof(ParentChildren), initData.data());
-    
-    // Load shader
-    parentChildrenReportShader = new Shader("shaders/rendering/debug/parent_children_report.comp");
-}
-
-void CellManager::runParentChildrenReport()
-{
-    // Reset buffer to 0xFFFFFFFF on GPU
-    std::vector<ParentChildren> resetData(parentChildrenTableSize);
-    for (auto& entry : resetData) {
-        entry.childAIndex = 0xFFFFFFFF;
-        entry.childBIndex = 0xFFFFFFFF;
-        entry.isActive = 0;
-        entry.padding = 0;
-    }
-    glNamedBufferSubData(parentChildrenBuffer, 0, parentChildrenTableSize * sizeof(ParentChildren), resetData.data());
-    
-    // Run compute shader to build parent-children mapping
-    parentChildrenReportShader->use();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, parentChildrenBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer);
-    
-    GLuint numGroups = (cellCount + 255) / 256;
-    parentChildrenReportShader->dispatch(numGroups, 1, 1);
-    
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    flushBarriers();
-}
-
-void CellManager::debugPrintParentChildren(int maxParents)
-{
-    // Only read back what we need for debug
-    std::vector<ParentChildren> debugData(std::min(maxParents, parentChildrenTableSize));
-    glGetNamedBufferSubData(parentChildrenBuffer, 0, debugData.size() * sizeof(ParentChildren), debugData.data());
-    
-    std::cout << "Parent-to-Children Table (showing first " << debugData.size() << "):\n";
-    for (int i = 0; i < debugData.size(); ++i) {
-        const auto& entry = debugData[i];
-        if (entry.isActive != 0) {
-            std::cout << "Parent " << i << ": ";
-            if (entry.childAIndex != 0xFFFFFFFF)
-                std::cout << "A=" << entry.childAIndex << " ";
-            if (entry.childBIndex != 0xFFFFFFFF)
-                std::cout << "B=" << entry.childBIndex << " ";
-            std::cout << "\n";
-        }
     }
 }

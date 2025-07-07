@@ -319,6 +319,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
+    ImGui::Text("Active Adhesion Lines: %i", cellManager.adhesionParentIndexCount);
     ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
     ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
     ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());

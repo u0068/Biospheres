@@ -63,14 +63,6 @@ struct ComputeCell {
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
 static_assert(offsetof(ComputeCell, uniqueID) % 8 == 0, "uniqueID must be 8-byte aligned");
 
-// Parent-to-children mapping for fast lookup (no spatial grid)
-struct ParentChildren {
-    uint32_t childAIndex = 0xFFFFFFFF;
-    uint32_t childBIndex = 0xFFFFFFFF;
-    uint32_t isActive = 0;
-    uint32_t padding = 0;
-};
-
 struct CellManager
 {
     // GPU-based cell management using compute shaders
@@ -153,7 +145,6 @@ struct CellManager
     Shader* cellCounterShader = nullptr;
 	Shader* cellAdditionShader = nullptr;
     Shader* idManagerShader = nullptr;  // For managing unique IDs
-    Shader* childPairPhysicsShader = nullptr;  // Fast O(1) child pair physics
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -179,14 +170,6 @@ struct CellManager
     static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
     float spawnRadius = config::DEFAULT_SPAWN_RADIUS;
     int cellLimit = config::MAX_CELLS;
-
-    // Parent-children reporting system (GPU-only)
-    GLuint parentChildrenBuffer{}; // Buffer for parent-to-children mapping
-    Shader* parentChildrenReportShader = nullptr; // Compute shader for reporting
-    int parentChildrenTableSize{0}; // Number of parent slots (max parentID+1)
-    void initializeParentChildrenSystem();
-    void runParentChildrenReport();
-    void debugPrintParentChildren(int maxParents = 10);
 
     // Constructor and destructor
     CellManager();
@@ -228,35 +211,17 @@ struct CellManager
     Shader* adhesionConnectionShader = nullptr;  // Compute shader for establishing initial connections
     int adhesionConnectionCount{0};
     
-    // Optimized adhesion line system using fast parent-children lookup
-    GLuint adhesionOptimizedCountBuffer{};  // Count buffer for optimized shader (cellCount, parentTableSize)
+    // Optimized adhesion line system with spatial indexing
+    GLuint adhesionParentIndexBuffer{};  // Buffer for spatial index (parent lookup table)
+    GLuint adhesionParentIndexCounterBuffer{};  // Counter buffer for parent index building
+    GLuint adhesionOptimizedCountBuffer{};  // Count buffer for optimized shader (cellCount, parentIndexCount)
+    Shader* adhesionParentIndexBuilderShader = nullptr;  // Compute shader for building spatial index
     Shader* adhesionLineOptimizedShader = nullptr;  // Optimized adhesion line extract shader
-
+    int adhesionParentIndexCount{0};  // Number of parent indices
+    bool adhesionIndexNeedsUpdate{true};  // Flag to track when index needs rebuilding
     
     // Rendering optimization flags
     bool useSpatialIndexing{true};  // Use spatial indexing for O(1) sibling lookup
-
-    // Child pair debug logging system
-    struct ChildPairDebugInfo {
-        uint32_t parentID;           // Parent ID
-        uint32_t childAIndex;        // Index of child A (child flag = 0)
-        uint32_t childBIndex;        // Index of child B (child flag = 1)
-        uint64_t childAUniqueID;     // Unique ID of child A
-        uint64_t childBUniqueID;     // Unique ID of child B
-        glm::vec4 childAPosition;    // Position of child A
-        glm::vec4 childBPosition;    // Position of child B
-        float distance;              // Distance between children
-        uint32_t isValid;            // Whether this pair is valid
-        uint32_t padding[2];         // Padding for alignment
-    };
-
-    GLuint childPairDebugBuffer{};         // Buffer for child pair debug info
-    GLuint childPairDebugCounterBuffer{};  // Counter buffer for debug operations
-    GLuint childPairDebugCountBuffer{};    // Count buffer for cell count
-
-    Shader* childPairDebugOptimizedShader = nullptr;  // New O(1) GPU-only version
-    int childPairDebugCount{0};            // Number of child pairs found
-    bool debugChildPairs{false};           // WARNING: Expensive flag - enables GPU compute + CPU readback every frame
 
     void initializeGizmoBuffers();
     void updateGizmoData();
@@ -284,17 +249,9 @@ struct CellManager
     
     // Optimized adhesion line methods with spatial indexing
     void initializeOptimizedAdhesionLineSystem();
-
+    void updateSpatialIndexAdhesionLineData();
     void renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
     void cleanupOptimizedAdhesionLineSystem();
-    
-    // Child pair debug logging methods (GPU-only, no CPU readback)
-    void initializeChildPairDebugSystem();
-    void runChildPairDebugLogging();
-    void logChildPairs();
-    void cleanupChildPairDebugSystem();
-    void setDebugChildPairs(bool enabled) { debugChildPairs = enabled; }
-    bool getDebugChildPairs() const { return debugChildPairs; }
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
@@ -477,7 +434,6 @@ struct CellManager
 
 private:
     void runPhysicsCompute(float deltaTime);
-    void runChildPairPhysicsCompute(float deltaTime);  // Fast O(1) child pair physics
     void runUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
     void runCellCounter();

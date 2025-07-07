@@ -341,10 +341,6 @@ int main()
 		// Establish initial adhesion connections
 		previewCellManager.establishAdhesionConnections();
 		mainCellManager.establishAdhesionConnections();
-		
-		// Debug logging is disabled by default for performance
-		// Enable with: previewCellManager.setDebugChildPairs(true);
-		// Enable with: mainCellManager.setDebugChildPairs(true);
 
 	AudioEngine audioEngine;
 	audioEngine.init();

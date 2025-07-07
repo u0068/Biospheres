@@ -35,12 +35,12 @@ struct GPUMode {
     int padding;          // Padding to maintain alignment
 };
 
-// Parent-children mapping structure
-struct ParentChildren {
-    uint childAIndex;
-    uint childBIndex;
-    uint isActive;
-    uint padding;
+// Spatial index structure - maps parent ID to child indices
+struct ParentIndex {
+    uint parentID;        // Parent ID
+    uint childAIndex;     // Index of child A (child flag = 0)
+    uint childBIndex;     // Index of child B (child flag = 1)
+    uint isActive;        // Whether this parent has active children
 };
 
 // Adhesion line vertex data - each line has 2 vertices
@@ -59,9 +59,9 @@ layout(std430, binding = 1) buffer ModeBuffer {
     GPUMode modes[];
 };
 
-// Input: Parent-children mapping (O(1) lookup)
-layout(std430, binding = 2) buffer ParentChildrenBuffer {
-    ParentChildren parentChildrenTable[];
+// Input: Spatial index (pre-computed parent lookup table)
+layout(std430, binding = 2) buffer ParentIndexBuffer {
+    ParentIndex parentIndices[];
 };
 
 // Output: Adhesion line vertices
@@ -69,10 +69,10 @@ layout(std430, binding = 3) buffer AdhesionLineBuffer {
     AdhesionLineVertex lineVertices[];
 };
 
-// Cell count and parent table size
+// Cell count and parent index count
 layout(std430, binding = 4) buffer CountBuffer {
     uint cellCount;
-    uint parentTableSize;
+    uint parentIndexCount;
     uint padding[2];
 };
 
@@ -102,92 +102,137 @@ mat3 quatToMat3(vec4 quat) {
 }
 
 // Determine zone color based on position relative to cell's own split plane
-vec4 getZoneColor(vec3 pos, ComputeCell cell, GPUMode mode) {
-    // Transform the split direction by the cell's current orientation
-    vec3 splitNormal = normalize(quatToMat3(cell.orientation) * mode.splitDirection.xyz);
-    vec3 cellPos = cell.positionAndMass.xyz;
-    vec3 toPos = normalize(pos - cellPos);
-    float d = dot(toPos, splitNormal);
+vec4 getZoneColor(vec3 position, ComputeCell cell, GPUMode mode) {
+    // Calculate the cell's own split plane based on its orientation
+    mat3 cellRotMatrix = quatToMat3(cell.orientation);
+    vec3 worldSplitDirection = normalize(cellRotMatrix * mode.splitDirection.xyz);
     
-    // Convert 10 degrees to radians and calculate cosine threshold for perpendicular
-    // 90 degrees - 10 degrees = 80 degrees, so threshold is cos(80°)
-    float angleThreshold = cos(radians(80.0));
-    float absDot = abs(d);
+    // The split plane normal is the split direction, with the cell position as the plane point
+    vec3 splitPlaneNormal = worldSplitDirection;
+    vec3 splitPlanePoint = cell.positionAndMass.xyz;
     
-    if (absDot < angleThreshold) {
-        return vec4(1.0, 0.0, 0.0, 1.0); // Red for zone C (within 10 degrees of perpendicular)
-    } else if (d > 0.01) {
-        return vec4(0.0, 0.0, 1.0, 1.0); // Blue for zone A (reversed)
-    } else {
-        return vec4(0.0, 1.0, 0.0, 1.0); // Green for zone B (reversed)
+    // Calculate distance from position to split plane
+    vec3 toPosition = position - splitPlanePoint;
+    float distance = dot(toPosition, splitPlaneNormal);
+    
+    // Calculate angle between the vector from cell position to the given position and the split plane normal
+    vec3 directionFromCell = normalize(toPosition);
+    float angle = acos(abs(dot(directionFromCell, splitPlaneNormal)));
+    float angleDegrees = degrees(angle);
+    
+    // Zone C: within 10 degrees of being parallel to split plane (red)
+    // A line is parallel to the split plane when it's perpendicular to the split plane normal
+    // So we check if the angle is close to 90 degrees (perpendicular)
+    if (abs(angleDegrees - 90.0) <= 10.0) {
+        return vec4(1.0, 0.0, 0.0, 1.0); // Red
+    }
+    // Zone A: positive side of split plane (blue)
+    else if (distance > 0.0) {
+        return vec4(0.0, 0.0, 1.0, 1.0); // Blue
+    }
+    // Zone B: negative side of split plane (green)
+    else {
+        return vec4(0.0, 1.0, 0.0, 1.0); // Green
     }
 }
 
 void main() {
-    uint parentID = gl_GlobalInvocationID.x;
-    if (parentID >= parentTableSize) {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index >= parentIndexCount) {
         return;
     }
-
-    ParentChildren entry = parentChildrenTable[parentID];
-    if (entry.isActive == 0 || entry.childAIndex == 0xFFFFFFFF || entry.childBIndex == 0xFFFFFFFF) {
-        return; // No valid pair
-    }
-    if (entry.childAIndex >= cellCount || entry.childBIndex >= cellCount) {
-        return; // Out of bounds
-    }
-
-    ComputeCell childA = cells[entry.childAIndex];
-    ComputeCell childB = cells[entry.childBIndex];
-
-    // Only draw if parent allows adhesion (check mode of either child)
-    int modeIdxA = childA.modeIndex;
-    int modeIdxB = childB.modeIndex;
-    if (modeIdxA < 0 || modeIdxA >= modes.length() || modeIdxB < 0 || modeIdxB >= modes.length()) {
+    
+    ParentIndex parentIndex = parentIndices[index];
+    
+    // Skip inactive parents
+    if (parentIndex.isActive == 0) {
         return;
     }
-    GPUMode modeA = modes[modeIdxA];
-    GPUMode modeB = modes[modeIdxB];
-    bool parentAllowsAdhesion = (modeA.parentMakeAdhesion != 0) || (modeB.parentMakeAdhesion != 0);
+    
+    // Validate child indices
+    if (parentIndex.childAIndex >= cellCount || parentIndex.childBIndex >= cellCount) {
+        return;
+    }
+    
+    // Get the child cells
+    ComputeCell childA = cells[parentIndex.childAIndex];
+    ComputeCell childB = cells[parentIndex.childBIndex];
+    
+    // Verify these are actually the children of this parent
+    uint childAParentID = getParentID(childA.uniqueID);
+    uint childBParentID = getParentID(childB.uniqueID);
+    uint childAFlag = getChildFlag(childA.uniqueID);
+    uint childBFlag = getChildFlag(childB.uniqueID);
+    
+    if (childAParentID != parentIndex.parentID || 
+        childBParentID != parentIndex.parentID ||
+        childAFlag != 0 || childBFlag != 1) {
+        return; // Invalid parent-child relationship
+    }
+    
+    // OPTIMIZED: Instead of searching through all modes (which is very expensive),
+    // we'll check if either child's mode has parentMakeAdhesion enabled.
+    // This is a reasonable approximation since children inherit properties from their parent.
+    
+    bool parentAllowsAdhesion = false;
+    GPUMode parentMode;
+    
+    // Check child A's mode
+    if (childA.modeIndex >= 0 && childA.modeIndex < modes.length()) {
+        parentMode = modes[childA.modeIndex];
+        if (parentMode.parentMakeAdhesion == 1) {
+            parentAllowsAdhesion = true;
+        }
+    }
+    
+    // Check child B's mode if child A didn't have it
+    if (!parentAllowsAdhesion && childB.modeIndex >= 0 && childB.modeIndex < modes.length()) {
+        parentMode = modes[childB.modeIndex];
+        if (parentMode.parentMakeAdhesion == 1) {
+            parentAllowsAdhesion = true;
+        }
+    }
+    
     if (!parentAllowsAdhesion) {
         return;
     }
-
+    
     // Calculate line vertices
     vec3 posA = childA.positionAndMass.xyz;
     vec3 posB = childB.positionAndMass.xyz;
     vec3 midpoint = (posA + posB) * 0.5;
-
+    
     // Create two line segments: childA to midpoint, and midpoint to childB
-    // Each parent generates two lines (4 vertices total)
-    uint lineIndex = parentID * 4;
-
+    // Each parent now generates two lines (4 vertices total)
+    uint lineIndex = index * 4;
+    
     // Store the line vertices with zone-based coloring
     if (lineIndex + 3 < lineVertices.length()) {
+        // Get the mode for each child (they might have different modes)
         // Add bounds checking for mode indices
         if (childA.modeIndex < 0 || childA.modeIndex >= modes.length() ||
             childB.modeIndex < 0 || childB.modeIndex >= modes.length()) {
             return; // Skip if mode indices are invalid
         }
         
-        // Get the modes for each child
-        GPUMode modeForChildA = modes[childA.modeIndex];
-        GPUMode modeForChildB = modes[childB.modeIndex];
+        GPUMode childAMode = modes[childA.modeIndex];
+        GPUMode childBMode = modes[childB.modeIndex];
         
-        // First segment: childA to midpoint - color based on segment position relative to childA's split plane
-        vec3 segmentAPos = (posA + midpoint) * 0.5; // Middle of first segment
-        vec4 colorA = getZoneColor(segmentAPos, childA, modeForChildA);
+        // First segment: childA to midpoint - color based on midpoint position relative to childA's split plane
+        vec4 colorA = getZoneColor(midpoint, childA, childAMode);
         lineVertices[lineIndex].position = vec4(posA, 1.0);
         lineVertices[lineIndex].color = colorA;
+        
         lineVertices[lineIndex + 1].position = vec4(midpoint, 1.0);
         lineVertices[lineIndex + 1].color = colorA;
         
-        // Second segment: childB to midpoint - color based on segment position relative to childB's split plane
-        vec3 segmentBPos = (posB + midpoint) * 0.5; // Middle of second segment
-        vec4 colorB = getZoneColor(segmentBPos, childB, modeForChildB);
-        lineVertices[lineIndex + 2].position = vec4(posB, 1.0);
+        // Second segment: midpoint to childB - color based on midpoint position relative to childB's split plane
+        vec4 colorB = getZoneColor(midpoint, childB, childBMode);
+        lineVertices[lineIndex + 2].position = vec4(midpoint, 1.0);
         lineVertices[lineIndex + 2].color = colorB;
-        lineVertices[lineIndex + 3].position = vec4(midpoint, 1.0);
+        
+        lineVertices[lineIndex + 3].position = vec4(posB, 1.0);
         lineVertices[lineIndex + 3].color = colorB;
     }
 } 
