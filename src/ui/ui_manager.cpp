@@ -912,6 +912,49 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::EndTabItem();
         }
 
+        if (ImGui::BeginTabItem("Adhesion Settings"))
+        {
+            ImGui::PushID(modeIndex * 2 + 2); // Unique ID for Adhesion Settings
+            
+            // Can Break Toggle
+            ImGui::Text("Can Break:");
+            addTooltip("Whether this adhesion can break under force");
+            ImGui::SameLine();
+            if (ImGui::Checkbox("##CanBreak", &mode.adhesion.canBreak))
+            {
+                genomeChanged = true;
+            }
+            
+            ImGui::Separator();
+            
+            // Break Force
+            drawSliderWithInput("Break Force", &mode.adhesion.breakForce, 0.1f, 50.0f, "%.1f", 0.1f);
+            addTooltip("The force required to break this adhesion");
+            
+            // Rest Length
+            drawSliderWithInput("Rest Length", &mode.adhesion.restLength, 0.1f, 10.0f, "%.1f", 0.1f);
+            addTooltip("The natural length of the adhesion when not under stress");
+            
+            // Linear Spring Stiffness
+            drawSliderWithInput("Linear Spring Stiffness", &mode.adhesion.linearSpringStiffness, 0.1f, 20.0f, "%.1f", 0.1f);
+            addTooltip("How stiff the linear spring component of the adhesion is");
+            
+            // Linear Spring Damping
+            drawSliderWithInput("Linear Spring Damping", &mode.adhesion.linearSpringDamping, 0.0f, 2.0f, "%.2f", 0.01f);
+            addTooltip("How much damping is applied to the linear spring motion");
+            
+            // Orientation Spring Strength
+            drawSliderWithInput("Orientation Spring Strength", &mode.adhesion.orientationSpringStrength, 0.0f, 10.0f, "%.1f", 0.1f);
+            addTooltip("How strongly the adhesion tries to maintain orientation alignment");
+            
+            // Max Angular Deviation
+            drawSliderWithInput("Max Angular Deviation", &mode.adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f", 1.0f);
+            addTooltip("Maximum angular deviation allowed before orientation spring activates (degrees)");
+            
+            ImGui::PopID();
+            ImGui::EndTabItem();
+        }
+
 
 
         ImGui::EndTabBar();

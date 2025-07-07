@@ -25,7 +25,7 @@ struct AdhesionSettings
     float linearSpringStiffness = 5.0f;
     float linearSpringDamping = 0.5f;
     float orientationSpringStrength = 2.0f;
-    float maxAngularDeviation = 45.0f; // degrees
+    float maxAngularDeviation = 0.0f; // degrees
 };
 
 struct ChildSettings
