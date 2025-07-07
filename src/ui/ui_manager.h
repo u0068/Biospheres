@@ -91,8 +91,7 @@ public:
     // Orientation gizmo visualization
     bool showOrientationGizmos = false;  // Toggle for showing cell orientation gizmos
     
-    // Adhesion line visualization
-    bool showAdhesionLines = false;      // Toggle for showing adhesion lines between sibling cells
+
     
     // Wireframe rendering mode
     bool wireframeMode = false;          // Toggle for wireframe rendering mode
@@ -109,7 +108,7 @@ private:    // Helper to get window flags based on lock state
     void drawModeSettings(ModeSettings &mode, int modeIndex, CellManager& cellManager);
     void drawParentSettings(ModeSettings &mode);
     void drawChildSettings(const char *label, ChildSettings &child);
-    void drawAdhesionSettings(AdhesionSettings &adhesion);
+
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawColorPicker(const char *label, glm::vec3 *color);
     void addTooltip(const char* tooltip); // Helper to add question mark tooltips

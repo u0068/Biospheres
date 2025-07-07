@@ -202,9 +202,7 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
 		checkGLError("renderRingGizmos");
 		
-		// Render adhesion lines if enabled
-		activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
-		checkGLError("renderAdhesionLines");
+
 		}
 		catch (const std::exception &e)
 		{
@@ -338,9 +336,7 @@ int main()
 		previewCellManager.updateCells(config::physicsTimeStep);
 		mainCellManager.updateCells(config::physicsTimeStep);
 		
-		// Establish initial adhesion connections
-		previewCellManager.establishAdhesionConnections();
-		mainCellManager.establishAdhesionConnections();
+
 
 	AudioEngine audioEngine;
 	audioEngine.init();

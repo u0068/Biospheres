@@ -237,9 +237,7 @@
     <None Include="shaders\rendering\sphere\sphere.vert" />
     <None Include="shaders\cell\management\id_manager.comp" />
     <None Include="shaders\rendering\debug\ring_gizmo_extract.comp" />
-    <None Include="shaders\rendering\debug\adhesion_line.frag" />
-    <None Include="shaders\rendering\debug\adhesion_line.vert" />
-    <None Include="shaders\rendering\debug\adhesion_line_extract.comp" />
+
     <None Include="shaders\rendering\sphere\sphere_lod.frag" />
     <None Include="shaders\rendering\sphere\sphere_lod.vert" />
     <None Include="shaders\rendering\sphere\sphere_lod.comp" />
