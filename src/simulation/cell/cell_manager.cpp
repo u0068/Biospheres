@@ -171,6 +171,24 @@ void CellManager::cleanup()
         delete updateShader;
         updateShader = nullptr;
     }
+    if (internalUpdateShader)
+    {
+        internalUpdateShader->destroy();
+        delete internalUpdateShader;
+        internalUpdateShader = nullptr;
+    }
+    if (cellCounterShader)
+    {
+        cellCounterShader->destroy();
+        delete cellCounterShader;
+        cellCounterShader = nullptr;
+    }
+    if (cellAdditionShader)
+    {
+        cellAdditionShader->destroy();
+        delete cellAdditionShader;
+        cellAdditionShader = nullptr;
+    }
 
     
     // Cleanup adhesion shaders
@@ -237,6 +255,12 @@ void CellManager::cleanup()
         ringGizmoShader->destroy();
         delete ringGizmoShader;
         ringGizmoShader = nullptr;
+    }
+    if (clearJustSplitShader)
+    {
+        clearJustSplitShader->destroy();
+        delete clearJustSplitShader;
+        clearJustSplitShader = nullptr;
     }
 
 
@@ -1190,6 +1214,17 @@ void CellManager::initializeSpatialGrid()
                       config::TOTAL_GRID_CELLS * sizeof(GLuint),
                       nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
 
+    // Initialize performance optimization buffers for 100k cells
+    glCreateBuffers(1, &gridHashBuffer);
+    glNamedBufferData(gridHashBuffer,
+                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
+                      nullptr, GL_STREAM_COPY);  // Hash-based lookup for sparse grids
+
+    glCreateBuffers(1, &activeCellsBuffer);
+    glNamedBufferData(activeCellsBuffer,
+                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
+                      nullptr, GL_STREAM_COPY);  // Buffer containing only active grid cells
+
     std::cout << "Initialized double buffered spatial grid with " << config::TOTAL_GRID_CELLS
               << " grid cells (" << config::GRID_RESOLUTION << "^3)\n";
     std::cout << "Grid cell size: " << config::GRID_CELL_SIZE << "\n";
@@ -1251,6 +1286,16 @@ void CellManager::cleanupSpatialGrid()
     {
         glDeleteBuffers(1, &gridOffsetBuffer);
         gridOffsetBuffer = 0;
+    }
+    if (gridHashBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridHashBuffer);
+        gridHashBuffer = 0;
+    }
+    if (activeCellsBuffer != 0)
+    {
+        glDeleteBuffers(1, &activeCellsBuffer);
+        activeCellsBuffer = 0;
     }
 }
 
