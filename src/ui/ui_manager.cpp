@@ -34,15 +34,8 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
     	const auto &selectedCell = cellManager.getSelectedCell();
         ImGui::Text("Selected Cell #%d", selectedCell.cellIndex);
         
-        // Display unique ID in X.Y.Z format
-        uint16_t parentID = selectedCell.cellData.getParentID();
-        uint16_t cellID = selectedCell.cellData.getCellID();
-        uint8_t childFlag = selectedCell.cellData.getChildFlag();
-        char childChar = (childFlag == 0) ? 'A' : 'B';
-        ImGui::Text("Unique ID: %u.%u.%c", parentID, cellID, childChar);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Format: Parent.Cell.Child\nParent: ID of parent cell when this cell was created\nCell: Unique identifier for this cell\nChild: A or B indicating which child this was after split");
-        }
+        // Display cell index as ID
+        ImGui::Text("Cell Index: %u", selectedCell.cellData.cellIndex);
         
         ImGui::Separator();
 
@@ -318,9 +311,12 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     ImGui::Separator();
 
     int cellCount = cellManager.getCellCount();
+    int adhesionCount = cellManager.getAdhesionCount();
     ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
+    ImGui::Text("Active Adhesions: %i", adhesionCount);
     
     ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
+    ImGui::Text("Pending Adhesions: CPU: %i, GPU: %i", cellManager.cpuPendingAdhesionCount, cellManager.gpuPendingAdhesionCount);
     ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
     ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
 
@@ -701,7 +697,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         // Set initial cell orientation to the genome's initial orientation
         // This keeps the initial cell orientation independent of Child A/B settings
         newCell.orientation = currentGenome.initialOrientation;
-        newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
+        newCell.cellIndex = 0; // Initialize with proper index
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
         
@@ -1318,7 +1314,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 cellManager.addGenomeToBuffer(currentGenome);
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
-                newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
+                newCell.cellIndex = 0; // Initialize with proper index
                 cellManager.addCellToStagingBuffer(newCell);
                 cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
                 
@@ -1407,7 +1403,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 mainCellManager.addGenomeToBuffer(currentGenome);
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
-                newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
+                newCell.cellIndex = 0; // Initialize with proper index
                 mainCellManager.addCellToStagingBuffer(newCell);
                 mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
                 
@@ -1500,7 +1496,7 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     cellManager.addGenomeToBuffer(currentGenome);
     ComputeCell newCell{};
     newCell.modeIndex = currentGenome.initialMode;
-    newCell.setUniqueID(0, 1, 0); // Initialize with proper ID
+    newCell.cellIndex = 0; // Initialize with proper index
     cellManager.addCellToStagingBuffer(newCell);
     cellManager.addStagedCellsToGPUBuffer();
     

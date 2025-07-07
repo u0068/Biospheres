@@ -51,8 +51,7 @@ Shader::Shader(const char* vertexFile, const char* fragmentFile)
 	if (!success)
 	{
 		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-		//Make sure there are no typos in the name!
-
+		std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << "\n";
 	}
 
 	// Create Fragment Shader Object and get its reference

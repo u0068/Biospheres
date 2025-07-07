@@ -32,9 +32,9 @@ struct ComputeCell {
     float toxins;
     float nitrates;
     // Unique ID system
-    uint64_t uniqueID;     // Packed ID: [parent(32)] [cell(31)] [child(1)]
-    uint64_t padding1;     // Padding to maintain alignment
-    uint padding2[4];    // Additional padding to ensure 16-byte alignment
+    uint cellIndex;        // Simple cell index
+    uint justSplit;        // Just split flag
+    uint padding2[2];    // Additional padding to ensure 16-byte alignment
 };
 
 struct InstanceData {

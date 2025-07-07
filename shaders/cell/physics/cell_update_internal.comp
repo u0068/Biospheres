@@ -25,10 +25,10 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
-    // Unique ID system
-    uint64_t uniqueID;     // Packed ID: [parent(32)] [cell(31)] [child(1)]
-    uint64_t justSplit;    // Use this as the justSplit flag
-    uint padding2[4];    // Additional padding to ensure 16-byte alignment
+    // Simple index-based ID system
+    uint cellIndex;        // Simple cell index
+    uint justSplit;        // Use this as the justSplit flag
+    uint padding2[2];    // Additional padding to ensure 16-byte alignment
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -48,14 +48,25 @@ layout(std430, binding = 3) buffer CellCountBuffer {
     uint pendingCellCount;
 };
 
-layout(std430, binding = 4) buffer IDCounterBuffer {
-    uint nextAvailableID;    // Next ID to assign
-    uint recycledIDCount;    // Number of recycled IDs available
-    uint maxCellID;          // Maximum cell ID (2147483647)
+
+
+// Adhesion management buffers
+layout(std430, binding = 4) buffer AdhesionAdditionQueue {
+    uint cellIndexA[100000];
+    uint cellIndexB[100000];
+    float breakForce[100000];
+    float restLength[100000];
+    float linearSpringStiffness[100000];
+    float linearSpringDamping[100000];
+    float orientationSpringStrength[100000];
+    float maxAngularDeviation[100000];
+    uint isActive[100000];
+    uint padding[3];
 };
 
-layout(std430, binding = 5) buffer IDPoolBuffer {
-    uint availableIDs[];     // Pool of available/recycled cell IDs
+layout(std430, binding = 5) buffer AdhesionCountBuffer {
+    uint adhesionCount;
+    uint pendingAdhesionCount;
 };
 
 uniform float u_deltaTime;
@@ -81,48 +92,7 @@ vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
          + 2.0 * s * cross(u, v);
 }
 
-// ID utility functions
-uint getParentID(uint64_t uniqueID) {
-    return uint((uniqueID >> 32) & 0xFFFFFFFFu);
-}
 
-uint getCellID(uint64_t uniqueID) {
-    return uint((uniqueID >> 1) & 0x7FFFFFFFu);
-}
-
-uint getChildFlag(uint64_t uniqueID) {
-    return uint(uniqueID & 0x1u);
-}
-
-uint64_t packUniqueID(uint parentID, uint cellID, uint childFlag) {
-    return uint64_t(parentID) << 32 | (uint64_t(cellID & 0x7FFFFFFFu) << 1) | uint64_t(childFlag & 0x1u);
-}
-
-// Allocate a new cell ID from the pool or generate new one
-uint allocateCellID() {
-    uint newCellID;
-    uint nextID = nextAvailableID;
-
-    if (nextID <= maxCellID) {
-        // Use new IDs until we reach the max
-        newCellID = atomicAdd(nextAvailableID, 1);
-    } else {
-        // Only after all IDs are used, start recycling
-        if (recycledIDCount > 0) {
-            uint recycleIndex = atomicAdd(recycledIDCount, -1) - 1;
-            if (recycleIndex < recycledIDCount + 1) { // Check bounds
-                newCellID = availableIDs[recycleIndex];
-            } else {
-                // Fallback: out of IDs, handle error (e.g., return 0 or 0xFFFFFFFFu)
-                newCellID = 0xFFFFFFFFu;
-            }
-        } else {
-            // Fallback: out of IDs, handle error
-            newCellID = 0xFFFFFFFFu;
-        }
-    }
-    return newCellID;
-}
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -145,16 +115,12 @@ void main() {
             vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
             vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
 
-            uint childACellID = allocateCellID();
-            uint childBCellID = allocateCellID();
-            uint parentCellID = getCellID(cell.uniqueID);
-
             ComputeCell childA = cell;
             childA.positionAndMass.xyz += offset;
             childA.age = startAge;
             childA.modeIndex = mode.childModes.x;
             childA.orientation = q_childA;
-            childA.uniqueID = packUniqueID(parentCellID, childACellID, 0u);
+            childA.cellIndex = index; // Parent becomes childA
             childA.justSplit = 1;
 
             ComputeCell childB = cell;
@@ -162,11 +128,37 @@ void main() {
             childB.age = startAge;
             childB.modeIndex = mode.childModes.y;
             childB.orientation = q_childB;
-            childB.uniqueID = packUniqueID(parentCellID, childBCellID, 1u);
+            childB.cellIndex = cellCount + queueIdx; // New cell gets next index
             childB.justSplit = 1;
 
             cells[index] = childA;
             newCells[queueIdx] = childB;
+            
+            // Create adhesion between parent and children if the mode specifies it
+            // For now, create a simple adhesion with default settings
+            uint adhesionQueueIdx = atomicAdd(pendingAdhesionCount, 2); // Create 2 adhesions
+            
+            // Adhesion between parent (childA) and childB
+            cellIndexA[adhesionQueueIdx] = index;
+            cellIndexB[adhesionQueueIdx] = cellCount + queueIdx;
+            breakForce[adhesionQueueIdx] = 10.0;
+            restLength[adhesionQueueIdx] = 2.0;
+            linearSpringStiffness[adhesionQueueIdx] = 5.0;
+            linearSpringDamping[adhesionQueueIdx] = 0.5;
+            orientationSpringStrength[adhesionQueueIdx] = 2.0;
+            maxAngularDeviation[adhesionQueueIdx] = 0.785; // 45 degrees in radians
+            isActive[adhesionQueueIdx] = 1;
+            
+            // Adhesion between childA and childB (sibling connection)
+            cellIndexA[adhesionQueueIdx + 1] = index;
+            cellIndexB[adhesionQueueIdx + 1] = cellCount + queueIdx;
+            breakForce[adhesionQueueIdx + 1] = 8.0;
+            restLength[adhesionQueueIdx + 1] = 2.0;
+            linearSpringStiffness[adhesionQueueIdx + 1] = 3.0;
+            linearSpringDamping[adhesionQueueIdx + 1] = 0.3;
+            orientationSpringStrength[adhesionQueueIdx + 1] = 1.0;
+            maxAngularDeviation[adhesionQueueIdx + 1] = 0.785;
+            isActive[adhesionQueueIdx + 1] = 1;
         } else {
             atomicAdd(pendingCellCount, -1);
             cell.justSplit = 0;

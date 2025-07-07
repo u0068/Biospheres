@@ -31,27 +31,15 @@ struct ComputeCell {
     float toxins{ 0 };
     float nitrates{ 1 };
     
-    // Unique ID system: X.Y.Z format
-    // X = parent ID (32 bits), Y = cell ID (31 bits), Z = child flag (1 bit, 0=A, 1=B)
-    uint64_t uniqueID{ 0 };              // Packed ID: [parent(32)] [cell(31)] [child(1)]
-    uint64_t justSplit{ 0 };              // Use this as the justSplit flag
-    uint32_t padding2[4]{ 0, 0, 0, 0 };  // Additional padding to ensure 16-byte alignment
+    // Simple index-based ID system
+    uint32_t cellIndex{ 0 };              // Simple cell index
+    uint32_t justSplit{ 0 };              // Use this as the justSplit flag
+    uint32_t padding2[2]{ 0, 0 };  // Additional padding to ensure 16-byte alignment
     // Note: padding2[0] is used as a flag: 1 = cell is being manually rotated
     
     float getRadius() const
     {
         return static_cast<float>(pow(positionAndMass.w, 1.0f/3.0f));
-    }
-    
-    // ID utility functions
-    uint32_t getParentID() const { return static_cast<uint32_t>((uniqueID >> 32) & 0xFFFFFFFF); }
-    uint32_t getCellID() const { return static_cast<uint32_t>((uniqueID >> 1) & 0x7FFFFFFF); }
-    uint8_t getChildFlag() const { return static_cast<uint8_t>(uniqueID & 0x1); }
-    
-    void setUniqueID(uint32_t parentID, uint32_t cellID, uint8_t childFlag) {
-        uniqueID = (static_cast<uint64_t>(parentID) << 32) | 
-                   (static_cast<uint64_t>(cellID & 0x7FFFFFFF) << 1) | 
-                   (childFlag & 0x1);
     }
     
     // Rotation flag utilities
@@ -61,7 +49,23 @@ struct ComputeCell {
 
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
-static_assert(offsetof(ComputeCell, uniqueID) % 8 == 0, "uniqueID must be 8-byte aligned");
+
+// Adhesion data structure for GPU compute shaders
+struct ComputeAdhesion {
+    uint32_t cellIndexA;
+    uint32_t cellIndexB;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStrength;
+    float maxAngularDeviation;
+    uint32_t isActive;
+    uint32_t padding[3];
+};
+
+// Ensure struct alignment is correct for GPU usage
+static_assert(sizeof(ComputeAdhesion) % 16 == 0, "ComputeAdhesion must be 16-byte aligned for GPU usage");
 
 struct CellManager
 {
@@ -79,6 +83,12 @@ struct CellManager
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
 
+    // Adhesion management buffers
+    GLuint adhesionBuffer{};         // SSBO for adhesion data
+    GLuint adhesionAdditionBuffer{}; // Adhesion addition queue for GPU
+    GLuint adhesionCountBuffer{};    // GPU-accessible adhesion count buffer
+    GLuint stagingAdhesionCountBuffer{}; // CPU-accessible adhesion count buffer
+
     // Cell data staging buffer for CPU reads (avoids GPU->CPU transfer warnings)
     GLuint stagingCellBuffer{};      // CPU-accessible cell data buffer
     void* mappedCellPtr = nullptr;   // Pointer to the cell data staging buffer
@@ -87,10 +97,7 @@ struct CellManager
     // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
     GLuint modeBuffer{};
 
-    // Unique ID management buffers
-    GLuint idPoolBuffer{};        // SSBO for available cell IDs (queue-like structure)
-    GLuint idCounterBuffer{};     // SSBO for ID counters (next available ID, pool size)
-    GLuint idRecycleBuffer{};     // SSBO for recycled IDs from dead cells
+
 
     // Spatial partitioning buffers - Double buffered
     GLuint gridBuffer{};       // SSBO for grid cell data (stores cell indices)
@@ -144,7 +151,10 @@ struct CellManager
     Shader* internalUpdateShader = nullptr;
     Shader* cellCounterShader = nullptr;
 	Shader* cellAdditionShader = nullptr;
-    Shader* idManagerShader = nullptr;  // For managing unique IDs
+    
+    // Adhesion compute shaders
+    Shader* adhesionAdditionShader = nullptr;  // For adding new adhesions
+    Shader* adhesionPhysicsShader = nullptr;   // For adhesion physics simulation
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -157,6 +167,9 @@ struct CellManager
     std::vector<ComputeCell> cpuCells;
     std::vector<ComputeCell> cellStagingBuffer;
     
+    // Adhesion storage
+    std::vector<ComputeAdhesion> adhesionStagingBuffer;
+    
     // Cell count tracking (CPU-side approximation of GPU state)
     int cellCount{0};               // Approximate cell count, may not reflect exact GPU state due to being a frame behind
     int cpuPendingCellCount{0};     // Number of cells pending addition by CPU
@@ -164,6 +177,13 @@ struct CellManager
 	// Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
+    
+    // Adhesion count tracking
+    int adhesionCount{0};           // Current number of adhesions
+    int cpuPendingAdhesionCount{0}; // Number of adhesions pending addition by CPU
+    int gpuPendingAdhesionCount{0}; // Approx number of adhesions pending addition by GPU
+    void* mappedAdhesionPtr = nullptr; // Pointer to the adhesion count staging buffer
+    GLuint* adhesionCountPtr = nullptr; // Typed pointer to the mapped adhesion buffer value
 
     // Configuration
     static constexpr int MAX_CELLS = config::MAX_CELLS;
@@ -220,20 +240,28 @@ struct CellManager
     void addGenomeToBuffer(GenomeData& genomeData) const;
     void updateCells(float deltaTime);
     void cleanup();
+    
+    // Adhesion management functions
+    void addAdhesionToGPUBuffer(const std::vector<ComputeAdhesion> &adhesions);
+    void addAdhesionToStagingBuffer(const ComputeAdhesion &newAdhesion);
+    void addAdhesion(const ComputeAdhesion &newAdhesion) { addAdhesionToStagingBuffer(newAdhesion); }
+    void addStagedAdhesionsToGPUBuffer();
+    void runAdhesionPhysics(float deltaTime);
+    void applyAdhesionAdditions();
+    
+    // Test function to create adhesion between two cells
+    void createTestAdhesion(uint32_t cellIndexA, uint32_t cellIndexB);
 
     // Spatial partitioning functions
     void initializeSpatialGrid();
     void updateSpatialGrid();
     void cleanupSpatialGrid();
 
-    // ID management functions
-    void initializeIDSystem();
-    void cleanupIDSystem();
-    void recycleDeadCellIDs(); // Called when cells die to recycle their IDs
-    void printCellIDs(int maxCells = 10); // Debug function to print cell IDs
+
 
     // Getter functions for debug information
     int getCellCount() const { return cellCount; }
+    int getAdhesionCount() const { return adhesionCount; }
     float getSpawnRadius() const { return spawnRadius; }
 
     // GPU pipeline status getters
@@ -397,13 +425,14 @@ private:
     void runInternalUpdateCompute(float deltaTime);
     void runCellCounter();
     void applyCellAdditions();
+    
+    // Adhesion compute shader functions
+    void runAdhesionPhysicsCompute(float deltaTime);
+    void applyAdhesionAdditionsCompute();
 
     // Spatial grid helper functions
     void runGridClear();
     void runGridAssign();
     void runGridPrefixSum();
     void runGridInsert();
-    
-    // ID management helper functions
-    void runIDManager();
 };

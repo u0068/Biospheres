@@ -15,9 +15,9 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
-    uint64_t uniqueID;
-    uint64_t justSplit;
-    uint padding2[4];
+    uint cellIndex;
+    uint justSplit;
+    uint padding2[2];
 };
 
 layout(std430, binding = 0) buffer CellBuffer {
