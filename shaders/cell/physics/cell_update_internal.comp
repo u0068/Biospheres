@@ -160,6 +160,7 @@ void main() {
             maxAngularDeviation[adhesionQueueIdx + 1] = 0.785;
             isActive[adhesionQueueIdx + 1] = 1;
         } else {
+            // Cell limit reached, don't split
             atomicAdd(pendingCellCount, -1);
             cell.justSplit = 0;
             cells[index] = cell;

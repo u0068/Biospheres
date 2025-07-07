@@ -1158,6 +1158,9 @@ void CellManager::spawnCells(int count)
         
         // Assign simple cell index
         newCell.cellIndex = i;
+        
+        // Set mode index to 0 (default mode) - this ensures cells can split
+        newCell.modeIndex = 0;
 
         addCellToStagingBuffer(newCell);
     }
