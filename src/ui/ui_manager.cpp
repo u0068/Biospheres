@@ -949,6 +949,14 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
 
 void UIManager::drawParentSettings(ModeSettings &mode)
 {
+    // Color picker for the mode
+    drawColorPicker("Mode Color", &mode.color);
+    addTooltip("The color of cells in this mode");
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    
     drawSliderWithInput("Split Mass", &mode.splitMass, 0.1f, 10.0f, "%.2f");
     addTooltip("The mass threshold at which the cell will split into two child cells");
     
