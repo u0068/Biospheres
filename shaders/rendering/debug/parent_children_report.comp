@@ -1,0 +1,70 @@
+#version 430 core
+#extension GL_ARB_gpu_shader_int64 : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;
+    vec4 acceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    uint64_t uniqueID;
+    uint64_t justSplit;
+    uint padding2[4];
+};
+
+struct ParentChildren {
+    uint childAIndex;
+    uint childBIndex;
+    uint isActive;  // Whether this parent has children
+    uint padding;   // For alignment
+};
+
+layout(std430, binding = 0) buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+layout(std430, binding = 1) buffer ParentChildrenBuffer {
+    ParentChildren parentChildrenTable[];
+};
+
+layout(std430, binding = 2) buffer CellCountBuffer {
+    uint cellCount;
+};
+
+// Utility functions
+uint getParentID(uint64_t uniqueID) {
+    return uint((uniqueID >> 32) & 0xFFFFFFFFu);
+}
+uint getChildFlag(uint64_t uniqueID) {
+    return uint(uniqueID & 0x1u);
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= cellCount) return;
+
+    ComputeCell cell = cells[index];
+    uint parentID = getParentID(cell.uniqueID);
+    uint childFlag = getChildFlag(cell.uniqueID);
+
+    if (parentID == 0) return;
+
+    // Direct write - no atomic needed since each parent can only have 2 children
+    // and we process all cells, so the last write wins (which is what we want)
+    if (childFlag == 0) {
+        parentChildrenTable[parentID].childAIndex = index;
+    } else {
+        parentChildrenTable[parentID].childBIndex = index;
+    }
+    
+    // Mark this parent as active
+    parentChildrenTable[parentID].isActive = 1;
+} 
