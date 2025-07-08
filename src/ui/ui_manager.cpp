@@ -975,7 +975,21 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     addTooltip("The mass threshold at which the cell will split into two child cells");
     
     drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 30.0f, "%.1f");
-    addTooltip("Time interval (in seconds) between cell splits");    // Add divider before Parent Split Angle
+    addTooltip("Time interval (in seconds) between cell splits");
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    
+    // Make Adhesion Toggle
+    ImGui::Text("Make Adhesion:");
+    addTooltip("Whether this mode should create adhesions when cells split");
+    ImGui::SameLine();
+    if (ImGui::Checkbox("##MakeAdhesion", &mode.parentMakeAdhesion))
+    {
+        genomeChanged = true;
+    }
+    
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1022,7 +1036,15 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-
+    
+    // Keep Adhesion Toggle
+    ImGui::Text("Keep Adhesion:");
+    addTooltip("Whether this child should maintain adhesions from its parent");
+    ImGui::SameLine();
+    if (ImGui::Checkbox("##KeepAdhesion", &child.keepAdhesion))
+    {
+        genomeChanged = true;
+    }
 
 }
 
