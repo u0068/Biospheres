@@ -24,7 +24,7 @@ struct GPUMode {
     float splitInterval;
     int genomeOffset;
     AdhesionSettings adhesionSettings;
-    int parentMakeAdhesion; // Integer flag for adhesion creation (0 = false, 1 = true)
+    bool parentMakeAdhesion; // Boolean flag for adhesion creation
     int padding[3];          // Padding to maintain alignment
 };
 
@@ -48,7 +48,6 @@ struct AdhesionConnection {
     uint cellBIndex;      // Index of second cell in the connection
     uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
-    uint parentID;        // ID of the parent cell that created this adhesion (for tracking inheritance)
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -140,29 +139,17 @@ void main() {
             cells[index] = childA;
             newCells[queueIdx] = childB;
 
-            // Deactivate any existing adhesions involving this cell (when it splits)
-            // This ensures that when either child splits, the adhesion between siblings is removed
-            for (uint i = 0; i < adhesionCount; i++) {
-                AdhesionConnection existingAdhesion = connections[i];
-                if (existingAdhesion.isActive == 1 && 
-                    (existingAdhesion.cellAIndex == index || existingAdhesion.cellBIndex == index)) {
-                    connections[i].isActive = 0; // Deactivate the adhesion
-                }
-            }
-
             // Now we need to add the adhesion connection
-            if (mode.parentMakeAdhesion != 0) {
-                // Check if we have room for a new adhesion
-                uint currentAdhesionCount = atomicAdd(adhesionCount, 0);
-                if (currentAdhesionCount < u_maxAdhesions) {
-                    // Reserve index for adhesion connection
-                    uint adhesionIndex = atomicAdd(adhesionCount, 1);
+            if (mode.parentMakeAdhesion || true) {
+                // Reserve index for adhesion connection
+                uint adhesionIndex = atomicAdd(adhesionCount, 0);
+                if (adhesionIndex < u_maxAdhesions || true) {
+                    adhesionIndex = atomicAdd(adhesionCount, 1);
                     AdhesionConnection newAdhesion;
                     newAdhesion.cellAIndex = index; // Parent cell index
                     newAdhesion.cellBIndex = queueIdx + cellCount; // New child cell index
                     newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
                     newAdhesion.isActive = 1; // Active connection
-                    newAdhesion.parentID = index; // Store parent ID
                     connections[adhesionIndex] = newAdhesion;
                 }
             }

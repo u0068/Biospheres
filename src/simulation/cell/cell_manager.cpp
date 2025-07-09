@@ -538,9 +538,6 @@ void CellManager::updateCells(float deltaTime)
         // Run cells' internal calculations (this creates new pending cells from mitosis)
         runInternalUpdateCompute(deltaTime);
         
-        // Run adhesion physics to apply forces between connected cells
-        runAdhesionPhysics();
-        
         // Single barrier after all simulation compute operations
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
@@ -871,11 +868,6 @@ void CellManager::resetSimulation()
     // Clear adhesionSettings line buffer to prevent lingering lines after reset
     if (adhesionLineBuffer != 0) {
         glClearNamedBufferData(adhesionLineBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    
-    // Clear active adhesion counter buffer
-    if (activeAdhesionCounterBuffer != 0) {
-        glClearNamedBufferData(activeAdhesionCounterBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
     
     // Clear adhesionSettings connection buffer to prevent lingering connections after reset
@@ -1738,12 +1730,6 @@ void CellManager::initializeAdhesionLineBuffers()
         cellLimit * 2 * sizeof(glm::vec4) * 2, // 2 vertices per line, position + color for each vertex
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
-    // Create buffer for active adhesion counter
-    glCreateBuffers(1, &activeAdhesionCounterBuffer);
-    glNamedBufferData(activeAdhesionCounterBuffer,
-        sizeof(uint32_t),
-        nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for count
-    
     // Create VAO for adhesionSettings line rendering
     glCreateVertexArrays(1, &adhesionLineVAO);
     
@@ -1773,30 +1759,16 @@ void CellManager::updateAdhesionLineData()
 
     TimerGPU timer("Adhesion Data Update");
 
-    // Debug output to help identify adhesion issues
-    std::cout << "Processing " << adhesionCount << " adhesions for line rendering\n";
-
-    // Clear the adhesion line buffer first to remove old adhesion lines
-    glClearNamedBufferData(adhesionLineBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    
-    // Reset the active adhesion counter
-    uint32_t zeroCount = 0;
-    glNamedBufferSubData(activeAdhesionCounterBuffer, 0, sizeof(uint32_t), &zeroCount);
-
     adhesionLineExtractShader->use();
 
     // Bind cell data as input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    // Bind mode data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
     // Bind adhesionSettings connection buffer as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, adhesionConnectionBuffer);
     // Bind adhesionSettings line buffer as output
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, adhesionLineBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionLineBuffer);
     // Bind cell count buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
-    // Bind active adhesion counter buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, activeAdhesionCounterBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (adhesionCount + 63) / 64;
@@ -1806,15 +1778,8 @@ void CellManager::updateAdhesionLineData()
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     flushBarriers();
 
-    // Read the active adhesion count
-    uint32_t activeAdhesionCount;
-    glGetNamedBufferSubData(activeAdhesionCounterBuffer, 0, sizeof(uint32_t), &activeAdhesionCount);
-
-    // Debug output
-    std::cout << "Active adhesions: " << activeAdhesionCount << " out of " << adhesionCount << " total\n";
-
-    // Copy data from compute buffer to VBO for rendering (only the active adhesions)
-    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, activeAdhesionCount * 2 * sizeof(glm::vec4) * 2);
+    // Copy data from compute buffer to VBO for rendering
+    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, adhesionCount * 2 * sizeof(glm::vec4) * 2);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
@@ -1824,12 +1789,6 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
     if (!showAdhesionLines || adhesionCount == 0) return;
 
     updateAdhesionLineData();
-
-    // Read the active adhesion count for rendering
-    uint32_t activeAdhesionCount;
-    glGetNamedBufferSubData(activeAdhesionCounterBuffer, 0, sizeof(uint32_t), &activeAdhesionCount);
-    
-    if (activeAdhesionCount == 0) return;
 
     TimerGPU timer("Adhesion Rendering");
 
@@ -1854,9 +1813,9 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
     // Enable line width for better visibility
     glLineWidth(4.0f);
 
-    // Render gizmo lines (only active adhesions)
+    // Render gizmo lines
     glBindVertexArray(adhesionLineVAO);
-    glDrawArrays(GL_LINES, 0, activeAdhesionCount * 2); // 2 vertices per adhesionSettings
+    glDrawArrays(GL_LINES, 0, adhesionCount * 2); // 2 vertices per adhesionSettings
     glBindVertexArray(0);
     glLineWidth(1.0f);
 }
@@ -1867,11 +1826,6 @@ void CellManager::cleanupAdhesionLines()
     {
         glDeleteBuffers(1, &adhesionLineBuffer);
         adhesionLineBuffer = 0;
-    }
-    if (activeAdhesionCounterBuffer != 0)
-    {
-        glDeleteBuffers(1, &activeAdhesionCounterBuffer);
-        activeAdhesionCounterBuffer = 0;
     }
     if (adhesionLineVBO != 0)
     {
@@ -2282,7 +2236,7 @@ void CellManager::runFrustumCullingLOD(const Camera& camera)
 void CellManager::initializeAdhesionConnectionSystem()
 {
     // Create buffer for adhesionSettings connections
-    // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive, parentID (5 uints = 20 bytes)
+    // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive (4 uints = 16 bytes)
     glCreateBuffers(1, &adhesionConnectionBuffer);
     glNamedBufferData(adhesionConnectionBuffer,
         cellLimit * sizeof(AdhesionConnection),
@@ -2305,7 +2259,6 @@ void CellManager::runAdhesionPhysics()
     adhesionPhysicsShader->setFloat("u_worldSize", config::WORLD_SIZE);
     adhesionPhysicsShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
     adhesionPhysicsShader->setInt("u_maxConnections", cellLimit);
-    adhesionPhysicsShader->setFloat("u_deltaTime", 1.0f / 60.0f); // Default delta time
     
     // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer()); // Cell data
@@ -2330,62 +2283,4 @@ void CellManager::cleanupAdhesionConnectionSystem()
         adhesionConnectionBuffer = 0;
     }
     adhesionCount = 0;
-}
-
-void CellManager::clearAllAdhesions()
-{
-    // Clear the adhesion connection buffer
-    if (adhesionConnectionBuffer != 0) {
-        glClearNamedBufferData(adhesionConnectionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    
-    // Reset adhesion count
-    adhesionCount = 0;
-    
-    // Reset the adhesion count in the GPU buffer
-    GLuint zero = 0;
-    glNamedBufferSubData(gpuCellCountBuffer, 2 * sizeof(GLuint), sizeof(GLuint), &zero); // adhesionCount = 0
-    
-    std::cout << "All adhesions cleared\n";
-}
-
-void CellManager::debugClearAdhesions()
-{
-    clearAllAdhesions();
-    std::cout << "DEBUG: Adhesions cleared manually\n";
-}
-
-void CellManager::debugPrintAdhesionState()
-{
-    std::cout << "DEBUG: Current adhesion state:\n";
-    std::cout << "  - CPU adhesionCount: " << adhesionCount << "\n";
-    
-    // Read adhesion count from GPU
-    GLuint gpuAdhesionCount;
-    glGetNamedBufferSubData(gpuCellCountBuffer, 2 * sizeof(GLuint), sizeof(GLuint), &gpuAdhesionCount);
-    std::cout << "  - GPU adhesionCount: " << gpuAdhesionCount << "\n";
-    
-    if (adhesionCount > 0) {
-        std::cout << "  - There are existing adhesions that need to be cleared\n";
-        std::cout << "  - Try calling clearAllAdhesions() or reset the simulation\n";
-    } else {
-        std::cout << "  - No adhesions currently exist\n";
-    }
-}
-
-void CellManager::debugPrintModeSettings()
-{
-    std::cout << "DEBUG: Current mode settings from GPU:\n";
-    
-    // Read the first few modes from the GPU buffer
-    const int maxModesToCheck = 5;
-    std::vector<GPUMode> gpuModes(maxModesToCheck);
-    
-    glGetNamedBufferSubData(modeBuffer, 0, maxModesToCheck * sizeof(GPUMode), gpuModes.data());
-    
-    for (int i = 0; i < maxModesToCheck; i++) {
-        std::cout << "  Mode " << i << ":\n";
-        std::cout << "    - parentMakeAdhesion: " << (gpuModes[i].parentMakeAdhesion ? "true" : "false") << "\n";
-        std::cout << "    - splitInterval: " << gpuModes[i].splitInterval << "\n";
-    }
 }

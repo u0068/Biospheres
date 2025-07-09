@@ -17,39 +17,12 @@ struct ComputeCell {
     float nitrates;
 };
 
-struct AdhesionSettings
-{
-    bool canBreak;
-    float breakForce;
-    float restLength;
-    float linearSpringStiffness;
-    float linearSpringDamping;
-    float orientationSpringStiffness;
-    float orientationSpringDamping;
-    float maxAngularDeviation; // degrees
-};
-
-// GPU Mode structure
-struct GPUMode {
-    vec4 color;           // R, G, B, padding
-    vec4 orientationA;    // quaternion
-    vec4 orientationB;    // quaternion
-    vec4 splitDirection;  // x, y, z, padding
-    ivec2 childModes;     // mode indices for children
-    float splitInterval;
-    int genomeOffset;
-    AdhesionSettings adhesionSettings;
-    int parentMakeAdhesion; // Integer flag for adhesion creation (0 = false, 1 = true)
-    int padding[3];          // Padding to maintain alignment
-};
-
 // Adhesion connection structure - stores permanent connections between sibling cells
 struct AdhesionConnection {
     uint cellAIndex;      // Index of first cell in the connection
     uint cellBIndex;      // Index of second cell in the connection
     uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
-    uint parentID;        // ID of the parent cell that created this adhesion (for tracking inheritance)
 };
 
 // Adhesion line vertex data - each line has 2 vertices
@@ -63,30 +36,20 @@ layout(std430, binding = 0) buffer CellBuffer {
     ComputeCell cells[];
 };
 
-// Input: Mode data
-layout(std430, binding = 1) buffer ModeBuffer {
-    GPUMode modes[];
-};
-
-layout(std430, binding = 2) buffer AdhesionConnectionBuffer {
+layout(std430, binding = 1) buffer AdhesionConnectionBuffer {
     AdhesionConnection connections[];
 };
 
 // Output: Adhesion line vertices
-layout(std430, binding = 3) buffer AdhesionLineBuffer {
+layout(std430, binding = 2) buffer AdhesionLineBuffer {
     AdhesionLineVertex lineVertices[];
 };
 
 // Cell count
-layout(std430, binding = 4) buffer CellCountBuffer {
+layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
     uint adhesionCount;
-};
-
-// Active adhesion counter
-layout(std430, binding = 5) buffer ActiveAdhesionCounter {
-    uint activeCount;
 };
 
 void main() {
@@ -98,17 +61,6 @@ void main() {
     
     AdhesionConnection currentAdhesion = connections[index];
     
-    // Skip inactive adhesions
-    if (currentAdhesion.isActive == 0) {
-        return;
-    }
-    
-    // Check if the mode that created this adhesion has parentMakeAdhesion enabled
-    GPUMode mode = modes[currentAdhesion.modeIndex];
-            if (mode.parentMakeAdhesion == 0) {
-        return; // Skip rendering if parentMakeAdhesion is false
-    }
-    
     // Calculate line vertices
     vec3 posA = cells[currentAdhesion.cellAIndex].positionAndMass.xyz;
     vec3 posB = cells[currentAdhesion.cellBIndex].positionAndMass.xyz;
@@ -116,11 +68,11 @@ void main() {
     // Use a distinctive color for adhesion lines (orange/amber)
     vec4 lineColor = vec4(1.0, 0.6, 0.2, 1.0); // Orange color
     
-    // Use atomic counter to get a compacted index for this active adhesion
-    uint compactedIndex = atomicAdd(activeCount, 1);
-    uint lineIndex = compactedIndex * 2;
+    // Each cell pair generates one line (2 vertices)
+    // We use the current cell's index to determine where to store the line
+    uint lineIndex = index * 2;
     
-    // Store the line vertices at the compacted position
+    // Store the line vertices
     if (lineIndex < lineVertices.length() && lineIndex + 1 < lineVertices.length()) {
         lineVertices[lineIndex].position = vec4(posA, 1.0);
         lineVertices[lineIndex].color = lineColor;

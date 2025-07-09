@@ -340,27 +340,6 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         ImGui::Text("Last Update: %.3f s ago", perfMonitor.lastPerfUpdate);
         ImGui::Text("History Size: %zu entries", perfMonitor.frameTimeHistory.size());
         
-        // Adhesion debug controls
-        ImGui::Separator();
-        ImGui::Text("Adhesion Debug:");
-        if (ImGui::Button("Clear All Adhesions"))
-        {
-            cellManager.debugClearAdhesions();
-        }
-        addTooltip("Clear all existing adhesions (useful for testing parentMakeAdhesion setting)");
-        
-        if (ImGui::Button("Print Adhesion State"))
-        {
-            cellManager.debugPrintAdhesionState();
-        }
-        addTooltip("Print current adhesion state to console");
-        
-        if (ImGui::Button("Print Mode Settings"))
-        {
-            cellManager.debugPrintModeSettings();
-        }
-        addTooltip("Print current mode settings from GPU to console");
-        
         // LOD distribution information
         if (ImGui::CollapsingHeader("LOD Distribution"))
         {
@@ -716,6 +695,9 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
         
+        // Establish initial adhesionSettings connections
+        cellManager.runAdhesionPhysics();
+        
         // Reset simulation time
         sceneManager.resetPreviewSimulationTime();
         
@@ -1011,13 +993,8 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     // Add divider before Parent Make Adhesion checkbox
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Spacing();
-    
-    // Convert integer to boolean for checkbox
-    bool parentMakeAdhesionBool = (mode.parentMakeAdhesion != 0);
-    if (ImGui::Checkbox("Parent Make Adhesion", &parentMakeAdhesionBool))
+    ImGui::Spacing();    if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
     {
-        mode.parentMakeAdhesion = parentMakeAdhesionBool ? 1 : 0;
         genomeChanged = true;
     }
     addTooltip("Whether the parent cell creates adhesive connections with its children");
@@ -1257,7 +1234,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         }
           // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
-        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
+        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.1f, maxTime, "%.2f"))
         {
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);

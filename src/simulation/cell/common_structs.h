@@ -49,7 +49,7 @@ struct GPUMode {
     float splitInterval{ 5. };
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
 	AdhesionSettings adhesionSettings{}; // Adhesion settings for the parent cell
-    int parentMakeAdhesion{ 1 };  // Integer flag for adhesion creation (0 = false, 1 = true) + padding
+    bool parentMakeAdhesion{ true };  // Boolean flag for adhesionSettings creation (0 = false, 1 = true) + padding
 	int padding[3]{ 0 }; // Padding to ensure 16-byte alignment for GPU compatibility
 };
 
@@ -59,7 +59,6 @@ struct AdhesionConnection
     int cellIndexB; // Index of the second cell in the connection
 	int modeIndex;  // Mode index for the connection (to look up adhesionSettings settings)
 	bool isActive; // Whether the connection is currently active
-	int parentID; // ID of the parent cell that created this adhesion (for tracking inheritance)
 };
 
 struct ChildSettings
@@ -73,7 +72,7 @@ struct ModeSettings
 {
     std::string name = "Untitled Mode";
     glm::vec3 color = { 1.0f, 1.0f, 1.0f }; // RGB color    // Parent Settings
-    int parentMakeAdhesion = 1;
+    bool parentMakeAdhesion = true;
     float splitMass = 1.0f;
     float splitInterval = 5.0f;
     glm::vec2 parentSplitDirection = { 0.0f, 0.0f}; // pitch, yaw in degrees
