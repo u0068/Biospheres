@@ -260,7 +260,7 @@ void CellManager::initializeGPUBuffers()
         stagingCellCountBuffer,
         sizeof(GLuint) * 2,
         nullptr,
-        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
     );
     mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * 2,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
@@ -272,7 +272,7 @@ void CellManager::initializeGPUBuffers()
         stagingCellBuffer,
         cellLimit * sizeof(ComputeCell),
         nullptr,
-        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
     );
     mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
@@ -842,20 +842,36 @@ void CellManager::resetSimulation()
     // Clear all cell buffers
     for (int i = 0; i < 3; i++)
     {
-        glClearNamedBufferData(cellBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        if (cellBuffer[i] != 0) {
+            glClearNamedBufferData(cellBuffer[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        }
     }
 
-    glClearNamedBufferData(instanceBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    if (instanceBuffer != 0) {
+        glClearNamedBufferData(instanceBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
     
     // Clear addition buffer
-    glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    if (cellAdditionBuffer != 0) {
+        glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
     
     // Clear spatial grid buffers
-    glClearNamedBufferData(gridBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    glClearNamedBufferData(gridCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    glClearNamedBufferData(gridOffsetBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    glClearNamedBufferData(gridHashBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    glClearNamedBufferData(activeCellsBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    if (gridBuffer != 0) {
+        glClearNamedBufferData(gridBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    if (gridCountBuffer != 0) {
+        glClearNamedBufferData(gridCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    if (gridOffsetBuffer != 0) {
+        glClearNamedBufferData(gridOffsetBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    if (gridHashBuffer != 0) {
+        glClearNamedBufferData(gridHashBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    if (activeCellsBuffer != 0) {
+        glClearNamedBufferData(activeCellsBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
     
     // Clear adhesion line buffer to prevent lingering lines after reset
     if (adhesionLineBuffer != 0) {
@@ -950,6 +966,18 @@ void CellManager::initializeSpatialGrid()
                       config::TOTAL_GRID_CELLS * sizeof(GLuint),
                       nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
 
+    // Create hash buffer for sparse grid optimization
+    glCreateBuffers(1, &gridHashBuffer);
+    glNamedBufferData(gridHashBuffer,
+                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
+                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
+
+    // Create active cells buffer for performance optimization
+    glCreateBuffers(1, &activeCellsBuffer);
+    glNamedBufferData(activeCellsBuffer,
+                      config::TOTAL_GRID_CELLS * sizeof(GLuint),
+                      nullptr, GL_STREAM_COPY);  // Frequently updated by GPU compute shaders
+
     std::cout << "Initialized double buffered spatial grid with " << config::TOTAL_GRID_CELLS
               << " grid cells (" << config::GRID_RESOLUTION << "^3)\n";
     std::cout << "Grid cell size: " << config::GRID_CELL_SIZE << "\n";
@@ -1011,6 +1039,16 @@ void CellManager::cleanupSpatialGrid()
     {
         glDeleteBuffers(1, &gridOffsetBuffer);
         gridOffsetBuffer = 0;
+    }
+    if (gridHashBuffer != 0)
+    {
+        glDeleteBuffers(1, &gridHashBuffer);
+        gridHashBuffer = 0;
+    }
+    if (activeCellsBuffer != 0)
+    {
+        glDeleteBuffers(1, &activeCellsBuffer);
+        activeCellsBuffer = 0;
     }
 }
 
@@ -1776,7 +1814,7 @@ void CellManager::initializeLODSystem()
         lodCountBuffer,
         4 * sizeof(uint32_t), // 4 LOD levels
         nullptr,
-        GL_DYNAMIC_STORAGE_BIT
+        GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT
     );
     
     // Setup instance buffers for each LOD level
@@ -2014,7 +2052,7 @@ void CellManager::initializeFrustumCulling()
         visibleCountBuffer,
         sizeof(uint32_t),
         nullptr,
-        GL_DYNAMIC_STORAGE_BIT
+        GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT
     );
     
     std::cout << "Frustum culling system initialized\n";
@@ -2150,7 +2188,7 @@ void CellManager::initializeAdhesionConnectionSystem()
     glCreateBuffers(1, &adhesionConnectionBuffer);
     glNamedBufferData(adhesionConnectionBuffer,
         (cellLimit + 1) * sizeof(GLuint) * 4, // +1 for counter element
-        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
+        nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for connection count
     
     // Initialize counter to 0
     GLuint zero = 0;
