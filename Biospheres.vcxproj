@@ -162,7 +162,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="shaders\cell\management\FileName.cpp" />
     <ClCompile Include="src\audio\audio_engine.cpp" />
     <ClCompile Include="src\rendering\camera\camera.cpp" />
     <ClCompile Include="src\simulation\cell\cell_manager.cpp" />

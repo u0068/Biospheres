@@ -49,7 +49,8 @@ struct GPUMode {
     float splitInterval{ 5. };
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
 	AdhesionSettings adhesionSettings; // Adhesion settings for the parent cell
-    int parentMakeAdhesion[4]{ 0 };  // Boolean flag for adhesion creation (0 = false, 1 = true) + padding
+    bool parentMakeAdhesion{ 0 };  // Boolean flag for adhesion creation (0 = false, 1 = true) + padding
+	int padding[3]{ 0 }; // Padding to ensure 16-byte alignment for GPU compatibility
 };
 
 struct AdhesionConnection
