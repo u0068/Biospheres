@@ -149,6 +149,7 @@ struct CellManager
 
     // Adhesion connection system
     GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesionSettings connections
+    GLuint activeAdhesionCounterBuffer{};  // Buffer for tracking active adhesion count
 	Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
 
     void initializeGizmoBuffers();
@@ -170,6 +171,10 @@ struct CellManager
 
     void initializeAdhesionConnectionSystem();
     void runAdhesionPhysics();
+    void clearAllAdhesions();
+    void debugClearAdhesions();
+    void debugPrintAdhesionState();
+    void debugPrintModeSettings();
 	void cleanupAdhesionConnectionSystem();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);

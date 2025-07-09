@@ -17,6 +17,18 @@ struct ComputeCell {
     float nitrates;
 };
 
+struct AdhesionSettings
+{
+    bool canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation; // degrees
+};
+
 // GPU Mode structure
 struct GPUMode {
     vec4 color;           // R, G, B, padding
@@ -26,8 +38,9 @@ struct GPUMode {
     ivec2 childModes;     // mode indices for children
     float splitInterval;
     int genomeOffset;
-    int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int padding;          // Padding to maintain alignment
+    AdhesionSettings adhesionSettings;
+    int parentMakeAdhesion; // Integer flag for adhesion creation (0 = false, 1 = true)
+    int padding[3];          // Padding to maintain alignment
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells
@@ -36,6 +49,7 @@ struct AdhesionConnection {
     uint cellBIndex;      // Index of second cell in the connection
     uint parentID;        // Parent ID that both cells share
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    uint modeIndex;       // Mode index for the connection (to lookup adhesion settings)
 };
 
 // Input: Cell data
@@ -65,6 +79,7 @@ layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
 layout(std430, binding = 5) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
+    uint adhesionCount;
 };
 
 // Uniforms
@@ -73,6 +88,7 @@ uniform float u_gridCellSize;
 uniform float u_worldSize;
 uniform int u_maxCellsPerGrid;
 uniform int u_maxConnections;
+uniform float u_deltaTime;
 
 // Function to convert world position to grid coordinates
 ivec3 worldToGrid(vec3 worldPos) {
@@ -102,7 +118,64 @@ bool isValidGridPos(ivec3 gridPos) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= cellCount) {
+    if (index >= adhesionCount) {
         return;
+    }
+    
+    // Process adhesion connections
+    AdhesionConnection connection = connections[index];
+    
+    // Skip inactive adhesions
+    if (connection.isActive == 0) {
+        return;
+    }
+    
+    // Check if the mode that created this adhesion has parentMakeAdhesion enabled
+    GPUMode mode = modes[connection.modeIndex];
+            if (mode.parentMakeAdhesion == 0) {
+        return; // Skip physics if parentMakeAdhesion is false
+    }
+    
+    // Get the two cells involved in this adhesion
+    ComputeCell cellA = cells[connection.cellAIndex];
+    ComputeCell cellB = cells[connection.cellBIndex];
+    
+    // Calculate the vector from cell A to cell B
+    vec3 deltaPos = cellB.positionAndMass.xyz - cellA.positionAndMass.xyz;
+    float distance = length(deltaPos);
+    
+    if (distance > 0.0) {
+        vec3 direction = deltaPos / distance;
+        
+        // Get adhesion settings from the mode
+        GPUMode mode = modes[connection.modeIndex];
+        
+        // Calculate spring force based on rest length
+        float restLength = 2.0; // Default rest length
+        float springStiffness = 5.0; // Default spring stiffness
+        float springDamping = 0.5; // Default damping
+        
+        float displacement = distance - restLength;
+        vec3 springForce = direction * displacement * springStiffness;
+        
+        // Calculate damping force based on relative velocity
+        vec3 relativeVelocity = cellB.velocity.xyz - cellA.velocity.xyz;
+        vec3 dampingForce = direction * dot(relativeVelocity, direction) * springDamping;
+        
+        // Total force
+        vec3 totalForce = springForce - dampingForce;
+        
+        // Apply forces to both cells (equal and opposite)
+        // Note: In a real implementation, you'd need to use atomic operations
+        // to safely update multiple cells from different threads
+        // For now, this is a simplified version
+        
+        // Update cell A
+        cellA.acceleration.xyz += totalForce / cellA.positionAndMass.w;
+        cells[connection.cellAIndex] = cellA;
+        
+        // Update cell B  
+        cellB.acceleration.xyz -= totalForce / cellB.positionAndMass.w;
+        cells[connection.cellBIndex] = cellB;
     }
 } 
