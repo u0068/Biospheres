@@ -938,6 +938,41 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
 
 void UIManager::drawParentSettings(ModeSettings &mode)
 {
+    // Mode Name
+    ImGui::Text("Mode Name:");
+    addTooltip("The name of this mode (used for identification in the UI)");
+    static char nameBuffer[256];
+    static int lastModeIndex = -1;
+    
+    // Update buffer when mode changes
+    if (lastModeIndex != selectedModeIndex)
+    {
+        lastModeIndex = selectedModeIndex;
+        mode.name.copy(nameBuffer, sizeof(nameBuffer) - 1);
+        nameBuffer[std::min(mode.name.length(), sizeof(nameBuffer) - 1)] = '\0';
+    }
+    
+    if (ImGui::InputText("##ModeName", nameBuffer, sizeof(nameBuffer)))
+    {
+        mode.name = std::string(nameBuffer);
+        genomeChanged = true;
+    }
+
+    // Add divider before color picker
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Color Picker
+    ImGui::Text("Mode Color:");
+    addTooltip("The color of cells in this mode (used for rendering)");
+    drawColorPicker("##ModeColor", &mode.color);
+
+    // Add divider before split settings
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     drawSliderWithInput("Split Mass", &mode.splitMass, 0.1f, 10.0f, "%.2f");
     addTooltip("The mass threshold at which the cell will split into two child cells");
     
