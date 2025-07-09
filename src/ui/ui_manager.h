@@ -92,7 +92,7 @@ public:
     bool showOrientationGizmos = false;  // Toggle for showing cell orientation gizmos
     
     // Adhesion line visualization
-    bool showAdhesionLines = false;      // Toggle for showing adhesion lines between sibling cells
+    bool showAdhesionLines = true;      // Toggle for showing adhesionSettings lines between sibling cells
     
     // Wireframe rendering mode
     bool wireframeMode = false;          // Toggle for wireframe rendering mode

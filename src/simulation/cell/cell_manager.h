@@ -81,12 +81,6 @@ struct CellManager
     int getTotalTriangleCount() const;        // Calculate total triangles across all LOD levels
     int getTotalVertexCount() const;          // Calculate total vertices across all LOD levels
 
-    // Asynchronous readback system for performance monitoring
-    //GLuint readbackBuffer = 0;      // Buffer for async GPU->CPU data transfer
-    //GLsync readbackFence = nullptr; // Sync object for async operations
-    //bool readbackInProgress = false;
-    //float readbackCooldown = 0.0f; // Timer to limit readback frequency
-
     // Compute shaders
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
@@ -110,6 +104,7 @@ struct CellManager
     int cpuPendingCellCount{0};     // Number of cells pending addition by CPU
     int gpuPendingCellCount{0};     // Approx number of cells pending addition by GPU
 	// Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
+    int adhesionCount{ 0 };
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
 
@@ -146,16 +141,15 @@ struct CellManager
     Shader* ringGizmoShader = nullptr;        // Vertex/fragment shaders for rendering ring gizmos
     
     // Adhesion line visualization
-    GLuint adhesionLineBuffer{};        // Buffer for adhesion line vertices  
-    GLuint adhesionLineVAO{};           // VAO for adhesion line rendering
-    GLuint adhesionLineVBO{};           // VBO for adhesion line vertices
+    GLuint adhesionLineBuffer{};        // Buffer for adhesionSettings line vertices  
+    GLuint adhesionLineVAO{};           // VAO for adhesionSettings line rendering
+    GLuint adhesionLineVBO{};           // VBO for adhesionSettings line vertices
+	Shader* adhesionLineExtractShader = nullptr; // Generate adhesionSettings line data
+    Shader* adhesionLineShader = nullptr;        // Vertex/fragment shaders for rendering adhesionSettings lines
 
-    Shader* adhesionLineShader = nullptr;        // Vertex/fragment shaders for rendering adhesion lines
-
-    // Adhesion connection system - permanent connections between sibling cells
-    GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesion connections
-    Shader* adhesionConnectionShader = nullptr;  // Compute shader for establishing initial connections
-    int adhesionConnectionCount{0};
+    // Adhesion connection system
+    GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesionSettings connections
+	Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
 
     void initializeGizmoBuffers();
     void updateGizmoData();
@@ -171,12 +165,12 @@ struct CellManager
     // Adhesion line methods
     void renderAdhesionLines(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
     void initializeAdhesionLineBuffers();
+    void updateAdhesionLineData();
     void cleanupAdhesionLines();
-    
-    // Adhesion connection methods
+
     void initializeAdhesionConnectionSystem();
-    void establishAdhesionConnections();
-    void cleanupAdhesionConnectionSystem();
+    void runAdhesionPhysics();
+	void cleanupAdhesionConnectionSystem();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
@@ -338,7 +332,6 @@ private:
     void runPhysicsCompute(float deltaTime);
     void runUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
-    void runCellCounter();
     void applyCellAdditions();
 
     // Spatial grid helper functions

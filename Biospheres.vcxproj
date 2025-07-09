@@ -215,7 +215,7 @@
     <ClInclude Include="src\rendering\core\mesh\sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\cell\management\adhesion_connection.comp" />
+    <None Include="shaders\cell\physics\adhesion_physics.comp" />
     <None Include="shaders\cell\management\apply_additions.comp" />
     <None Include="shaders\cell\physics\cell_physics_spatial.comp" />
     <None Include="shaders\cell\physics\cell_update.comp" />

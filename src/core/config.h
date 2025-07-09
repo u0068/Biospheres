@@ -20,6 +20,7 @@ namespace config
 	// ========== Cell Simulation Configuration ==========
 	constexpr int MAX_CELLS{100000};
 	constexpr int DEFAULT_CELL_COUNT{100000};
+	constexpr int MAX_ADHESIONS{ MAX_CELLS * 12 };
 	constexpr float DEFAULT_SPAWN_RADIUS{50.0f};
 
 	// ========== Spatial Partitioning Configuration ==========

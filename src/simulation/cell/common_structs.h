@@ -48,8 +48,8 @@ struct GPUMode {
     glm::ivec2 childModes{ 0 };
     float splitInterval{ 5. };
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
-	AdhesionSettings adhesionSettings; // Adhesion settings for the parent cell
-    bool parentMakeAdhesion{ 0 };  // Boolean flag for adhesion creation (0 = false, 1 = true) + padding
+	AdhesionSettings adhesionSettings{}; // Adhesion settings for the parent cell
+    bool parentMakeAdhesion{ true };  // Boolean flag for adhesionSettings creation (0 = false, 1 = true) + padding
 	int padding[3]{ 0 }; // Padding to ensure 16-byte alignment for GPU compatibility
 };
 
@@ -57,7 +57,7 @@ struct AdhesionConnection
 {
     int cellIndexA; // Index of the first cell in the connection
     int cellIndexB; // Index of the second cell in the connection
-	int modeIndex;  // Mode index for the connection (to look up adhesion settings)
+	int modeIndex;  // Mode index for the connection (to look up adhesionSettings settings)
 	bool isActive; // Whether the connection is currently active
 };
 
@@ -82,7 +82,7 @@ struct ModeSettings
     ChildSettings childB;
 
     // Adhesion Settings
-    AdhesionSettings adhesion;
+    AdhesionSettings adhesionSettings;
 };
 
 struct GenomeData

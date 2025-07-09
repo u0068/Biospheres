@@ -17,17 +17,12 @@ struct ComputeCell {
     float nitrates;
 };
 
-// GPU Mode structure
-struct GPUMode {
-    vec4 color;           // R, G, B, padding
-    vec4 orientationA;    // quaternion
-    vec4 orientationB;    // quaternion
-    vec4 splitDirection;  // x, y, z, padding
-    ivec2 childModes;     // mode indices for children
-    float splitInterval;
-    int genomeOffset;
-    int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int padding;          // Padding to maintain alignment
+// Adhesion connection structure - stores permanent connections between sibling cells
+struct AdhesionConnection {
+    uint cellAIndex;      // Index of first cell in the connection
+    uint cellBIndex;      // Index of second cell in the connection
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
+    uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
 };
 
 // Adhesion line vertex data - each line has 2 vertices
@@ -41,9 +36,8 @@ layout(std430, binding = 0) buffer CellBuffer {
     ComputeCell cells[];
 };
 
-// Input: Mode data
-layout(std430, binding = 1) buffer ModeBuffer {
-    GPUMode modes[];
+layout(std430, binding = 1) buffer AdhesionConnectionBuffer {
+    AdhesionConnection connections[];
 };
 
 // Output: Adhesion line vertices
@@ -55,20 +49,21 @@ layout(std430, binding = 2) buffer AdhesionLineBuffer {
 layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
+    uint adhesionCount;
 };
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= cellCount) {
+    if (index >= adhesionCount) {
         return;
     }
     
-    ComputeCell currentCell = cells[index];
+    AdhesionConnection currentAdhesion = connections[index];
     
     // Calculate line vertices
-    vec3 posA = currentCell.positionAndMass.xyz;
-    vec3 posB = currentCell.positionAndMass.xyz + vec3(1); // This is just test data, not representative of actual adhesion
+    vec3 posA = cells[currentAdhesion.cellAIndex].positionAndMass.xyz;
+    vec3 posB = cells[currentAdhesion.cellBIndex].positionAndMass.xyz;
     
     // Use a distinctive color for adhesion lines (orange/amber)
     vec4 lineColor = vec4(1.0, 0.6, 0.2, 1.0); // Orange color

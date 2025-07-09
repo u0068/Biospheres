@@ -185,7 +185,8 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 	}
 	
 	if (activeCellManager && activeCamera)
-	{		// Render the active simulation with its camera
+	{
+		// Render the active simulation with its camera
 		try
 		{
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera, uiManager.wireframeMode);
@@ -195,22 +196,24 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
 			checkGLError("renderGizmos");
 			
-					// Render ring gizmos if enabled
-		activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-		checkGLError("renderRingGizmos");
-		
-		// Render adhesion lines if enabled
-		activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
-		checkGLError("renderAdhesionLines");
+			// Render ring gizmos if enabled
+			activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+			checkGLError("renderRingGizmos");
+			
+			// Render adhesionSettings lines if enabled
+			activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
+			checkGLError("renderAdhesionLines");
 		}
 		catch (const std::exception &e)
 		{
 			std::cerr << "Exception in cell rendering: " << e.what() << "\n";
-		}		// Show the full detailed UI for the active simulation
+		}
+		// Show the full detailed UI for the active simulation
 		uiManager.renderCellInspector(*activeCellManager, sceneManager);
 		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
 		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
-				// Only show genome editor in Preview Simulation
+
+		// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
 		{
 			uiManager.renderGenomeEditor(previewCellManager, sceneManager);
@@ -305,37 +308,33 @@ int main()
 	initGLAD(window);
 	setupGLFWDebugFlags();
 	// Load the sphere shader for instanced rendering
-	    Shader sphereShader("shaders/rendering/sphere/sphere.vert", "shaders/rendering/sphere/sphere.frag");
+    Shader sphereShader("shaders/rendering/sphere/sphere.vert", "shaders/rendering/sphere/sphere.frag");
 
-		const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
-		Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene
-		Camera previewCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start further back to see more cells
-		Camera mainCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start at same position for consistent view
-		// Initialise the UI manager // We dont have any ui to manage yet
-		ToolState toolState;
-		UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
-		CellManager previewCellManager;
-		CellManager mainCellManager;
-		
-		// Initialize Preview Simulation
-		previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
-		ComputeCell previewCell{};
-		previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
-		previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
-		
-		// Initialize Main Simulation
-		mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
-		ComputeCell mainCell{};
-		mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
-		mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
-		
-		// Ensure both simulations have proper initial state by running one update cycle
-		previewCellManager.updateCells(config::physicsTimeStep);
-		mainCellManager.updateCells(config::physicsTimeStep);
-		
-		// Establish initial adhesion connections
-		previewCellManager.establishAdhesionConnections();
-		mainCellManager.establishAdhesionConnections();
+	const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
+	Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene
+	Camera previewCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start further back to see more cells
+	Camera mainCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start at same position for consistent view
+	// Initialise the UI manager // We dont have any ui to manage yet
+	ToolState toolState;
+	UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
+	CellManager previewCellManager;
+	CellManager mainCellManager;
+	
+	// Initialize Preview Simulation
+	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
+	ComputeCell previewCell{};
+	previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
+	previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+	
+	// Initialize Main Simulation
+	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
+	ComputeCell mainCell{};
+	mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
+	mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+	
+	// Ensure both simulations have proper initial state by running one update cycle
+	previewCellManager.updateCells(config::physicsTimeStep);
+	mainCellManager.updateCells(config::physicsTimeStep);
 
 	AudioEngine audioEngine;
 	audioEngine.init();

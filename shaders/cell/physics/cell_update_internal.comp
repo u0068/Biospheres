@@ -2,14 +2,30 @@
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
+struct AdhesionSettings
+{
+    bool canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation; // degrees
+};
+
+// GPU Mode structure
 struct GPUMode {
-    vec4 color;             // r, g, b, padding
-    vec4 orientationA;      // quaternion
-    vec4 orientationB;      // quaternion
-    vec4 splitDirection;    // x, y, z, padding
-    ivec2 childModes;
+    vec4 color;           // R, G, B, padding
+    vec4 orientationA;    // quaternion
+    vec4 orientationB;    // quaternion
+    vec4 splitDirection;  // x, y, z, padding
+    ivec2 childModes;     // mode indices for children
     float splitInterval;
     int genomeOffset;
+    AdhesionSettings adhesionSettings;
+    bool parentMakeAdhesion; // Boolean flag for adhesion creation
+    int padding[3];          // Padding to maintain alignment
 };
 
 struct ComputeCell {
@@ -24,6 +40,14 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
+};
+
+// Adhesion connection structure - stores permanent connections between sibling cells
+struct AdhesionConnection {
+    uint cellAIndex;      // Index of first cell in the connection
+    uint cellBIndex;      // Index of second cell in the connection
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
+    uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -41,20 +65,16 @@ layout(std430, binding = 2) buffer CellAdditionQueue {
 layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
+    uint adhesionCount;
 };
 
-layout(std430, binding = 4) buffer IDCounterBuffer {
-    uint nextAvailableID;    // Next ID to assign
-    uint recycledIDCount;    // Number of recycled IDs available
-    uint maxCellID;          // Maximum cell ID (32767)
-};
-
-layout(std430, binding = 5) buffer IDPoolBuffer {
-    uint availableIDs[];     // Pool of available/recycled cell IDs
+layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
+    AdhesionConnection connections[];
 };
 
 uniform float u_deltaTime;
 uniform int u_maxCells;
+uniform int u_maxAdhesions;
 
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -118,6 +138,21 @@ void main() {
             // Store new cells
             cells[index] = childA;
             newCells[queueIdx] = childB;
+
+            // Now we need to add the adhesion connection
+            if (mode.parentMakeAdhesion || true) {
+                // Reserve index for adhesion connection
+                uint adhesionIndex = atomicAdd(adhesionCount, 0);
+                if (adhesionIndex < u_maxAdhesions || true) {
+                    adhesionIndex = atomicAdd(adhesionCount, 1);
+                    AdhesionConnection newAdhesion;
+                    newAdhesion.cellAIndex = index; // Parent cell index
+                    newAdhesion.cellBIndex = queueIdx + cellCount; // New child cell index
+                    newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
+                    newAdhesion.isActive = 1; // Active connection
+                    connections[adhesionIndex] = newAdhesion;
+                }
+            }
         } else {
             // Can't divide just continue aging
             cells[index] = cell;

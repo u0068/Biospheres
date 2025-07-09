@@ -57,7 +57,6 @@ layout(std430, binding = 3) buffer GridCountBuffer {
     uint gridCounts[];
 };
 
-// Output: Adhesion connections
 layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
     AdhesionConnection connections[];
 };

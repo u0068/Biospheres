@@ -310,6 +310,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
     ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
+    ImGui::Text("Adhesion Connections: %i / %i", cellManager.adhesionCount, config::MAX_ADHESIONS);
     ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
     ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
 
@@ -432,7 +433,7 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     addTooltip("Display forward (red), up (green), and right (blue) orientation axes for each cell");
     
     ImGui::Checkbox("Show Adhesion Lines", &showAdhesionLines);
-    addTooltip("Display orange lines connecting sibling cells when their parent has adhesion enabled");
+    addTooltip("Display orange lines connecting sibling cells when their parent has adhesionSettings enabled");
     
     ImGui::Checkbox("Wireframe Mode", &wireframeMode);
     addTooltip("Render cells in wireframe mode to verify back face culling is working");
@@ -694,8 +695,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
         
-        // Establish initial adhesion connections
-        cellManager.establishAdhesionConnections();
+        // Establish initial adhesionSettings connections
+        cellManager.runAdhesionPhysics();
         
         // Reset simulation time
         sceneManager.resetPreviewSimulationTime();
@@ -917,11 +918,11 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
         {
             if (adhesionTabEnabled)
             {
-                drawAdhesionSettings(mode.adhesion);
+                drawAdhesionSettings(mode.adhesionSettings);
             }
             else
             {
-                ImGui::TextDisabled("Enable 'Parent Make Adhesion' to configure adhesion settings");
+                ImGui::TextDisabled("Enable 'Parent Make Adhesion' to configure adhesionSettings settings");
             }
             ImGui::EndTabItem();
         }
@@ -1013,12 +1014,12 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     addTooltip("The natural resting distance of the adhesive connection");
     
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
-    addTooltip("How strongly the adhesion resists stretching or compression");
+    addTooltip("How strongly the adhesionSettings resists stretching or compression");
     
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
     addTooltip("Damping factor that reduces oscillations in the adhesive connection");
     drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 20.0f);
-    addTooltip("How strongly the adhesion resists rotational changes between connected cells");
+    addTooltip("How strongly the adhesionSettings resists rotational changes between connected cells");
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
     addTooltip("How far the adhesive connection can bend freely before angular constraints kick in");
