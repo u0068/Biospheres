@@ -1017,7 +1017,7 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
     addTooltip("Damping factor that reduces oscillations in the adhesive connection");
-    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStrength, 0.1f, 20.0f);
+    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 20.0f);
     addTooltip("How strongly the adhesion resists rotational changes between connected cells");
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);

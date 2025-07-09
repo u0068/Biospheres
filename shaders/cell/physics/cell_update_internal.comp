@@ -76,54 +76,6 @@ vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
          + 2.0 * s * cross(u, v);
 }
 
-// ID utility functions
-uint getParentID(uint uniqueID) {
-    return (uniqueID >> 16) & 0xFFFFu;
-}
-
-uint getCellID(uint uniqueID) {
-    return (uniqueID >> 1) & 0x7FFFu;
-}
-
-uint getChildFlag(uint uniqueID) {
-    return uniqueID & 0x1u;
-}
-
-uint packUniqueID(uint parentID, uint cellID, uint childFlag) {
-    return (parentID << 16) | ((cellID & 0x7FFFu) << 1) | (childFlag & 0x1u);
-}
-
-// Allocate a new cell ID from the pool or generate new one
-uint allocateCellID() {
-    uint newCellID;
-    
-    // Try to get a recycled ID first
-    if (recycledIDCount > 0) {
-        uint recycleIndex = atomicAdd(recycledIDCount, -1) - 1;
-        if (recycleIndex < recycledIDCount + 1) { // Check bounds
-            newCellID = availableIDs[recycleIndex];
-        } else {
-            // Fallback to new ID if race condition occurred
-            newCellID = atomicAdd(nextAvailableID, 1);
-            if (newCellID > maxCellID) {
-                // Wrap around if we've exceeded max ID
-                atomicExchange(nextAvailableID, 1);
-                newCellID = 1;
-            }
-        }
-    } else {
-        // No recycled IDs available, use next available
-        newCellID = atomicAdd(nextAvailableID, 1);
-        if (newCellID > maxCellID) {
-            // Wrap around if we've exceeded max ID
-            atomicExchange(nextAvailableID, 1);
-            newCellID = 1;
-        }
-    }
-    
-    return newCellID;
-}
-
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= cellCount) {

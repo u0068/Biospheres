@@ -39,9 +39,6 @@
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\simulation\genome\genome.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="third_party\glad.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -93,6 +90,9 @@
     <ClCompile Include="third_party\imgui\imgui_tables.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="shaders\cell\management\FileName.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\audio\audio_engine.h">
@@ -110,7 +110,7 @@
     <ClInclude Include="src\rendering\systems\frustum_culling.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\simulation\genome\genome.h">
+    <ClInclude Include="src\simulation\cell\common_structs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\rendering\core\glad_helpers.h">
@@ -190,16 +190,7 @@
     <None Include="shaders\rendering\debug\adhesion_line_extract.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
-    <None Include="shaders\rendering\debug\adhesion_line_extract_optimized_v2.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\rendering\debug\adhesion_parent_index_builder.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
     <None Include="shaders\cell\management\apply_additions.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cell\management\cell_counter.comp">
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\cell\physics\cell_physics_spatial.comp">

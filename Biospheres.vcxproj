@@ -162,11 +162,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="shaders\cell\management\FileName.cpp" />
     <ClCompile Include="src\audio\audio_engine.cpp" />
     <ClCompile Include="src\rendering\camera\camera.cpp" />
     <ClCompile Include="src\simulation\cell\cell_manager.cpp" />
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
-    <ClCompile Include="src\simulation\genome\genome.cpp" />
     <ClCompile Include="third_party\glad.c" />
     <ClCompile Include="src\rendering\core\glad_helpers.cpp" />
     <ClCompile Include="src\rendering\core\glfw_helpers.cpp" />
@@ -192,7 +192,7 @@
     <ClInclude Include="src\simulation\cell\cell_manager.h" />
     <ClInclude Include="src\core\config.h" />
     <ClInclude Include="src\rendering\systems\frustum_culling.h" />
-    <ClInclude Include="src\simulation\genome\genome.h" />
+    <ClInclude Include="src\simulation\cell\common_structs.h" />
     <ClInclude Include="src\rendering\core\glad_helpers.h" />
     <ClInclude Include="src\rendering\core\glfw_helpers.h" />
     <ClInclude Include="src\scene\scene_manager.h" />
@@ -218,15 +218,12 @@
   <ItemGroup>
     <None Include="shaders\cell\management\adhesion_connection.comp" />
     <None Include="shaders\cell\management\apply_additions.comp" />
-    <None Include="shaders\cell\management\cell_counter.comp" />
     <None Include="shaders\cell\physics\cell_physics_spatial.comp" />
     <None Include="shaders\cell\physics\cell_update.comp" />
     <None Include="shaders\cell\physics\cell_update_internal.comp" />
     <None Include="shaders\cell\management\extract_instances.comp" />
     <None Include="shaders\rendering\culling\frustum_cull.comp" />
     <None Include="shaders\rendering\culling\frustum_cull_lod.comp" />
-    <None Include="shaders\rendering\debug\adhesion_line_extract_optimized_v2.comp" />
-    <None Include="shaders\rendering\debug\adhesion_parent_index_builder.comp" />
     <None Include="shaders\rendering\debug\gizmo.frag" />
     <None Include="shaders\rendering\debug\gizmo.vert" />
     <None Include="shaders\rendering\debug\gizmo_extract.comp" />

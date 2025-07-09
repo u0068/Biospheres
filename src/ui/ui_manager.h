@@ -4,7 +4,7 @@
 #include <string>
 #include <glm/glm.hpp>
 #include "../rendering/camera/camera.h"
-#include "../simulation/genome/genome.h"
+#include "../simulation/cell/common_structs.h"
 
 // Forward declarations
 struct CellManager; // Forward declaration to avoid circular dependency

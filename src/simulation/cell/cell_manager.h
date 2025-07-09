@@ -8,34 +8,12 @@
 #include "../../input/input.h"
 #include "../../core/config.h"
 #include "../../rendering/core/mesh/sphere_mesh.h"
-#include "../genome/genome.h"
+#include "../cell/common_structs.h"
 #include "../../rendering/systems/frustum_culling.h"
 
 // Forward declaration
 class Camera;
 
-// GPU compute cell structure matching the compute shader
-struct ComputeCell {
-    // Physics:
-    glm::vec4 positionAndMass{0, 0, 0, 1};       // x, y, z, mass
-    glm::vec4 velocity{};
-    glm::vec4 acceleration{};
-    glm::quat orientation{1., 0., 0., 0.};  // angular stuff in quaternions to prevent gimbal lock
-    glm::quat angularVelocity{ 1., 0., 0., 0. };
-    glm::quat angularAcceleration{ 1., 0., 0., 0. };
-
-    // Internal:
-    glm::vec4 signallingSubstances{}; // 4 substances for now
-    int modeIndex{ 0 };
-    float age{ 0 };                      // also used for split timer
-    float toxins{ 0 };
-    float nitrates{ 1 };
-
-    float getRadius() const
-    {
-        return static_cast<float>(pow(positionAndMass.w, 1.0f/3.0f));
-    }
-};
 
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");

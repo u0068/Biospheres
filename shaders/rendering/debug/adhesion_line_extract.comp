@@ -15,10 +15,6 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
-    // Unique ID system
-    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint padding1;     // Padding to maintain alignment
-    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
 };
 
 // GPU Mode structure
@@ -61,21 +57,6 @@ layout(std430, binding = 3) buffer CellCountBuffer {
     uint pendingCellCount;
 };
 
-// Extract parent ID from unique ID
-uint getParentID(uint uniqueID) {
-    return (uniqueID >> 16) & 0xFFFF;
-}
-
-// Extract cell ID from unique ID
-uint getCellID(uint uniqueID) {
-    return (uniqueID >> 1) & 0x7FFF;
-}
-
-// Extract child flag from unique ID (0 = child A, 1 = child B)
-uint getChildFlag(uint uniqueID) {
-    return uniqueID & 0x1;
-}
-
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
@@ -85,57 +66,9 @@ void main() {
     
     ComputeCell currentCell = cells[index];
     
-    // Skip cells with no parent (initial spawned cells)
-    uint parentID = getParentID(currentCell.uniqueID);
-    if (parentID == 0) {
-        return;
-    }
-    
-    // Get the parent's mode to check if adhesion is enabled
-    if (currentCell.modeIndex < 0 || currentCell.modeIndex >= modes.length()) {
-        return;
-    }
-    
-    GPUMode parentMode = modes[currentCell.modeIndex];
-    
-    // Skip if parent doesn't make adhesion
-    if (parentMode.parentMakeAdhesion == 0) {
-        return;
-    }
-    
-    // Only process child A to avoid duplicate lines (child B will be found by child A)
-    uint childFlag = getChildFlag(currentCell.uniqueID);
-    if (childFlag != 0) {
-        return; // Skip child B
-    }
-    
-    // Look for sibling (child B with same parent ID)
-    uint siblingIndex = 0xFFFFFFFF; // Invalid index
-    
-    for (uint i = 0; i < cellCount; i++) {
-        if (i == index) continue; // Skip self
-        
-        ComputeCell otherCell = cells[i];
-        uint otherParentID = getParentID(otherCell.uniqueID);
-        uint otherChildFlag = getChildFlag(otherCell.uniqueID);
-        
-        // Check if it's our sibling (same parent, different child flag)
-        if (otherParentID == parentID && otherChildFlag == 1) {
-            siblingIndex = i;
-            break;
-        }
-    }
-    
-    // If no sibling found, no line to draw
-    if (siblingIndex == 0xFFFFFFFF) {
-        return;
-    }
-    
-    ComputeCell siblingCell = cells[siblingIndex];
-    
     // Calculate line vertices
     vec3 posA = currentCell.positionAndMass.xyz;
-    vec3 posB = siblingCell.positionAndMass.xyz;
+    vec3 posB = currentCell.positionAndMass.xyz + vec3(1); // This is just test data, not representative of actual adhesion
     
     // Use a distinctive color for adhesion lines (orange/amber)
     vec4 lineColor = vec4(1.0, 0.6, 0.2, 1.0); // Orange color
