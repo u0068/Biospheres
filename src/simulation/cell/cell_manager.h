@@ -30,33 +30,15 @@ struct ComputeCell {
     float age{ 0 };                      // also used for split timer
     float toxins{ 0 };
     float nitrates{ 1 };
-    
-    // Unique ID system: X.Y.Z format
-    // X = parent ID (16 bits), Y = cell ID (15 bits), Z = child flag (1 bit, 0=A, 1=B)
-    uint32_t uniqueID{ 0 };              // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint32_t padding1{ 0 };              // Padding to maintain 16-byte alignment
-    uint64_t padding2{ 0 };              // Additional padding to ensure 16-byte alignment
-    
+
     float getRadius() const
     {
         return static_cast<float>(pow(positionAndMass.w, 1.0f/3.0f));
-    }
-    
-    // ID utility functions
-    uint16_t getParentID() const { return static_cast<uint16_t>((uniqueID >> 16) & 0xFFFF); }
-    uint16_t getCellID() const { return static_cast<uint16_t>((uniqueID >> 1) & 0x7FFF); }
-    uint8_t getChildFlag() const { return static_cast<uint8_t>(uniqueID & 0x1); }
-    
-    void setUniqueID(uint16_t parentID, uint16_t cellID, uint8_t childFlag) {
-        uniqueID = (static_cast<uint32_t>(parentID) << 16) | 
-                   (static_cast<uint32_t>(cellID & 0x7FFF) << 1) | 
-                   (childFlag & 0x1);
     }
 };
 
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
-static_assert(offsetof(ComputeCell, uniqueID) % 4 == 0, "uniqueID must be 4-byte aligned");
 
 struct CellManager
 {
@@ -81,11 +63,6 @@ struct CellManager
     // Genome buffer (immutable, no need for double buffering)
     // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
     GLuint modeBuffer{};
-
-    // Unique ID management buffers
-    GLuint idPoolBuffer{};        // SSBO for available cell IDs (queue-like structure)
-    GLuint idCounterBuffer{};     // SSBO for ID counters (next available ID, pool size)
-    GLuint idRecycleBuffer{};     // SSBO for recycled IDs from dead cells
 
     // Spatial partitioning buffers - Double buffered
     GLuint gridBuffer{};       // SSBO for grid cell data (stores cell indices)
@@ -137,9 +114,7 @@ struct CellManager
     Shader* updateShader = nullptr;
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
-    Shader* cellCounterShader = nullptr;
 	Shader* cellAdditionShader = nullptr;
-    Shader* idManagerShader = nullptr;  // For managing unique IDs
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -198,25 +173,11 @@ struct CellManager
     GLuint adhesionLineVBO{};           // VBO for adhesion line vertices
 
     Shader* adhesionLineShader = nullptr;        // Vertex/fragment shaders for rendering adhesion lines
-    
 
-    
     // Adhesion connection system - permanent connections between sibling cells
     GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesion connections
     Shader* adhesionConnectionShader = nullptr;  // Compute shader for establishing initial connections
     int adhesionConnectionCount{0};
-    
-    // Optimized adhesion line system with spatial indexing
-    GLuint adhesionParentIndexBuffer{};  // Buffer for spatial index (parent lookup table)
-    GLuint adhesionParentIndexCounterBuffer{};  // Counter buffer for parent index building
-    GLuint adhesionOptimizedCountBuffer{};  // Count buffer for optimized shader (cellCount, parentIndexCount)
-    Shader* adhesionParentIndexBuilderShader = nullptr;  // Compute shader for building spatial index
-    Shader* adhesionLineOptimizedShader = nullptr;  // Optimized adhesion line extract shader
-    int adhesionParentIndexCount{0};  // Number of parent indices
-    bool adhesionIndexNeedsUpdate{true};  // Flag to track when index needs rebuilding
-    
-    // Rendering optimization flags
-    bool useSpatialIndexing{true};  // Use spatial indexing for O(1) sibling lookup
 
     void initializeGizmoBuffers();
     void updateGizmoData();
@@ -234,19 +195,10 @@ struct CellManager
     void initializeAdhesionLineBuffers();
     void cleanupAdhesionLines();
     
-    // Optimized adhesion line methods (spatial indexing)
-    void renderOptimizedAdhesionLines(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
-    
     // Adhesion connection methods
     void initializeAdhesionConnectionSystem();
     void establishAdhesionConnections();
     void cleanupAdhesionConnectionSystem();
-    
-    // Optimized adhesion line methods with spatial indexing
-    void initializeOptimizedAdhesionLineSystem();
-    void updateSpatialIndexAdhesionLineData();
-    void renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);
-    void cleanupOptimizedAdhesionLineSystem();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
@@ -262,20 +214,9 @@ struct CellManager
     void updateSpatialGrid();
     void cleanupSpatialGrid();
 
-    // ID management functions
-    void initializeIDSystem();
-    void cleanupIDSystem();
-    void recycleDeadCellIDs(); // Called when cells die to recycle their IDs
-    void printCellIDs(int maxCells = 10); // Debug function to print cell IDs
-
     // Getter functions for debug information
     int getCellCount() const { return cellCount; }
     float getSpawnRadius() const { return spawnRadius; }
-
-    // GPU pipeline status getters
-    //bool isReadbackInProgress() const { return readbackInProgress; }
-    //bool isReadbackSystemHealthy() const { return readbackBuffer != 0; }
-    //float getReadbackCooldown() const { return readbackCooldown; }
 
     // Performance testing function
 	// Cell selection and interaction system
@@ -388,13 +329,6 @@ struct CellManager
     const BarrierStats& getBarrierStats() const { return barrierStats; }
     void resetBarrierStats() const { barrierStats.reset(); }
 
-    // Asynchronous readback functions for performance monitoring // not actually implemented yet, maybe later if we need to
-    //void initializeReadbackSystem();
-    //void updateReadbackSystem(float deltaTime);
-    //void requestAsyncReadback();
-    //bool checkAsyncReadback(ComputeCell *outputData, int maxCells);
-    //void cleanupReadbackSystem();
-
     // Double buffering management functions
     int getRotatedIndex(int index, int max) const { return (index + bufferRotation) % max; }
     void rotateBuffers() { bufferRotation = getRotatedIndex(1, 3); }
@@ -434,7 +368,4 @@ private:
     void runGridAssign();
     void runGridPrefixSum();
     void runGridInsert();
-    
-    // ID management helper functions
-    void runIDManager();
 };

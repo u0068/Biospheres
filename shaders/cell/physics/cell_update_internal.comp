@@ -6,7 +6,7 @@ struct GPUMode {
     vec4 color;             // r, g, b, padding
     vec4 orientationA;      // quaternion
     vec4 orientationB;      // quaternion
-    vec4 splitDirection;  // x, y, z, padding
+    vec4 splitDirection;    // x, y, z, padding
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
@@ -24,10 +24,6 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
-    // Unique ID system
-    uint uniqueID;     // Packed ID: [parent(16)] [cell(15)] [child(1)]
-    uint padding1;     // Padding to maintain alignment
-    uvec2 padding2;    // Additional padding to ensure 16-byte alignment
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -155,26 +151,17 @@ void main() {
             vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
             vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
 
-            // Allocate new cell IDs for both children
-            uint childACellID = allocateCellID();
-            uint childBCellID = allocateCellID();
-            
-            // Get parent's cell ID to use as parent ID for children
-            uint parentCellID = getCellID(cell.uniqueID);
-
             ComputeCell childA = cell;
             childA.positionAndMass.xyz += offset;
             childA.age = startAge;
             childA.modeIndex = mode.childModes.x;
             childA.orientation = q_childA;
-            childA.uniqueID = packUniqueID(parentCellID, childACellID, 0u); // A child
 
             ComputeCell childB = cell;
             childB.positionAndMass.xyz -= offset;
             childB.age = startAge;
             childB.modeIndex = mode.childModes.y;
             childB.orientation = q_childB;
-            childB.uniqueID = packUniqueID(parentCellID, childBCellID, 1u); // B child
 
             // Store new cells
             cells[index] = childA;

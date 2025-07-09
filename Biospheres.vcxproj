@@ -83,14 +83,14 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>third_party\include;$(IncludePath)</IncludePath>
+    <IncludePath>shaders\include;third_party\include\</IncludePath>
     <LibraryPath>third_party\lib;$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ShortProjectName)\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>third_party\include;$(IncludePath)</IncludePath>
+    <IncludePath>shaders\include;third_party\include\</IncludePath>
     <LibraryPath>third_party\lib;$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ShortProjectName)\$(Platform)\$(Configuration)\</IntDir>
@@ -133,7 +133,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>third_party\include\glm;third_party\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\include\glm\;third_party\imgui\;shaders\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -150,7 +150,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>third_party\include\glm;third_party\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\include\glm\;third_party\imgui\;shaders\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -216,6 +216,7 @@
     <ClInclude Include="src\rendering\core\mesh\sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\cell\management\adhesion_connection.comp" />
     <None Include="shaders\cell\management\apply_additions.comp" />
     <None Include="shaders\cell\management\cell_counter.comp" />
     <None Include="shaders\cell\physics\cell_physics_spatial.comp" />
@@ -224,6 +225,8 @@
     <None Include="shaders\cell\management\extract_instances.comp" />
     <None Include="shaders\rendering\culling\frustum_cull.comp" />
     <None Include="shaders\rendering\culling\frustum_cull_lod.comp" />
+    <None Include="shaders\rendering\debug\adhesion_line_extract_optimized_v2.comp" />
+    <None Include="shaders\rendering\debug\adhesion_parent_index_builder.comp" />
     <None Include="shaders\rendering\debug\gizmo.frag" />
     <None Include="shaders\rendering\debug\gizmo.vert" />
     <None Include="shaders\rendering\debug\gizmo_extract.comp" />
@@ -235,7 +238,6 @@
     <None Include="shaders\rendering\debug\ring_gizmo.vert" />
     <None Include="shaders\rendering\sphere\sphere.frag" />
     <None Include="shaders\rendering\sphere\sphere.vert" />
-    <None Include="shaders\cell\management\id_manager.comp" />
     <None Include="shaders\rendering\debug\ring_gizmo_extract.comp" />
     <None Include="shaders\rendering\debug\adhesion_line.frag" />
     <None Include="shaders\rendering\debug\adhesion_line.vert" />

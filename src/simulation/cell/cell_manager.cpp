@@ -19,14 +19,6 @@
 #include "../genome/genome.h"
 #include "../../utils/timer.h"
 
-// ——— simple "delta" rotation around a local axis ———
-static void applyLocalRotation(glm::quat &q, const glm::vec3 &axis, float deltaDeg) {
-    // build a tiny rotation of deltaDeg° about `axis`
-    glm::quat d = glm::angleAxis(glm::radians(deltaDeg), axis);
-    // apply it in LOCAL space:
-    q = glm::normalize(q * d);
-}
-
 CellManager::CellManager()
 {
     // Generate sphere mesh - optimized for high cell counts
@@ -35,16 +27,13 @@ CellManager::CellManager()
 
     initializeGPUBuffers();
     initializeSpatialGrid();
-    initializeIDSystem();
 
     // Initialize compute shaders
     physicsShader = new Shader("shaders/cell/physics/cell_physics_spatial.comp"); // Use spatial partitioning version
     updateShader = new Shader("shaders/cell/physics/cell_update.comp");
     internalUpdateShader = new Shader("shaders/cell/physics/cell_update_internal.comp");
     extractShader = new Shader("shaders/cell/management/extract_instances.comp");
-    cellCounterShader = new Shader("shaders/cell/physics/cell_counter.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
-    idManagerShader = new Shader("shaders/cell/management/id_manager.comp");
 
     // Initialize spatial grid shaders
     gridClearShader = new Shader("shaders/spatial/grid_clear.comp");
@@ -61,11 +50,7 @@ CellManager::CellManager()
     ringGizmoShader = new Shader("shaders/rendering/debug/ring_gizmo.vert", "shaders/rendering/debug/ring_gizmo.frag");
     
     // Initialize adhesion line shaders
-
     adhesionLineShader = new Shader("shaders/rendering/debug/adhesion_line.vert", "shaders/rendering/debug/adhesion_line.frag");
-    
-    // Initialize optimized adhesion line shaders
-
     
     // Initialize adhesion connection shader
     adhesionConnectionShader = new Shader("shaders/cell/management/adhesion_connection.comp");
@@ -74,7 +59,6 @@ CellManager::CellManager()
     initializeGizmoBuffers();
     initializeRingGizmoBuffers();
     initializeAdhesionLineBuffers();
-    initializeOptimizedAdhesionLineSystem();
     initializeAdhesionConnectionSystem();
     
     // Initialize LOD system
@@ -135,7 +119,6 @@ void CellManager::cleanup()
     }
 
     cleanupSpatialGrid();
-    cleanupIDSystem();
     cleanupLODSystem();
     cleanupFrustumCulling();
 
@@ -156,12 +139,6 @@ void CellManager::cleanup()
         updateShader->destroy();
         delete updateShader;
         updateShader = nullptr;
-    }
-    if (idManagerShader)
-    {
-        idManagerShader->destroy();
-        delete idManagerShader;
-        idManagerShader = nullptr;
     }
 
     // Cleanup spatial grid shaders
@@ -233,7 +210,6 @@ void CellManager::cleanup()
     cleanupGizmos();
     cleanupRingGizmos();
     cleanupAdhesionLines();
-    cleanupOptimizedAdhesionLineSystem();
     cleanupAdhesionConnectionSystem();
     cleanupLODSystem();
     sphereMesh.cleanup();
@@ -495,7 +471,6 @@ ComputeCell CellManager::getCellData(int index) const
         return cpuCells[index];
     }
     ComputeCell emptyCell{};
-    emptyCell.setUniqueID(0, 0, 0); // Ensure empty cell has valid ID
     return emptyCell; // Return empty cell if index is invalid
 }
 
@@ -602,52 +577,12 @@ void CellManager::updateCells(float deltaTime)
         }
     }
 
-    // Run ID manager to recycle dead cell IDs (less frequently)
-    if (frameCounter % 8 == 0) { // Only every 8 frames for ID management
-        flushBarriers(); // Ensure previous operations complete
-        runIDManager();
-        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    }
-
     // Final barrier flush and update cell count
     flushBarriers();
     cellCount = countPtr[0];
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
     rotateBuffers();
-}
-
-void CellManager::runCellCounter()  // This only count active cells in the gpu, not cells pending addition
-{
-    TimerGPU timer("Cell Counter");
-
-    // Reset cell count to 0
-    glClearNamedBufferData(
-        gpuCellCountBuffer,        // Our cell counter buffer
-        GL_R32UI,                  // Format (match the internal type)
-        GL_RED_INTEGER,            // Format layout
-        GL_UNSIGNED_INT,           // Data type
-        nullptr                    // Null = fill with zero
-    );
-
-    cellCounterShader->use();
-
-    // Set uniforms
-    cellCounterShader->setInt("u_maxCells", cellLimit);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
-
-    // Dispatch compute shader - FIXED: Updated to match work group size
-    GLuint numGroups = (cellLimit + 255) / 256; // Updated to 256 for consistency
-    cellCounterShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    // Use optimized barrier for cell counter
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    flushBarriers(); // Ensure writes are visible
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint));
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera, bool wireframe)
@@ -846,8 +781,6 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Read from current buffer (has physics results)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, idCounterBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, idPoolBuffer);
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
@@ -884,9 +817,6 @@ void CellManager::applyCellAdditions()
     glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-    
-    // Mark adhesion index for update since cells may have split
-    adhesionIndexNeedsUpdate = true;
 }
 
 void CellManager::resetSimulation()
@@ -965,34 +895,6 @@ void CellManager::resetSimulation()
         glClearNamedBufferData(visibleCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
     visibleCellCount = 0; // Reset visible cell count
-    
-    // Reset ID system
-    struct IDCounters {
-        uint32_t nextAvailableID = 1;      // Start from 1 (0 is reserved)
-        uint32_t recycledIDCount = 0;      // No recycled IDs initially
-        uint32_t maxCellID = 32767;        // Maximum cell ID (15 bits)
-        uint32_t deadCellCount = 0;        // Dead cells found this frame
-    } resetCounters;
-    if (idCounterBuffer != 0) {
-        glNamedBufferSubData(idCounterBuffer, 0, sizeof(IDCounters), &resetCounters);
-    }
-    if (idPoolBuffer != 0) {
-        glClearNamedBufferData(idPoolBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    if (idRecycleBuffer != 0) {
-        glClearNamedBufferData(idRecycleBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    
-    // Sync the staging buffer
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-    
-    // Mark adhesion index for update since cells may have split
-    adhesionIndexNeedsUpdate = true;
-    
-
-    
-    // Reset adhesion index update flag
-    adhesionIndexNeedsUpdate = true;
 }
 
 void CellManager::spawnCells(int count)
@@ -1023,22 +925,9 @@ void CellManager::spawnCells(int count)
         newCell.positionAndMass = glm::vec4(position, 1.);
         newCell.velocity = glm::vec4(velocity, 0.);
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
-        
-        // Assign unique ID (for spawned cells, parent ID = 0, cell ID = sequential, child flag = 0)
-        // This is a simple approach for initial spawning - GPU will handle more complex ID management
-        static uint16_t nextSpawnID = 1;
-        newCell.setUniqueID(0, nextSpawnID++, 0);
-        
-        // Wrap around if we exceed the maximum ID
-        if (nextSpawnID > 32767) {
-            nextSpawnID = 1;
-        }
 
         addCellToStagingBuffer(newCell);
     }
-    
-    // Mark adhesion index for update since new cells were spawned
-    adhesionIndexNeedsUpdate = true;
 }
 
 // Spatial partitioning
@@ -1802,109 +1691,6 @@ void CellManager::cleanupRingGizmos()
     }
 }
 
-// ID Management System Implementation
-
-void CellManager::initializeIDSystem()
-{
-    // Create ID counter buffer
-    glCreateBuffers(1, &idCounterBuffer);
-    
-    // Initialize counter data
-    struct IDCounters {
-        uint32_t nextAvailableID = 1;      // Start from 1 (0 is reserved)
-        uint32_t recycledIDCount = 0;      // No recycled IDs initially
-        uint32_t maxCellID = 32767;        // Maximum cell ID (15 bits)
-        uint32_t deadCellCount = 0;        // Dead cells found this frame
-    } initialCounters;
-    
-    glNamedBufferData(idCounterBuffer, sizeof(IDCounters), &initialCounters, GL_DYNAMIC_COPY);
-    
-    // Create ID pool buffer for available/recycled IDs
-    glCreateBuffers(1, &idPoolBuffer);
-    glNamedBufferData(idPoolBuffer, cellLimit * sizeof(uint32_t), nullptr, GL_DYNAMIC_COPY);
-    
-    // Create ID recycle buffer for dead cell IDs
-    glCreateBuffers(1, &idRecycleBuffer);
-    glNamedBufferData(idRecycleBuffer, cellLimit * sizeof(uint32_t), nullptr, GL_DYNAMIC_COPY);
-}
-
-void CellManager::cleanupIDSystem()
-{
-    if (idCounterBuffer != 0)
-    {
-        glDeleteBuffers(1, &idCounterBuffer);
-        idCounterBuffer = 0;
-    }
-    if (idPoolBuffer != 0)
-    {
-        glDeleteBuffers(1, &idPoolBuffer);
-        idPoolBuffer = 0;
-    }
-    if (idRecycleBuffer != 0)
-    {
-        glDeleteBuffers(1, &idRecycleBuffer);
-        idRecycleBuffer = 0;
-    }
-}
-
-void CellManager::runIDManager()
-{
-    if (cellCount == 0) return;
-    
-    idManagerShader->use();
-    
-    // Bind buffers
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, idCounterBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, idPoolBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, idRecycleBuffer);
-    
-    // Set uniforms
-    idManagerShader->setInt("u_maxCells", cellLimit);
-    idManagerShader->setFloat("u_minMass", 0.01f); // Minimum mass to consider a cell alive
-    
-    // Dispatch compute shader - CONSISTENT with other optimizations
-    GLuint numGroups = (cellCount + 255) / 256; // Updated to match other compute shaders
-    idManagerShader->dispatch(numGroups, 1, 1);
-    
-    // Add barrier but don't flush - let caller handle it
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
-void CellManager::recycleDeadCellIDs()
-{
-    // This is now handled by the runIDManager() function
-    // Called automatically during the update cycle
-}
-
-void CellManager::printCellIDs(int maxCells)
-{
-    if (cellCount == 0) {
-        std::cout << "No cells to display IDs for.\n";
-        return;
-    }
-    
-    // Sync cell data from GPU for debugging
-    syncCellPositionsFromGPU();
-    
-    std::cout << "Cell IDs (showing first " << std::min(maxCells, cellCount) << " cells):\n";
-    for (int i = 0; i < std::min(maxCells, cellCount); i++) {
-        if (i < static_cast<int>(cellStagingBuffer.size())) {
-            const ComputeCell& cell = cellStagingBuffer[i];
-            uint16_t parentID = cell.getParentID();
-            uint16_t cellID = cell.getCellID();
-            uint8_t childFlag = cell.getChildFlag();
-            char childChar = (childFlag == 0) ? 'A' : 'B';
-            
-            std::cout << "Cell " << i << ": " << parentID << "." << cellID << "." << childChar 
-                      << " (raw: 0x" << std::hex << cell.uniqueID << std::dec << ")\n";
-        }
-    }
-}
-
 // Adhesion Line Implementation
 
 void CellManager::initializeAdhesionLineBuffers()
@@ -1939,14 +1725,9 @@ void CellManager::initializeAdhesionLineBuffers()
     glVertexArrayAttribBinding(adhesionLineVAO, 1, 0);
 }
 
-
-
 void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
 {
     if (!showAdhesionLines || cellCount == 0) return;
-    
-    // Use spatial indexing (highest performance)
-    renderOptimizedAdhesionLinesWithIndexing(resolution, camera, showAdhesionLines);
 }
 
 void CellManager::cleanupAdhesionLines()
@@ -2435,208 +2216,4 @@ void CellManager::cleanupAdhesionConnectionSystem()
         adhesionConnectionBuffer = 0;
     }
     adhesionConnectionCount = 0;
-}
-
-// Optimized Adhesion Line System Implementation
-
-
-
-
-
-
-
-
-
-// Optimized Adhesion Line System with Spatial Indexing Implementation
-
-void CellManager::initializeOptimizedAdhesionLineSystem()
-{
-    // Create buffer for parent index data (spatial lookup table)
-    // Each parent index stores: parentID, childAIndex, childBIndex, isActive = 16 bytes
-    glCreateBuffers(1, &adhesionParentIndexBuffer);
-    glNamedBufferData(adhesionParentIndexBuffer,
-        cellLimit * sizeof(GLuint) * 4, // Maximum possible parent indices
-        nullptr, GL_DYNAMIC_COPY);
-    
-    // Create counter buffer for parent index building
-    glCreateBuffers(1, &adhesionParentIndexCounterBuffer);
-    glNamedBufferData(adhesionParentIndexCounterBuffer,
-        sizeof(GLuint) * 4, // Counter + padding for alignment
-        nullptr, GL_DYNAMIC_COPY);
-    
-    // Initialize counter to 0
-    GLuint zero = 0;
-    glNamedBufferSubData(adhesionParentIndexCounterBuffer, 0, sizeof(GLuint), &zero);
-    
-    // Create count buffer for optimized shader (cellCount, parentIndexCount, padding[2])
-    glCreateBuffers(1, &adhesionOptimizedCountBuffer);
-    glNamedBufferData(adhesionOptimizedCountBuffer,
-        sizeof(GLuint) * 4, // cellCount, parentIndexCount, padding[2]
-        nullptr, GL_DYNAMIC_COPY);
-    
-    // Create shaders
-    adhesionParentIndexBuilderShader = new Shader("shaders/rendering/debug/adhesion_parent_index_builder.comp");
-    adhesionLineOptimizedShader = new Shader("shaders/rendering/debug/adhesion_line_extract_optimized_v2.comp");
-    
-    adhesionParentIndexCount = 0;
-    
-    std::cout << "Initialized optimized adhesion line system with spatial indexing\n";
-}
-
-void CellManager::updateSpatialIndexAdhesionLineData()
-{
-    if (cellCount == 0) return;
-    
-    // Check if optimized system is initialized
-    if (adhesionParentIndexBuilderShader == nullptr) {
-        return;
-    }
-    
-    TimerGPU timer("Spatial Index Adhesion Line Data Update");
-    
-    // Step 1: Build spatial index (parent lookup table)
-    adhesionParentIndexBuilderShader->use();
-    
-    // Bind cell data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    // Bind parent index buffer as output
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, adhesionParentIndexBuffer);
-    // Bind counter buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionParentIndexCounterBuffer);
-    // Bind cell count buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
-    
-    // Reset parent index counter
-    GLuint zero = 0;
-    glNamedBufferSubData(adhesionParentIndexCounterBuffer, 0, sizeof(GLuint), &zero);
-    
-    // Dispatch compute shader to build spatial index
-    GLuint numGroups = (cellCount + 255) / 256;
-    adhesionParentIndexBuilderShader->dispatch(numGroups, 1, 1);
-    
-    // Use targeted barrier for buffer access
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    flushBarriers();
-    
-    // Read back the parent index count
-    GLuint parentCount;
-    glGetNamedBufferSubData(adhesionParentIndexCounterBuffer, 0, sizeof(GLuint), &parentCount);
-    adhesionParentIndexCount = static_cast<int>(parentCount);
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-}
-
-void CellManager::renderOptimizedAdhesionLinesWithIndexing(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
-{
-    if (!showAdhesionLines) {
-        return;
-    }
-    
-    // Check if optimized system is initialized
-    if (adhesionLineOptimizedShader == nullptr || adhesionParentIndexBuilderShader == nullptr) {
-        return;
-    }
-    
-    // OPTIMIZED: Only update spatial index when needed
-    // This avoids rebuilding the index every frame
-    if (adhesionIndexNeedsUpdate) {
-        updateSpatialIndexAdhesionLineData();
-        adhesionIndexNeedsUpdate = false;
-    }
-    
-    if (adhesionParentIndexCount == 0) {
-        return;
-    }
-    
-    TimerGPU timer("Spatial Index Adhesion Line Rendering");
-    
-    // Use the optimized adhesion line extract shader to generate vertices from spatial index
-    adhesionLineOptimizedShader->use();
-    
-    // Bind cell data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    // Bind mode data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
-    // Bind spatial index as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionParentIndexBuffer);
-    // Bind adhesion line buffer as output
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, adhesionLineBuffer);
-    // Update the count buffer with current cell count and parent index count
-    GLuint countData[4] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionParentIndexCount), 0, 0 };
-    glNamedBufferSubData(adhesionOptimizedCountBuffer, 0, sizeof(GLuint) * 4, countData);
-    
-    // Bind count buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionOptimizedCountBuffer);
-    
-    // No uniforms needed for the optimized shader
-    
-    // Dispatch compute shader to generate line vertices from spatial index
-    GLuint numGroups = (adhesionParentIndexCount + 255) / 256;
-    adhesionLineOptimizedShader->dispatch(numGroups, 1, 1);
-    
-    // Use targeted barrier for buffer access
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    flushBarriers();
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    
-    // Use the original adhesion line shader for rendering
-    adhesionLineShader->use();
-    
-    // Set up camera matrices
-    glm::mat4 view = camera.getViewMatrix();
-    float aspectRatio = resolution.x / resolution.y;
-    if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
-    {
-        aspectRatio = 16.0f / 9.0f;
-    }
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 1000.0f);
-    
-    adhesionLineShader->setMat4("uProjection", projection);
-    adhesionLineShader->setMat4("uView", view);
-    
-    // Enable depth testing for proper 3D rendering
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    
-    // Enable line width for better visibility
-    glLineWidth(3.0f);
-    
-    // OPTIMIZED: Use the compute buffer directly for rendering instead of copying to VBO
-    glBindVertexArray(adhesionLineVAO);
-    // Temporarily update the VAO to use the compute buffer instead of the VBO
-    glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineBuffer, 0, sizeof(glm::vec4) * 2);
-    glDrawArrays(GL_LINES, 0, adhesionParentIndexCount * 2); // 2 vertices per line
-    // Restore the VAO to use the original VBO
-    glVertexArrayVertexBuffer(adhesionLineVAO, 0, adhesionLineVBO, 0, sizeof(glm::vec4) * 2);
-    glBindVertexArray(0);
-    
-    // Reset line width
-    glLineWidth(1.0f);
-}
-
-void CellManager::cleanupOptimizedAdhesionLineSystem()
-{
-    if (adhesionParentIndexBuffer != 0)
-    {
-        glDeleteBuffers(1, &adhesionParentIndexBuffer);
-        adhesionParentIndexBuffer = 0;
-    }
-    if (adhesionParentIndexCounterBuffer != 0)
-    {
-        glDeleteBuffers(1, &adhesionParentIndexCounterBuffer);
-        adhesionParentIndexCounterBuffer = 0;
-    }
-    if (adhesionOptimizedCountBuffer != 0)
-    {
-        glDeleteBuffers(1, &adhesionOptimizedCountBuffer);
-        adhesionOptimizedCountBuffer = 0;
-    }
-    
-    delete adhesionParentIndexBuilderShader;
-    delete adhesionLineOptimizedShader;
-    adhesionParentIndexBuilderShader = nullptr;
-    adhesionLineOptimizedShader = nullptr;
-    
-    adhesionParentIndexCount = 0;
 }

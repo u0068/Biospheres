@@ -15,10 +15,6 @@ struct ComputeCell {
     float age;                     // Cell age
     float toxins;                  // Toxin level
     float nitrates;                // Nitrate level
-    uint uniqueID;                 // Unique cell ID
-    uint padding1;                 // Padding
-    uint padding2_low;             // Low 32 bits of padding2
-    uint padding2_high;            // High 32 bits of padding2
 };
 
 // Instance data structure for rendering

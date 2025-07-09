@@ -15,9 +15,6 @@ struct ComputeCell {
     float age;
     float toxins;
     float nitrates;
-    uint uniqueID;
-    uint padding1;
-    uvec2 padding2;
 };
 
 // mode data structure for compute shader
