@@ -1234,7 +1234,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         }
           // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
-        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
+        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.1f, maxTime, "%.2f"))
         {
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
