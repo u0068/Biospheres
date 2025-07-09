@@ -60,30 +60,6 @@
     <ClCompile Include="src\ui\ui_manager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\ui\imgui_helpers.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_demo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_draw.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_impl_glfw.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_impl_opengl3.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_tables.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_widgets.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\input\input.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -92,6 +68,30 @@
     </ClCompile>
     <ClCompile Include="src\rendering\core\mesh\sphere_mesh.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_widgets.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_demo.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_draw.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\imgui_helpers.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_impl_glfw.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_impl_opengl3.cpp">
+      <Filter>Source Files\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\imgui\imgui_tables.cpp">
+      <Filter>Source Files\imgui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -178,34 +178,92 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\cell\management\adhesion_connection.comp" />
-    <None Include="shaders\cell\management\apply_additions.comp" />
-    <None Include="shaders\cell\management\cell_counter.comp" />
-    <None Include="shaders\cell\physics\cell_physics_spatial.comp" />
-    <None Include="shaders\cell\physics\cell_update.comp" />
-    <None Include="shaders\cell\physics\cell_update_internal.comp" />
-    <None Include="shaders\cell\management\extract_instances.comp" />
-    <None Include="shaders\rendering\culling\frustum_cull.comp" />
-    <None Include="shaders\rendering\culling\frustum_cull_lod.comp" />
-    <None Include="shaders\rendering\debug\adhesion_line_extract_optimized_v2.comp" />
-    <None Include="shaders\rendering\debug\adhesion_parent_index_builder.comp" />
-    <None Include="shaders\rendering\debug\gizmo.frag" />
-    <None Include="shaders\rendering\debug\gizmo.vert" />
-    <None Include="shaders\rendering\debug\gizmo_extract.comp" />
-    <None Include="shaders\spatial\grid_assign.comp" />
-    <None Include="shaders\spatial\grid_clear.comp" />
-    <None Include="shaders\spatial\grid_insert.comp" />
-    <None Include="shaders\spatial\grid_prefix_sum.comp" />
-    <None Include="shaders\rendering\debug\ring_gizmo.frag" />
-    <None Include="shaders\rendering\debug\ring_gizmo.vert" />
-    <None Include="shaders\rendering\sphere\sphere.frag" />
-    <None Include="shaders\rendering\sphere\sphere.vert" />
-    <None Include="shaders\rendering\debug\ring_gizmo_extract.comp" />
-    <None Include="shaders\rendering\debug\adhesion_line.frag" />
-    <None Include="shaders\rendering\debug\adhesion_line.vert" />
-    <None Include="shaders\rendering\debug\adhesion_line_extract.comp" />
-    <None Include="shaders\rendering\sphere\sphere_lod.frag" />
-    <None Include="shaders\rendering\sphere\sphere_lod.vert" />
-    <None Include="shaders\rendering\sphere\sphere_lod.comp" />
+    <None Include="shaders\cell\management\adhesion_connection.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\adhesion_line.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\adhesion_line.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\adhesion_line_extract.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\adhesion_line_extract_optimized_v2.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\adhesion_parent_index_builder.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell\management\apply_additions.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell\management\cell_counter.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell\physics\cell_physics_spatial.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell\physics\cell_update.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell\physics\cell_update_internal.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cell\management\extract_instances.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\culling\frustum_cull.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\culling\frustum_cull_lod.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\gizmo.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\gizmo.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\gizmo_extract.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\spatial\grid_assign.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\spatial\grid_clear.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\spatial\grid_insert.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\spatial\grid_prefix_sum.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\ring_gizmo.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\ring_gizmo.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\debug\ring_gizmo_extract.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\sphere\sphere.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\sphere\sphere.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\sphere\sphere_lod.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\sphere\sphere_lod.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\rendering\sphere\sphere_lod.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
