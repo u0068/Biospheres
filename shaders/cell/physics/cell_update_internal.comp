@@ -162,9 +162,10 @@ void main() {
     newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
     newAdhesion.isActive = 1; // Active connection
 
-    // Reserve index for adhesion connection // This is an old broken style of reservation, update it later
+    // Reserve index for adhesion connection
     uint adhesionIndex = atomicAdd(adhesionCount, 1);
     if (adhesionIndex > u_maxAdhesions) {
+        atomicMin(adhesionCount, u_maxAdhesions); // Clamp cell count
         return; // No space for new adhesion connections
     }
     connections[adhesionIndex] = newAdhesion;
