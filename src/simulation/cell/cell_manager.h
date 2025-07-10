@@ -16,6 +16,7 @@ class Camera;
 
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
+static_assert(sizeof(GPUMode) % 16 == 0, "GPUMode must be 16-byte aligned for GPU usage");
 
 struct CellManager
 {

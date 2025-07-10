@@ -138,7 +138,7 @@ void UIManager::drawToolSettings(ToolState &toolState, CellManager &cellManager)
 	switch (toolState.activeTool)
 	{
 	case ToolType::AddCell:
-	    ImGui::ColorEdit4("New Cell Color", &toolState.newCellColor[0]);
+	    ImGui::ColorEdit4("New Cell Color", &toolState.newCellColor[0], ImGuiColorEditFlags_Float);
 	    ImGui::SliderFloat("New Cell Mass", &toolState.newCellMass, 0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
 	    break;
 	case ToolType::EditCell:
@@ -494,7 +494,7 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
         ImGui::Separator();
         ImGui::Text("Fog Color:");
         glm::vec3 fogColor = cellManager.getFogColor();
-        if (ImGui::ColorEdit3("##FogColor", &fogColor.x)) {
+        if (ImGui::ColorEdit3("##FogColor", &fogColor.x, ImGuiColorEditFlags_Float)) {
             cellManager.setFogColor(fogColor);
         }
         addTooltip("Color of atmospheric fog for distant cells");
@@ -534,6 +534,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
     if (ImGui::Begin("Genome Editor", nullptr, flags))
     {
+        // Validate and fix any colors that might be in the wrong range
+        validateGenomeColors();
     ImGui::Text("Genome Name:");
     addTooltip("The name identifier for this genome configuration");
     
@@ -1199,13 +1201,51 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
 
 void UIManager::drawColorPicker(const char *label, glm::vec3 *color)
 {
+    // Ensure colors are in the correct 0.0-1.0 range
+    glm::vec3 normalizedColor = normalizeColor(*color);
+    if (normalizedColor != *color) {
+        *color = normalizedColor;
+        genomeChanged = true;
+    }
+    
     float colorArray[3] = {color->r, color->g, color->b};
-    if (ImGui::ColorEdit3(label, colorArray))
+    if (ImGui::ColorEdit3(label, colorArray, ImGuiColorEditFlags_Float))
     {
         color->r = colorArray[0];
         color->g = colorArray[1];
         color->b = colorArray[2];
         genomeChanged = true;
+    }
+}
+
+glm::vec3 UIManager::normalizeColor(const glm::vec3& color)
+{
+    // If any component is > 1.0, assume it's in 0-255 range and convert to 0.0-1.0
+    if (color.r > 1.0f || color.g > 1.0f || color.b > 1.0f) {
+        return glm::vec3(
+            color.r / 255.0f,
+            color.g / 255.0f,
+            color.b / 255.0f
+        );
+    }
+    return color;
+}
+
+void UIManager::validateGenomeColors()
+{
+    bool colorsFixed = false;
+    
+    for (auto& mode : currentGenome.modes) {
+        glm::vec3 normalizedColor = normalizeColor(mode.color);
+        if (normalizedColor != mode.color) {
+            mode.color = normalizedColor;
+            colorsFixed = true;
+        }
+    }
+    
+    if (colorsFixed) {
+        genomeChanged = true;
+        std::cout << "Fixed color values in genome - converted from 0-255 to 0.0-1.0 range\n";
     }
 }
 

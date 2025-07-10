@@ -25,10 +25,30 @@ struct InstanceData {
     vec4 fadeFactor;         // Distance-based fade factor (x component) + padding for alignment
 };
 
-// Mode data structure
-struct Mode {
-    vec4 color;              // rgba color
-    vec4 properties;         // Various properties
+struct AdhesionSettings
+{
+    bool canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation; // degrees
+};
+
+// GPU Mode structure (matches GPUMode in common_structs.h)
+struct GPUMode {
+    vec4 color;              // R, G, B, padding
+    vec4 orientationA;       // quaternion
+    vec4 orientationB;       // quaternion
+    vec4 splitDirection;     // x, y, z, padding
+    ivec2 childModes;        // mode indices for children
+    float splitInterval;
+    int genomeOffset;
+    AdhesionSettings adhesionSettings;
+    int parentMakeAdhesion;  // Boolean flag for adhesion creation
+    int padding[3];          // Padding to maintain alignment
 };
 
 // Frustum plane structure
@@ -43,7 +63,7 @@ layout(std430, binding = 0) readonly buffer CellBuffer {
 };
 
 layout(std430, binding = 1) readonly buffer ModeBuffer {
-    Mode modes[];
+    GPUMode modes[];
 };
 
 layout(std430, binding = 2) readonly buffer CellCountBuffer {
