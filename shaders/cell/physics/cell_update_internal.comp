@@ -115,6 +115,14 @@ void main() {
         outputCells[index] = cell;
         return;
     }
+    
+    uint newIndex = atomicAdd(cellCount, 1);
+    if (newIndex >= u_maxCells) {
+        atomicMin(cellCount, u_maxCells); // Clamp cell count
+        // No space for new cells, cancel the split
+        outputCells[index] = cell;
+        return;
+    }
 
     vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
 
@@ -139,19 +147,10 @@ void main() {
     childB.age = startAge;
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
-    
-    uint newIndex = atomicAdd(cellCount, 1);
-    if (newIndex >= u_maxCells) {
-        atomicMin(cellCount, u_maxCells); // Clamp cell count
-        // No space for new cells, cancel the split
-        outputCells[index] = cell;
-        return;
-    }
 
     // Store new cells
     outputCells[index] = childA;
     outputCells[newIndex] = childB;
-    //newCells[queueIdx] = childB;
 
     return;
 
