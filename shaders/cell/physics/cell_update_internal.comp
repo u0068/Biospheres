@@ -143,8 +143,8 @@ void main() {
     uint newIndex = atomicAdd(cellCount, 1);
     if (newIndex >= u_maxCells) {
         atomicMin(cellCount, u_maxCells); // Clamp cell count
-        // modes[cell.modeIndex].color = vec4(1.0, 0.0, 0.0, 1.0); // Make all cells red (debugging)
         // No space for new cells, cancel the split
+        outputCells[index] = cell;
         return;
     }
 
