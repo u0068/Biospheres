@@ -320,6 +320,15 @@ struct CellManager
     // Read from the read buffer and write to the write buffer
 	// Rotate buffers after each shader pass that writes to them to ensure correct read/write access
 	// Do not rotate buffers when you don't need to write to them; this will undo the previous shader pass
+	// All threads write to the write buffer, even if some don't have new data to write. This is to ensure that the write buffer is always fully updated.
+
+    // Minor exception:
+	// If each thread reads and writes to and from the same single cell, and only that cell, then you can use the read buffer for both reading and writing.
+	// This is useful for operations that only affect a single cell, like dragging or selection.
+	// This is fine for operations that occur independently of other cells, like updating cells' positions.
+	// Do not rotate the buffers after this operation, as it will undo the previous shader pass.
+	// If you are unsure if you can use this exception, do not use it.
+	// If there are weird bugs when using this exception, try not using it and see if the bugs go away.
 
     // Frame |  Write   | Read | Standby
     //     1 |    B0    |  B1  |   B2
