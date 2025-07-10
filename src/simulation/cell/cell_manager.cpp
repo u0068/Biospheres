@@ -571,9 +571,6 @@ void CellManager::updateCells(float deltaTime)
 
     // Final barrier flush and update cell count
     cellCount = countPtr[0];
-
-    // Swap buffers for next frame (current becomes previous, previous becomes current)
-    rotateBuffers();
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera, bool wireframe)
@@ -734,6 +731,9 @@ void CellManager::runPhysicsCompute(float deltaTime)
     physicsShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Swap buffers for next frame
+    rotateBuffers();
 }
 
 void CellManager::runUpdateCompute(float deltaTime)
@@ -749,14 +749,18 @@ void CellManager::runUpdateCompute(float deltaTime)
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     updateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gpuCellCountBuffer); // Bind GPU cell count buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     updateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Swap buffers for next frame
+    rotateBuffers();
 }
 
 void CellManager::runInternalUpdateCompute(float deltaTime)
@@ -770,16 +774,20 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     internalUpdateShader->setInt("u_maxCells", cellLimit);
     internalUpdateShader->setInt("u_maxAdhesions", cellLimit*12);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Read from current buffer (has physics results)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionConnectionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellAdditionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, adhesionConnectionBuffer);
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     internalUpdateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Swap buffers for next frame
+    rotateBuffers();
 }
 
 void CellManager::applyCellAdditions()
@@ -810,6 +818,7 @@ void CellManager::applyCellAdditions()
     glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
 
     glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+
 }
 
 void CellManager::resetSimulation()
