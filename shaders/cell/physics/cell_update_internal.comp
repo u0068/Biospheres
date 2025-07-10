@@ -101,6 +101,25 @@ vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
          + 2.0 * s * cross(u, v);
 }
 
+// Hash function to generate a pseudo-random float in [0,1] from a uint seed
+float hash11(uint n) {
+    n = (n ^ 61u) ^ (n >> 16u);
+    n *= 9u;
+    n = n ^ (n >> 4u);
+    n *= 0x27d4eb2du;
+    n = n ^ (n >> 15u);
+    return float(n & 0x00FFFFFFu) / float(0x01000000u);
+}
+
+// Create a small random quaternion for a tiny rotation (angle in radians)
+vec4 smallRandomQuat(float angle, float rand1, float rand2, float rand3) {
+    // Random axis
+    vec3 axis = normalize(vec3(rand1, rand2, rand3) * 2.0 - 1.0);
+    float halfAngle = angle * 0.5;
+    float s = sin(halfAngle);
+    return normalize(vec4(axis * s, cos(halfAngle)));
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= cellCount) {
@@ -135,6 +154,20 @@ void main() {
     vec4 q_parent = cell.orientation;
     vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
     vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
+
+    // Add a tiny random variance to each child orientation (0.001 degree = 0.001 * PI / 180 radians)
+    float tinyAngle = 0.001 * 0.017453292519943295; // radians
+    // Use cell index and newIndex to generate different seeds for each child
+    float rA1 = hash11(index * 3u + 0u);
+    float rA2 = hash11(index * 3u + 1u);
+    float rA3 = hash11(index * 3u + 2u);
+    float rB1 = hash11(newIndex * 3u + 0u);
+    float rB2 = hash11(newIndex * 3u + 1u);
+    float rB3 = hash11(newIndex * 3u + 2u);
+    vec4 q_varA = smallRandomQuat(tinyAngle, rA1, rA2, rA3);
+    vec4 q_varB = smallRandomQuat(tinyAngle, rB1, rB2, rB3);
+    q_childA = normalize(quatMultiply(q_childA, q_varA));
+    q_childB = normalize(quatMultiply(q_childB, q_varB));
 
     ComputeCell childA = cell;
     childA.positionAndMass.xyz += offset;
