@@ -24,7 +24,7 @@ struct CellManager
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates
 
-    // GPU buffer objects - Double buffered for performance
+    // GPU buffer objects - Triple buffered for performance
     GLuint cellBuffer[3]{};         // SSBO for compute cell data (double buffered)
     GLuint instanceBuffer{};        // VBO for instance rendering data
     int bufferRotation{};
@@ -311,14 +311,25 @@ struct CellManager
     void resetBarrierStats() const { barrierStats.reset(); }
 
     // Triple buffering management functions
-    // Frame |  Write   | Read | Standby
-    //     1 |    B0    |  B1  |   B2
-    //     2 |    B2    |  B0  |   B1
-    //     3 |    B1    |  B2  |   B0.
     int getRotatedIndex(int index, int max) const { return (index + bufferRotation) % max; }
     void rotateBuffers() { bufferRotation = getRotatedIndex(1, 3); }
     GLuint getCellReadBuffer() const { return cellBuffer[getRotatedIndex(0, 3)]; }
     GLuint getCellWriteBuffer() const { return cellBuffer[getRotatedIndex(1, 3)]; }
+    // BUFFER ACCESS RULES:
+	// NEVER write to the read buffer directly, because that will be overwritten by the next shader pass
+    // Read from the read buffer and write to the write buffer
+	// Rotate buffers after each shader pass that writes to them to ensure correct read/write access
+	// Do not rotate buffers when you don't need to write to them; this will undo the previous shader pass
+
+    // Frame |  Write   | Read | Standby
+    //     1 |    B0    |  B1  |   B2
+    //     2 |    B2    |  B0  |   B1
+    //     3 |    B1    |  B2  |   B0
+
+	// Frame | B0 | B1 | B2
+	//     1 |  W |  R |  S
+	//     2 |  R |  S |  W
+	//     3 |  S |  W |  R
 
     void setCellLimit(int limit) { cellLimit = limit; }
     int getCellLimit() const { return cellLimit; }

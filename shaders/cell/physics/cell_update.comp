@@ -21,11 +21,15 @@ struct ComputeCell {
 };
 
 // Shader storage buffer objects
-layout(std430, binding = 0) restrict buffer CellBuffer {
-    ComputeCell cells[];
+layout(std430, binding = 0) restrict buffer ReadCellBuffer {
+    ComputeCell inputCells[];
 };
 
-layout(std430, binding = 1) buffer CellCountBuffer {
+layout(std430, binding = 1) restrict buffer WriteCellBuffer {
+    ComputeCell outputCells[];
+};
+
+layout(std430, binding = 2) buffer CellCountBuffer {
     uint cellCount;
 };
 
@@ -46,31 +50,35 @@ void main() {
     if (int(index) == u_draggedCellIndex) {
         return;
     }
+
+    ComputeCell cell = inputCells[index];
     
     // Update velocity based on acceleration
-    cells[index].velocity.xyz += cells[index].acceleration.xyz * u_deltaTime;
+    cell.velocity.xyz += cell.acceleration.xyz * u_deltaTime;
     
     // Apply damping
-    cells[index].velocity.xyz *= pow(u_damping, u_deltaTime*100.);
+    cell.velocity.xyz *= pow(u_damping, u_deltaTime*100.);
     
     // Update position based on velocity (Euler integration)
-    cells[index].positionAndMass.xyz += cells[index].velocity.xyz * u_deltaTime;
+    cell.positionAndMass.xyz += cell.velocity.xyz * u_deltaTime;
     
     // Optional: Add boundary constraints here
     // For example, keep cells within a certain bounds
-    vec3 pos = cells[index].positionAndMass.xyz;
+    vec3 pos = cell.positionAndMass.xyz;
     float bounds = 50.0;
     
     if (abs(pos.x) > bounds) {
-        cells[index].positionAndMass.x = sign(pos.x) * bounds;
-        cells[index].velocity.x *= -0.8; // Bounce with energy loss
+        cell.positionAndMass.x = sign(pos.x) * bounds;
+        cell.velocity.x *= -0.8; // Bounce with energy loss
     }
     if (abs(pos.y) > bounds) {
-        cells[index].positionAndMass.y = sign(pos.y) * bounds;
-        cells[index].velocity.y *= -0.8;
+        cell.positionAndMass.y = sign(pos.y) * bounds;
+        cell.velocity.y *= -0.8;
     }
     if (abs(pos.z) > bounds) {
-        cells[index].positionAndMass.z = sign(pos.z) * bounds;
-        cells[index].velocity.z *= -0.8;
+        cell.positionAndMass.z = sign(pos.z) * bounds;
+        cell.velocity.z *= -0.8;
     }
+
+    outputCells[index] = cell; // Write updated cell back to output buffer
 }
