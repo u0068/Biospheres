@@ -2,9 +2,10 @@
 
 layout(location = 0) in vec3 aPosition;     // Sphere mesh vertex position
 layout(location = 1) in vec3 aNormal;       // Sphere mesh vertex normal
-layout(location = 2) in vec4 aPositionAndRadius; // x, y, z, radius
-layout(location = 3) in vec4 aColor;             // r, g, b, unused
-layout(location = 4) in vec4 aOrientation;       // quaternion: w, x, y, z
+layout(location = 2) in vec2 aUV;           // Sphere mesh vertex UV
+layout(location = 3) in vec4 aPositionAndRadius; // x, y, z, radius
+layout(location = 4) in vec4 aColor;             // r, g, b, unused
+layout(location = 5) in vec4 aOrientation;       // quaternion: w, x, y, z
 
 uniform mat4 uProjection;
 uniform mat4 uView;
@@ -16,6 +17,7 @@ out vec3 vCameraPos;
 out float vRadius;
 out vec3 vInstanceCenter;
 out vec3 vBaseColor;
+out vec2 vUV;
 
 // Convert quaternion to rotation matrix
 mat3 quatToMat3(vec4 quat) {
@@ -50,6 +52,7 @@ void main() {
     vRadius = aPositionAndRadius.w;
     vInstanceCenter = aPositionAndRadius.xyz;
     vBaseColor = aColor.rgb;
+    vUV = aUV;
 
     gl_Position = uProjection * uView * vec4(worldPos, 1.0);
 }

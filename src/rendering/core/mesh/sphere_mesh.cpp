@@ -1,6 +1,7 @@
 #include "sphere_mesh.h"
 #include <cmath>
 #include <iostream>
+#include <map>
 
 SphereMesh::SphereMesh() {
     // Initialize arrays
@@ -14,108 +15,81 @@ SphereMesh::~SphereMesh() {
     cleanup();
 }
 
+// Helper function to get midpoint and cache it
+static unsigned int getMidpoint(unsigned int v1, unsigned int v2, std::vector<SphereMesh::Vertex>& vertices, std::map<std::pair<unsigned int, unsigned int>, unsigned int>& midpointCache, float radius) {
+    auto key = std::make_pair(std::min(v1, v2), std::max(v1, v2));
+    if (midpointCache.count(key)) return midpointCache[key];
+    SphereMesh::Vertex& vert1 = vertices[v1];
+    SphereMesh::Vertex& vert2 = vertices[v2];
+    SphereMesh::Vertex mid;
+    mid.position = glm::normalize((vert1.position + vert2.position) * 0.5f) * radius;
+    mid.normal = glm::normalize(mid.position);
+    // Spherical mapping for UVs
+    float u = 0.5f + atan2(mid.position.z, mid.position.x) / (2.0f * 3.14159265359f);
+    float v = 0.5f - asin(mid.position.y / radius) / 3.14159265359f;
+    mid.uv = glm::vec2(u, v);
+    vertices.push_back(mid);
+    unsigned int idx = static_cast<unsigned int>(vertices.size() - 1);
+    midpointCache[key] = idx;
+    return idx;
+}
+
+void SphereMesh::generateIcosphere(int lod, int subdivisions, float radius) {
+    vertices[lod].clear();
+    indices[lod].clear();
+    // Golden ratio
+    const float t = (1.0f + sqrt(5.0f)) / 2.0f;
+    // Create 12 vertices of a icosahedron
+    std::vector<SphereMesh::Vertex> verts = {
+        {{-1,  t,  0}, {}, {}}, {{ 1,  t,  0}, {}, {}}, {{-1, -t,  0}, {}, {}}, {{ 1, -t,  0}, {}, {}},
+        {{ 0, -1,  t}, {}, {}}, {{ 0,  1,  t}, {}, {}}, {{ 0, -1, -t}, {}, {}}, {{ 0,  1, -t}, {}, {}},
+        {{ t,  0, -1}, {}, {}}, {{ t,  0,  1}, {}, {}}, {{-t,  0, -1}, {}, {}}, {{-t,  0,  1}, {}, {}}
+    };
+    // Normalize and assign normals/UVs
+    for (auto& v : verts) {
+        v.position = glm::normalize(v.position) * radius;
+        v.normal = glm::normalize(v.position);
+        float u = 0.5f + atan2(v.position.z, v.position.x) / (2.0f * 3.14159265359f);
+        float v_uv = 0.5f - asin(v.position.y / radius) / 3.14159265359f;
+        v.uv = glm::vec2(u, v_uv);
+    }
+    vertices[lod] = verts;
+    // 20 faces of the icosahedron
+    std::vector<unsigned int> faces = {
+        0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11,
+        1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
+        3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9,
+        4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1
+    };
+    indices[lod] = faces;
+    // Subdivide faces
+    for (int i = 0; i < subdivisions; ++i) {
+        std::map<std::pair<unsigned int, unsigned int>, unsigned int> midpointCache;
+        std::vector<unsigned int> newFaces;
+        for (size_t f = 0; f < indices[lod].size(); f += 3) {
+            unsigned int v1 = indices[lod][f];
+            unsigned int v2 = indices[lod][f+1];
+            unsigned int v3 = indices[lod][f+2];
+            unsigned int a = getMidpoint(v1, v2, vertices[lod], midpointCache, radius);
+            unsigned int b = getMidpoint(v2, v3, vertices[lod], midpointCache, radius);
+            unsigned int c = getMidpoint(v3, v1, vertices[lod], midpointCache, radius);
+            newFaces.insert(newFaces.end(), {v1, a, c, v2, b, a, v3, c, b, a, b, c});
+        }
+        indices[lod] = newFaces;
+    }
+    indexCount[lod] = static_cast<int>(indices[lod].size());
+}
+
 void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, float radius) {
-    // Legacy function - generate only LOD 0
-    vertices[0].clear();
-    indices[0].clear();
-    
-    const float PI = 3.14159265359f;
-    
-    // Generate vertices
-    for (int lat = 0; lat <= latitudeSegments; ++lat) {
-        float theta = lat * PI / latitudeSegments;
-        float sinTheta = sin(theta);
-        float cosTheta = cos(theta);
-        
-        for (int lon = 0; lon <= longitudeSegments; ++lon) {
-            float phi = lon * 2 * PI / longitudeSegments;
-            float sinPhi = sin(phi);
-            float cosPhi = cos(phi);
-            
-            Vertex vertex;
-            vertex.position.x = radius * sinTheta * cosPhi;
-            vertex.position.y = radius * cosTheta;
-            vertex.position.z = radius * sinTheta * sinPhi;
-            
-            // Normal is the same as position for a unit sphere
-            vertex.normal = glm::normalize(vertex.position);
-            
-            vertices[0].push_back(vertex);
-        }
-    }
-    
-    // Generate indices
-    for (int lat = 0; lat < latitudeSegments; ++lat) {
-        for (int lon = 0; lon < longitudeSegments; ++lon) {
-            int current = lat * (longitudeSegments + 1) + lon;
-            int next = current + longitudeSegments + 1;
-            
-            // First triangle (counter-clockwise from outside)
-            indices[0].push_back(current);
-            indices[0].push_back(current + 1);
-            indices[0].push_back(next);
-            
-            // Second triangle (counter-clockwise from outside)
-            indices[0].push_back(current + 1);
-            indices[0].push_back(next + 1);
-            indices[0].push_back(next);
-        }
-    }
-    
-    indexCount[0] = static_cast<int>(indices[0].size());
+    // Use icosphere for LOD 0
+    generateIcosphere(0, 3, radius); // 3 subdivisions for high quality
 }
 
 void SphereMesh::generateLODSpheres(float radius) {
-    const float PI = 3.14159265359f;
-    
-    // Generate spheres for all LOD levels
-    for (int lod = 0; lod < LOD_LEVELS; lod++) {
-        vertices[lod].clear();
-        indices[lod].clear();
-        
-        int latSegments = LOD_SEGMENTS[lod];
-        int lonSegments = LOD_SEGMENTS[lod];
-        
-        // Generate vertices for this LOD
-        for (int lat = 0; lat <= latSegments; ++lat) {
-            float theta = lat * PI / latSegments;
-            float sinTheta = sin(theta);
-            float cosTheta = cos(theta);
-            
-            for (int lon = 0; lon <= lonSegments; ++lon) {
-                float phi = lon * 2 * PI / lonSegments;
-                float sinPhi = sin(phi);
-                float cosPhi = cos(phi);
-                
-                Vertex vertex;
-                vertex.position.x = radius * sinTheta * cosPhi;
-                vertex.position.y = radius * cosTheta;
-                vertex.position.z = radius * sinTheta * sinPhi;
-                
-                vertex.normal = glm::normalize(vertex.position);
-                vertices[lod].push_back(vertex);
-            }
-        }
-        
-        // Generate indices for this LOD
-        for (int lat = 0; lat < latSegments; ++lat) {
-            for (int lon = 0; lon < lonSegments; ++lon) {
-                int current = lat * (lonSegments + 1) + lon;
-                int next = current + lonSegments + 1;
-                
-                // First triangle (counter-clockwise from outside)
-                indices[lod].push_back(current);
-                indices[lod].push_back(current + 1);
-                indices[lod].push_back(next);
-                
-                // Second triangle (counter-clockwise from outside)
-                indices[lod].push_back(current + 1);
-                indices[lod].push_back(next + 1);
-                indices[lod].push_back(next);
-            }
-        }
-        
-        indexCount[lod] = static_cast<int>(indices[lod].size());
+    // Use icosphere for all LODs with decreasing subdivisions
+    int lod_subdivs[LOD_LEVELS] = {3, 2, 1, 0};
+    for (int lod = 0; lod < LOD_LEVELS; ++lod) {
+        generateIcosphere(lod, lod_subdivs[lod], radius);
     }
 }
 
@@ -149,6 +123,10 @@ void SphereMesh::setupBuffers() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
 
+    // UV
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+
     glBindVertexArray(0);
 }
 
@@ -181,6 +159,10 @@ void SphereMesh::setupLODBuffers() {
         // Normal
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+
+        // UV
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 
         glBindVertexArray(0);
     }
