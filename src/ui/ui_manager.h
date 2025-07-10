@@ -99,6 +99,9 @@ public:
     
     // Frustum culling toggle
     bool enableFrustumCulling = true;    // Toggle for frustum culling
+    
+    // Distance-based culling and fading toggle
+    bool enableDistanceCulling = true;   // Toggle for distance-based culling and fading
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;

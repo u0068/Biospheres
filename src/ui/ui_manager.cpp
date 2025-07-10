@@ -370,6 +370,23 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
                 }
             }
         }
+        
+        // Distance-based culling information
+        if (ImGui::CollapsingHeader("Distance Culling & Fading"))
+        {
+            ImGui::Text("Enabled: %s", cellManager.useDistanceCulling ? "Yes" : "No");
+            if (cellManager.useDistanceCulling) {
+                int visibleCells = cellManager.getVisibleCellCount();
+                ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
+                if (cellCount > 0) {
+                    float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
+                    ImGui::Text("Culled: %.1f%%", cullingRatio);
+                }
+                ImGui::Text("Max Distance: %.0f", cellManager.getMaxRenderDistance());
+                ImGui::Text("Fade Start: %.0f", cellManager.getFadeStartDistance());
+                ImGui::Text("Fade End: %.0f", cellManager.getFadeEndDistance());
+            }
+        }
 
         //// Readback system status if available
         //if (cellManager.isReadbackSystemHealthy())
@@ -441,8 +458,47 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     ImGui::Checkbox("Frustum Culling", &enableFrustumCulling);
     addTooltip("Enable frustum culling to improve performance by only rendering visible cells");
     
-    // Sync frustum culling setting with cell manager
+    ImGui::Checkbox("Distance Culling & Fading", &enableDistanceCulling);
+    addTooltip("Enable distance-based culling and fading for cells far from camera");
+    
+    // Sync settings with cell manager
     cellManager.useFrustumCulling = enableFrustumCulling;
+    cellManager.useDistanceCulling = enableDistanceCulling;
+    
+    // Distance culling parameters (only show if distance culling is enabled)
+    if (enableDistanceCulling) {
+        ImGui::Separator();
+        ImGui::Text("Distance Culling Parameters:");
+        
+        // Get current values from cell manager
+        float maxDistance = cellManager.getMaxRenderDistance();
+        float fadeStart = cellManager.getFadeStartDistance();
+        float fadeEnd = cellManager.getFadeEndDistance();
+        
+        if (ImGui::DragFloat("Max Render Distance", &maxDistance, 10.0f, 100.0f, 1000.0f, "%.0f")) {
+            cellManager.setDistanceCullingParams(maxDistance, fadeStart, fadeEnd);
+        }
+        addTooltip("Maximum distance from camera to render cells");
+        
+        if (ImGui::DragFloat("Fade Start Distance", &fadeStart, 10.0f, 50.0f, maxDistance - 50.0f, "%.0f")) {
+            cellManager.setDistanceCullingParams(maxDistance, fadeStart, fadeEnd);
+        }
+        addTooltip("Distance where cells start to fade out");
+        
+        if (ImGui::DragFloat("Fade End Distance", &fadeEnd, 10.0f, fadeStart + 50.0f, maxDistance, "%.0f")) {
+            cellManager.setDistanceCullingParams(maxDistance, fadeStart, fadeEnd);
+        }
+        addTooltip("Distance where cells become completely invisible");
+        
+        // Fog color control
+        ImGui::Separator();
+        ImGui::Text("Fog Color:");
+        glm::vec3 fogColor = cellManager.getFogColor();
+        if (ImGui::ColorEdit3("##FogColor", &fogColor.x)) {
+            cellManager.setFogColor(fogColor);
+        }
+        addTooltip("Color of atmospheric fog for distant cells");
+    }
 
     // Show current selection info
     if (cellManager.hasSelectedCell())    {

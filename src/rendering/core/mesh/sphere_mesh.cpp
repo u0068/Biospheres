@@ -211,6 +211,39 @@ void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
     glBindVertexArray(0);
 }
 
+void SphereMesh::setupDistanceFadeInstanceBuffer(GLuint instanceDataBuffer) {
+    // Setup instance buffer for distance fade format (positionAndRadius, color, orientation, fadeFactor)
+    instanceVBO[0] = instanceDataBuffer;
+    
+    glBindVertexArray(VAO[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceDataBuffer);
+
+    // Instance data structure: positionAndRadius (vec4), color (vec4), orientation (vec4), fadeFactor (vec4)
+    size_t stride = 16 * sizeof(float); // 4 vec4s = 16 floats
+
+    // Instance position and radius (vec4)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glVertexAttribDivisor(2, 1);
+
+    // Instance color (vec4)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(float)));
+    glVertexAttribDivisor(3, 1);
+
+    // Instance orientation (vec4 quaternion)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+    glVertexAttribDivisor(4, 1);
+
+    // Instance fade factor (vec4 - only x component used)
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
+    glVertexAttribDivisor(5, 1);
+
+    glBindVertexArray(0);
+}
+
 void SphereMesh::setupLODInstanceBuffer(GLuint instanceDataBuffer) {
     // Setup instance buffer for all LOD levels (using standard instance format)
     for (int lod = 0; lod < LOD_LEVELS; lod++) {
@@ -269,6 +302,44 @@ void SphereMesh::setupLODInstanceBuffers(GLuint lodInstanceBuffers[4]) {
 
         glBindVertexArray(0);
     }
+}
+
+void SphereMesh::setupLODInstanceBufferWithFade(int lodLevel, GLuint lodInstanceDataBuffer) {
+    // Setup instance buffer for specific LOD level with fade factor
+    if (lodLevel < 0 || lodLevel >= LOD_LEVELS) {
+        std::cerr << "Error: Invalid LOD level " << lodLevel << " in setupLODInstanceBufferWithFade\n";
+        return;
+    }
+    
+    instanceVBO[lodLevel] = lodInstanceDataBuffer;
+    
+    glBindVertexArray(VAO[lodLevel]);
+    glBindBuffer(GL_ARRAY_BUFFER, lodInstanceDataBuffer);
+
+    // Instance data structure: positionAndRadius (vec4), color (vec4), orientation (vec4), fadeFactor (vec4)
+    size_t stride = 16 * sizeof(float); // 4 vec4s = 16 floats
+
+    // Instance position and radius (vec4)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glVertexAttribDivisor(2, 1);
+
+    // Instance color (vec4)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(float)));
+    glVertexAttribDivisor(3, 1);
+
+    // Instance orientation (vec4 quaternion)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+    glVertexAttribDivisor(4, 1);
+
+    // Instance fade factor (vec4 - only x component used)
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride, (void*)(12 * sizeof(float)));
+    glVertexAttribDivisor(5, 1);
+
+    glBindVertexArray(0);
 }
 
 void SphereMesh::render(int instanceCount) const {

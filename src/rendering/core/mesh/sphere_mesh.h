@@ -31,8 +31,10 @@ public:
     void setupBuffers();
     void setupLODBuffers(); // Setup buffers for all LOD levels
     void setupInstanceBuffer(GLuint instanceDataBuffer);
+    void setupDistanceFadeInstanceBuffer(GLuint instanceDataBuffer); // Setup instance buffer with fade factor
     void setupLODInstanceBuffer(GLuint lodInstanceDataBuffer); // Setup LOD instance buffer
     void setupLODInstanceBuffers(GLuint lodInstanceBuffers[4]); // Setup separate instance buffers for each LOD level
+    void setupLODInstanceBufferWithFade(int lodLevel, GLuint lodInstanceDataBuffer); // Setup LOD instance buffer with fade factor
     void render(int instanceCount) const;
     void renderLOD(int lodLevel, int instanceCount, int instanceOffset = 0) const; // Render specific LOD level
     void cleanup();

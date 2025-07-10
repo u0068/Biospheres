@@ -1,5 +1,6 @@
 #pragma once
 #include <string_view>
+#include <glm/glm.hpp>
 
 namespace config
 {
@@ -29,6 +30,31 @@ namespace config
 	constexpr float GRID_CELL_SIZE{WORLD_SIZE / GRID_RESOLUTION}; // Size of each grid cell (~1.56 units)
 	constexpr int MAX_CELLS_PER_GRID{32};                         // Reduced from 64 to 32: better memory access patterns
 	constexpr int TOTAL_GRID_CELLS{GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION};
+
+	// ========== Rendering Configuration ==========
+	// Distance-based culling and fading parameters
+	constexpr float defaultMaxRenderDistance{170.0f};         // Maximum distance to render cells
+	constexpr float defaultFadeStartDistance{30.0f};          // Distance where fading begins
+	constexpr float defaultFadeEndDistance{160.0f};           // Distance where fading ends (cells become invisible)
+	constexpr glm::vec3 defaultFogColor{0.0f, 0.0f, 0.0f};    // Atmospheric/fog color for distant cells (completely black)
+
+	// Frustum culling configuration
+	constexpr bool defaultUseFrustumCulling{true};            // Enable/disable frustum culling by default
+	constexpr float defaultFrustumFov{45.0f};                 // Field of view for frustum calculation
+	constexpr float defaultFrustumNearPlane{0.1f};            // Near plane distance for frustum
+	constexpr float defaultFrustumFarPlane{1000.0f};          // Far plane distance for frustum
+
+	// LOD (Level of Detail) configuration
+	constexpr bool defaultUseLodSystem{true};                 // Enable/disable LOD system by default
+	constexpr float defaultLodDistance0{40.0f};               // Distance threshold for LOD level 0 (highest quality)
+	constexpr float defaultLodDistance1{80.0f};               // Distance threshold for LOD level 1
+	constexpr float defaultLodDistance2{120.0f};              // Distance threshold for LOD level 2
+	constexpr float defaultLodDistance3{160.0f};              // Distance threshold for LOD level 3 (lowest quality)
+
+	// Distance culling configuration
+	constexpr bool defaultUseDistanceCulling{true};           // Enable/disable distance-based culling by default
+	constexpr bool defaultUseDistanceFade{true};              // Enable/disable distance-based fading by default
+
 	// ========== Runtime Configuration Variables ==========
 	// These can be modified at runtime
 	inline bool showDemoWindow{true};

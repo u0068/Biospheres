@@ -54,38 +54,48 @@ struct CellManager
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
 
-    // LOD system shaders
-    Shader* lodComputeShader = nullptr;       // Compute shader for LOD calculation
-    Shader* lodVertexShader = nullptr;        // LOD vertex/fragment shader
-    
-    // LOD configuration
-    float lodDistances[4] = {20.0f, 60.0f, 150.0f, 250.0f}; // Distance thresholds for LOD levels
-    bool useLODSystem = true;                 // Enable/disable LOD system
-    
-    // LOD instance buffers - separate buffer for each LOD level
+    // LOD system
+    Shader* lodVertexShader = nullptr;        // Vertex shader for LOD rendering
+    Shader* lodComputeShader = nullptr;       // Compute shader for LOD assignment
     GLuint lodInstanceBuffers[4]{};           // Instance buffers for each LOD level
     GLuint lodCountBuffer{};                  // Buffer to track instance counts per LOD level
     int lodInstanceCounts[4]{};               // CPU-side copy of LOD instance counts
+    float lodDistances[4] = {
+        config::defaultLodDistance0,
+        config::defaultLodDistance1,
+        config::defaultLodDistance2,
+        config::defaultLodDistance3
+    }; // Distance thresholds for LOD levels
+    bool useLODSystem = config::defaultUseLodSystem;          // Enable/disable LOD system
     
-    // Frustum culling system
-    Shader* frustumCullShader = nullptr;      // Compute shader for frustum culling
-    Shader* frustumCullLODShader = nullptr;   // Compute shader for frustum culling with LOD
-    GLuint visibleInstanceBuffer{};           // Buffer for frustum-culled instances
-    GLuint visibleCountBuffer{};              // Buffer for visible instance count
-    bool useFrustumCulling = true;            // Enable/disable frustum culling
+    // LOD instance buffers - separate buffer for each LOD level
+    
+    // Unified culling system
+    Shader* unifiedCullShader = nullptr;      // Unified compute shader for all culling modes
+    Shader* distanceFadeShader = nullptr;     // Vertex/fragment shaders for distance-based fading
+    GLuint unifiedOutputBuffers[4]{};         // Output buffers for each LOD level
+    GLuint unifiedCountBuffer{};              // Buffer for LOD counts
+    bool useFrustumCulling = config::defaultUseFrustumCulling;            // Enable/disable frustum culling
+    bool useDistanceCulling = config::defaultUseDistanceCulling;          // Enable/disable distance-based culling
     Frustum currentFrustum;                   // Current camera frustum
     int visibleCellCount{0};                  // Number of visible cells after culling
+    float maxRenderDistance = config::defaultMaxRenderDistance;         // Maximum distance to render cells
+    float fadeStartDistance = config::defaultFadeStartDistance;          // Distance where fading begins
+    float fadeEndDistance = config::defaultFadeEndDistance;              // Distance where fading ends
     
     // LOD statistics functions
     int getTotalTriangleCount() const;        // Calculate total triangles across all LOD levels
     int getTotalVertexCount() const;          // Calculate total vertices across all LOD levels
+    
+    // Distance culling parameters
+    glm::vec3 fogColor = config::defaultFogColor; // Atmospheric/fog color for distant cells
 
     // Compute shaders
     Shader* physicsShader = nullptr;
     Shader* updateShader = nullptr;
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
-	Shader* cellAdditionShader = nullptr;
+    Shader* cellAdditionShader = nullptr;
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -102,7 +112,7 @@ struct CellManager
     int cellCount{0};               // Approximate cell count, may not reflect exact GPU state due to being a frame behind
     int cpuPendingCellCount{0};     // Number of cells pending addition by CPU
     int gpuPendingCellCount{0};     // Approx number of cells pending addition by GPU
-	// Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
+    // Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
     int adhesionCount{ 0 };
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
@@ -143,12 +153,12 @@ struct CellManager
     GLuint adhesionLineBuffer{};        // Buffer for adhesionSettings line vertices  
     GLuint adhesionLineVAO{};           // VAO for adhesionSettings line rendering
     GLuint adhesionLineVBO{};           // VBO for adhesionSettings line vertices
-	Shader* adhesionLineExtractShader = nullptr; // Generate adhesionSettings line data
+    Shader* adhesionLineExtractShader = nullptr; // Generate adhesionSettings line data
     Shader* adhesionLineShader = nullptr;        // Vertex/fragment shaders for rendering adhesionSettings lines
 
     // Adhesion connection system
     GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesionSettings connections
-	Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
+    Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
 
     void initializeGizmoBuffers();
     void updateGizmoData();
@@ -169,7 +179,7 @@ struct CellManager
 
     void initializeAdhesionConnectionSystem();
     void runAdhesionPhysics();
-	void cleanupAdhesionConnectionSystem();
+    void cleanupAdhesionConnectionSystem();
 
     void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
     void addCellToGPUBuffer(const ComputeCell &newCell);
@@ -316,13 +326,21 @@ struct CellManager
     void renderCellsLOD(glm::vec2 resolution, const Camera& camera, bool wireframe = false);
     void runLODCompute(const Camera& camera);
     
-    // Frustum culling functions
-    void initializeFrustumCulling();
-    void cleanupFrustumCulling();
+    // Unified culling functions
+    void initializeUnifiedCulling();
+    void cleanupUnifiedCulling();
     void updateFrustum(const Camera& camera, float fov, float aspectRatio, float nearPlane, float farPlane);
-    void runFrustumCulling();
-    void runFrustumCullingLOD(const Camera& camera);
+    void runUnifiedCulling(const Camera& camera);
+    void renderCellsUnified(glm::vec2 resolution, const Camera& camera, bool wireframe = false);
+    void setDistanceCullingParams(float maxDistance, float fadeStart, float fadeEnd);
     int getVisibleCellCount() const { return visibleCellCount; }
+    
+    // Getter functions for distance culling parameters
+    float getMaxRenderDistance() const { return maxRenderDistance; }
+    float getFadeStartDistance() const { return fadeStartDistance; }
+    float getFadeEndDistance() const { return fadeEndDistance; }
+    glm::vec3 getFogColor() const { return fogColor; }
+    void setFogColor(const glm::vec3& color) { fogColor = color; }
 
     void restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell> &cells); // For keyframe restoration
     void setCPUCellData(const std::vector<ComputeCell> &cells); // For keyframe restoration
