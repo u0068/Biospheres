@@ -57,6 +57,6 @@ void main() {
     
     // Only the first thread updates the cell count after all cells are added
     if (index == 0) {
-        atomicAdd(cellCount, pendingCellCount);
+        cellCount = min(u_maxCells, cellCount + pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
     }
 }
