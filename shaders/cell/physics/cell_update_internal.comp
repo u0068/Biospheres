@@ -24,7 +24,7 @@ struct GPUMode {
     float splitInterval;
     int genomeOffset;
     AdhesionSettings adhesionSettings;
-    bool parentMakeAdhesion; // Boolean flag for adhesion creation
+    int parentMakeAdhesion; // Boolean flag for adhesion creation
     int padding[3];          // Padding to maintain alignment
 };
 
@@ -149,7 +149,7 @@ void main() {
     newCells[queueIdx] = childB;
 
     // Now we need to add the adhesion connection
-    if (!mode.parentMakeAdhesion) {
+    if (mode.parentMakeAdhesion == 0) {
         return;
     }
     AdhesionConnection newAdhesion;

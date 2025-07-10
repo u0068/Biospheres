@@ -219,14 +219,14 @@ void CellManager::initializeGPUBuffers()
 {    // Create triple buffered compute buffers for cell data
     for (int i = 0; i < 3; i++)
     {
+        std::vector<ComputeCell> zeroCells(cellLimit);
         glCreateBuffers(1, &cellBuffer[i]);
         glNamedBufferData(
             cellBuffer[i],
             cellLimit * sizeof(ComputeCell),
-            nullptr,
+            zeroCells.data(),
             GL_DYNAMIC_COPY  // Used by both GPU compute and CPU read operations
         );
-
     }
 
     // Create instance buffer for rendering (contains position + radius + color + orientation)
@@ -1864,7 +1864,7 @@ void CellManager::initializeLODSystem()
     for (int i = 0; i < 4; i++) {
         glNamedBufferStorage(
             lodInstanceBuffers[i],
-            MAX_CELLS * sizeof(float) * 12, // 3 vec4s per instance (positionAndRadius, color, orientation)
+            cellLimit * sizeof(float) * 12, // 3 vec4s per instance (positionAndRadius, color, orientation)
             nullptr,
             GL_DYNAMIC_STORAGE_BIT
         );
