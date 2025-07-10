@@ -17,6 +17,18 @@ struct ComputeCell {
     float nitrates;
 };
 
+struct AdhesionSettings
+{
+    bool canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation; // degrees
+};
+
 // mode data structure for compute shader
 struct GPUMode {
     vec4 color;             // r, g, b, padding
@@ -26,6 +38,9 @@ struct GPUMode {
     ivec2 childModes;
     float splitInterval;
     int genomeOffset;
+    AdhesionSettings adhesionSettings;
+    int parentMakeAdhesion; // Boolean flag for adhesion creation
+    int padding[3];          // Padding to maintain alignment
 };
 
 // Instance data structure for rendering

@@ -115,6 +115,8 @@ private:    // Helper to get window flags based on lock state
     void drawAdhesionSettings(AdhesionSettings &adhesion);
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawColorPicker(const char *label, glm::vec3 *color);
+    glm::vec3 normalizeColor(const glm::vec3& color); // Helper to normalize color values
+    void validateGenomeColors(); // Validate and fix color values in genome
     void addTooltip(const char* tooltip); // Helper to add question mark tooltips
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
     int selectedModeIndex = 0;    // Time Scrubber Data
