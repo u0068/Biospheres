@@ -152,8 +152,6 @@ void main() {
     outputCells[index] = childA;
     outputCells[newIndex] = childB;
 
-    return;
-
     // Now we need to add the adhesion connection
     if (mode.parentMakeAdhesion == 0) {
         return;
