@@ -165,7 +165,7 @@ void main() {
     // Reserve index for adhesion connection
     uint adhesionIndex = atomicAdd(adhesionCount, 1);
     if (adhesionIndex > u_maxAdhesions) {
-        atomicMin(adhesionCount, u_maxAdhesions); // Clamp cell count
+        atomicMin(adhesionCount, u_maxAdhesions); // Clamp adhesion count
         return; // No space for new adhesion connections
     }
     connections[adhesionIndex] = newAdhesion;
