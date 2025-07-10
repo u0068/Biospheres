@@ -528,13 +528,19 @@ void CellManager::updateCells(float deltaTime)
 		// OPTIMIZED: Batch all simulation compute operations // I feel like this will cause race conditions
         // Update spatial grid before physics
         updateSpatialGrid(); // This handles its own barriers internally
-        
+
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
         // Run physics computation on GPU (reads from previous, writes to current)
         runPhysicsCompute(deltaTime);
-        
+
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
         // Run position/velocity update on GPU (still working on current buffer)
         runUpdateCompute(deltaTime);
-        
+
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
         // Run cells' internal calculations (this creates new pending cells from mitosis)
         runInternalUpdateCompute(deltaTime);
         
@@ -564,7 +570,6 @@ void CellManager::updateCells(float deltaTime)
     }
 
     // Final barrier flush and update cell count
-    flushBarriers();
     cellCount = countPtr[0];
 
     // Swap buffers for next frame (current becomes previous, previous becomes current)
@@ -762,8 +767,8 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
-    internalUpdateShader->setInt("u_maxCells", config::MAX_CELLS);
-    internalUpdateShader->setInt("u_maxAdhesions", config::MAX_ADHESIONS);
+    internalUpdateShader->setInt("u_maxCells", cellLimit);
+    internalUpdateShader->setInt("u_maxAdhesions", cellLimit*12);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Read from current buffer (has physics results)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellAdditionBuffer);

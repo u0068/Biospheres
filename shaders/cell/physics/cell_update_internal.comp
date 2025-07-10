@@ -62,7 +62,7 @@ layout(std430, binding = 2) buffer CellAdditionQueue {
     ComputeCell newCells[];
 };
 
-layout(std430, binding = 3) buffer CellCountBuffer {
+layout(std430, binding = 3) coherent buffer CellCountBuffer {
     uint cellCount;
     uint pendingCellCount;
     uint adhesionCount;
@@ -105,60 +105,63 @@ void main() {
     GPUMode mode = modes[cell.modeIndex];
 
     cell.age += u_deltaTime;
-    if (cell.age >= mode.splitInterval) {
-        // Estimate new total number of cells
-        uint currentTotal = atomicAdd(pendingCellCount, 0); // Read current pending count
-        if (cellCount + currentTotal < u_maxCells) {
-            // Atomically reserve a slot in the addition queue
-            uint queueIdx = atomicAdd(pendingCellCount, 1);
-            vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
-
-            // Both child cells should start with the same age after the split
-            // Since we already aged the parent cell by deltaTime this frame,
-            // we need to subtract the excess age beyond the split interval
-            float startAge = cell.age - mode.splitInterval;
-
-            // Apply rotation deltas to parent orientation
-            vec4 q_parent = cell.orientation;
-            vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
-            vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
-
-            ComputeCell childA = cell;
-            childA.positionAndMass.xyz += offset;
-            childA.age = startAge;
-            childA.modeIndex = mode.childModes.x;
-            childA.orientation = q_childA;
-
-            ComputeCell childB = cell;
-            childB.positionAndMass.xyz -= offset;
-            childB.age = startAge;
-            childB.modeIndex = mode.childModes.y;
-            childB.orientation = q_childB;
-
-            // Store new cells
-            cells[index] = childA;
-            newCells[queueIdx] = childB;
-
-            // Now we need to add the adhesion connection
-            if (mode.parentMakeAdhesion) {
-                // Reserve index for adhesion connection
-                uint adhesionIndex = atomicAdd(adhesionCount, 0);
-                if (adhesionIndex < u_maxAdhesions) {
-                    adhesionIndex = atomicAdd(adhesionCount, 1);
-                    AdhesionConnection newAdhesion;
-                    newAdhesion.cellAIndex = index; // Parent cell index
-                    newAdhesion.cellBIndex = queueIdx + cellCount; // New child cell index
-                    newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
-                    newAdhesion.isActive = 1; // Active connection
-                    connections[adhesionIndex] = newAdhesion;
-                }
-            }
-        } else {
-            // Can't divide just continue aging
-            cells[index] = cell;
-        }
-    } else {
-        // Not ready to divide age normally
+    if (cell.age < mode.splitInterval) {
+        // Not ready to split yet, just update the cell
         cells[index] = cell;
+        return;
     }
+    
+
+    vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
+
+    // Both child cells should start with the same age after the split
+    // Since we already aged the parent cell by deltaTime this frame,
+    // we need to subtract the excess age beyond the split interval
+    float startAge = cell.age - mode.splitInterval;
+
+    // Apply rotation deltas to parent orientation
+    vec4 q_parent = cell.orientation;
+    vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
+    vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
+
+    ComputeCell childA = cell;
+    childA.positionAndMass.xyz += offset;
+    childA.age = startAge;
+    childA.modeIndex = mode.childModes.x;
+    childA.orientation = q_childA;
+
+    ComputeCell childB = cell;
+    childB.positionAndMass.xyz -= offset;
+    childB.age = startAge;
+    childB.modeIndex = mode.childModes.y;
+    childB.orientation = q_childB;
+    
+    uint queueIdx = atomicAdd(pendingCellCount, 1);
+    if (cellCount + queueIdx >= u_maxCells) {
+        atomicMin(pendingCellCount, u_maxCells - cellCount); // Clamp cell count
+        // modes[cell.modeIndex].color = vec4(1.0, 0.0, 0.0, 1.0); // Make all cells red (debugging)
+        // No space for new cells, cancel the split
+        return;
+    }
+    // Store new cells
+    cells[index] = childA;
+    //cells[queueIdx] = childB;
+    newCells[queueIdx] = childB;
+
+    // Now we need to add the adhesion connection
+    if (!mode.parentMakeAdhesion) {
+        return;
+    }
+    AdhesionConnection newAdhesion;
+    newAdhesion.cellAIndex = index; // Parent cell index
+    newAdhesion.cellBIndex = queueIdx + cellCount; // New child cell index
+    newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
+    newAdhesion.isActive = 1; // Active connection
+
+    // Reserve index for adhesion connection // This is an old broken style of reservation, update it later
+    uint adhesionIndex = atomicAdd(adhesionCount, 1);
+    if (adhesionIndex > u_maxAdhesions) {
+        return; // No space for new adhesion connections
+    }
+    connections[adhesionIndex] = newAdhesion;
 }
