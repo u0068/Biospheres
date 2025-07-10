@@ -4,15 +4,30 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 // Input: Full cell data from physics simulation
 
-// mode data structure for compute shader
+struct AdhesionSettings
+{
+    bool canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation; // degrees
+};
+
+// GPU Mode structure
 struct GPUMode {
-    vec4 color;             // r, g, b, padding
-    vec4 orientationA;      // quaternion
-    vec4 orientationB;      // quaternion
+    vec4 color;           // R, G, B, padding
+    vec4 orientationA;    // quaternion
+    vec4 orientationB;    // quaternion
     vec4 splitDirection;  // x, y, z, padding
-    ivec2 childModes;
+    ivec2 childModes;     // mode indices for children
     float splitInterval;
     int genomeOffset;
+    AdhesionSettings adhesionSettings;
+    int parentMakeAdhesion; // Boolean flag for adhesion creation
+    int padding[3];          // Padding to maintain alignment
 };
 
 // Cell data structure for compute shader

@@ -108,7 +108,6 @@ struct CellManager
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
 
     // Configuration
-    static constexpr int MAX_CELLS = config::MAX_CELLS;
     static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
     float spawnRadius = config::DEFAULT_SPAWN_RADIUS;
     int cellLimit = config::MAX_CELLS;
@@ -300,7 +299,11 @@ struct CellManager
     const BarrierStats& getBarrierStats() const { return barrierStats; }
     void resetBarrierStats() const { barrierStats.reset(); }
 
-    // Double buffering management functions
+    // Triple buffering management functions
+    // Frame |  Write   | Read | Standby
+    //     1 |    B0    |  B1  |   B2
+    //     2 |    B2    |  B0  |   B1
+    //     3 |    B1    |  B2  |   B0.
     int getRotatedIndex(int index, int max) const { return (index + bufferRotation) % max; }
     void rotateBuffers() { bufferRotation = getRotatedIndex(1, 3); }
     GLuint getCellReadBuffer() const { return cellBuffer[getRotatedIndex(0, 3)]; }
