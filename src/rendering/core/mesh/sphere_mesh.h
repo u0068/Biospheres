@@ -8,6 +8,7 @@ public:
     struct Vertex {
         glm::vec3 position;
         glm::vec3 normal;
+        glm::vec2 uv; // Added UV coordinates
     };
 
     // LOD level definitions
@@ -28,6 +29,7 @@ public:
     
     void generateSphere(int latitudeSegments = 32, int longitudeSegments = 32, float radius = 1.0f);
     void generateLODSpheres(float radius = 1.0f); // Generate all LOD levels
+    void generateIcosphere(int lod, int subdivisions, float radius);
     void setupBuffers();
     void setupLODBuffers(); // Setup buffers for all LOD levels
     void setupInstanceBuffer(GLuint instanceDataBuffer);

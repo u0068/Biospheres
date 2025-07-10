@@ -6,6 +6,7 @@ in vec3 vCameraPos;
 in float vRadius;
 in vec3 vInstanceCenter;
 in vec3 vBaseColor;
+in vec2 vUV;
 
 out vec4 fragColor;
 
@@ -13,6 +14,7 @@ uniform vec3 uLightDir = vec3(1.0, 1.0, 1.0);
 uniform vec3 uSelectedCellPos = vec3(-9999.0); // Position of selected cell, invalid position by default
 uniform float uSelectedCellRadius = 0.0;
 uniform float uTime = 0.0; // For animation effects
+uniform sampler2D uTexture;
 
 void main() {
     // Calculate distance from camera for depth-based effects
@@ -40,6 +42,10 @@ void main() {
     
     // Base color is white by default
     vec3 baseColor = vBaseColor; // Slightly off-white for better lighting visibility
+    
+    // Sample texture using vUV
+    vec3 texColor = texture(uTexture, vUV).rgb;
+    baseColor *= texColor;
     
     // Highlight selected cell
     if (isSelected) {
