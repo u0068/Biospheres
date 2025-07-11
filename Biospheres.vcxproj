@@ -178,6 +178,12 @@
     <ClCompile Include="src\audio\synthesizer.cpp" />
     <ClCompile Include="src\utils\timer.cpp" />
     <ClCompile Include="src\ui\ui_manager.cpp" />
+    <ClCompile Include="src\ui\ui_performance_monitor.cpp" />
+    <ClCompile Include="src\ui\ui_camera_controls.cpp" />
+    <ClCompile Include="src\ui\ui_genome_editor.cpp" />
+    <ClCompile Include="src\ui\ui_time_scrubber.cpp" />
+    <ClCompile Include="src\ui\ui_scene_switcher.cpp" />
+    <ClCompile Include="src\ui\ui_keyframe_manager.cpp" />
     <ClCompile Include="src\ui\imgui_helpers.cpp" />
     <ClCompile Include="third_party\imgui\imgui.cpp" />
     <ClCompile Include="third_party\imgui\imgui_demo.cpp" />
