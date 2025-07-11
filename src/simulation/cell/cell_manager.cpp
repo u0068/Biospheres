@@ -70,6 +70,9 @@ CellManager::CellManager()
     // Initialize unified culling system
     initializeUnifiedCulling();
     
+    // NEW: Initialize stream compaction system
+    initializeStreamCompactionSystem();
+    
     // Initialize barrier optimization system
     barrierBatch.setStats(&barrierStats);
 }
@@ -128,6 +131,7 @@ void CellManager::cleanup()
     cleanupSpatialGrid();
     cleanupLODSystem();
     cleanupUnifiedCulling();
+    cleanupStreamCompactionSystem();
 
     if (extractShader)
     {
@@ -260,7 +264,7 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &gpuCellCountBuffer);
     glNamedBufferStorage(
         gpuCellCountBuffer,
-        sizeof(GLuint) * 3, // stores current cell count and pending cell count, adhesionSettings count
+        sizeof(GLuint) * 4, // stores cellCount, adhesionCount, liveCellCount, liveAdhesionCount
         nullptr,
         GL_DYNAMIC_STORAGE_BIT
     );
@@ -268,11 +272,11 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &stagingCellCountBuffer);
     glNamedBufferStorage(
         stagingCellCountBuffer,
-        sizeof(GLuint) * 3,
+        sizeof(GLuint) * 4,
         nullptr,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
     );
-    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * 3,
+    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * 4,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     countPtr = static_cast<GLuint*>(mappedPtr);
 
@@ -294,6 +298,22 @@ void CellManager::initializeGPUBuffers()
         nullptr,
         GL_STREAM_COPY  // Frequently updated by GPU compute shaders
     );
+
+    // NEW: Initialize stream compaction buffers
+    glCreateBuffers(1, &deadMarkersBuffer);
+    glNamedBufferData(deadMarkersBuffer,
+        cellLimit * sizeof(GLuint),
+        nullptr, GL_DYNAMIC_COPY);
+
+    glCreateBuffers(1, &prefixSumBuffer);
+    glNamedBufferData(prefixSumBuffer,
+        cellLimit * sizeof(GLuint),
+        nullptr, GL_DYNAMIC_COPY);
+
+    glCreateBuffers(1, &deadIndicesBuffer);
+    glNamedBufferData(deadIndicesBuffer,
+        cellLimit * sizeof(GLuint),
+        nullptr, GL_DYNAMIC_COPY);
 
     // Setup the sphere mesh to use our current instance buffer
     sphereMesh.setupInstanceBuffer(instanceBuffer);
@@ -386,8 +406,8 @@ void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell>
     
     // Update cell count directly
     cellCount = newCellCount;
-    GLuint counts[3] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount), static_cast<GLuint>(pendingCellCount) }; // cellCount, adhesionCount, pendingCellCount
-    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 3, counts);
+    GLuint counts[4] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount), static_cast<GLuint>(cellCount), 0u }; // cellCount, adhesionCount, liveCellCount, liveAdhesionCount
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
     
     // Sync staging buffer
     syncCounterBuffers();
@@ -830,8 +850,9 @@ void CellManager::resetSimulation()
     
     // Reset cell count buffers
     glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint), &zero); // cellCount = 0
-    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // pendingCellCount = 0
-    glNamedBufferSubData(gpuCellCountBuffer, 2 * sizeof(GLuint), sizeof(GLuint), &zero); // adhesion = 0
+    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // adhesionCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, 2 * sizeof(GLuint), sizeof(GLuint), &zero); // liveCellCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, 3 * sizeof(GLuint), sizeof(GLuint), &zero); // liveAdhesionCount = 0
     
     // Clear all cell buffers
     for (int i = 0; i < 3; i++)
@@ -946,4 +967,84 @@ void CellManager::spawnCells(int count)
 
         addCellToStagingBuffer(newCell);
     }
+}
+
+// ============================================================================
+// STREAM COMPACTION SYSTEM
+// ============================================================================
+
+void CellManager::initializeStreamCompactionSystem()
+{
+    // Initialize compute shader
+    streamCompactShader = new Shader("shaders/cell/management/stream_compact.comp");
+
+    // Initialize live count to match current count
+    liveCellCount = cellCount;
+
+    // Update GPU buffers with initial values
+    GLuint counts[4] = { 
+        static_cast<GLuint>(cellCount), 
+        static_cast<GLuint>(adhesionCount),
+        static_cast<GLuint>(liveCellCount),
+        0u // liveAdhesionCount
+    };
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
+
+    std::cout << "Stream compaction system initialized\n";
+}
+
+void CellManager::cleanupStreamCompactionSystem()
+{
+    // Cleanup stream compaction buffers
+    if (deadMarkersBuffer != 0) {
+        glDeleteBuffers(1, &deadMarkersBuffer);
+        deadMarkersBuffer = 0;
+    }
+    if (prefixSumBuffer != 0) {
+        glDeleteBuffers(1, &prefixSumBuffer);
+        prefixSumBuffer = 0;
+    }
+    if (deadIndicesBuffer != 0) {
+        glDeleteBuffers(1, &deadIndicesBuffer);
+        deadIndicesBuffer = 0;
+    }
+
+    // Cleanup compute shader
+    if (streamCompactShader) {
+        streamCompactShader->destroy();
+        delete streamCompactShader;
+        streamCompactShader = nullptr;
+    }
+}
+
+void CellManager::performStreamCompaction()
+{
+    if (cellCount == 0) return;
+
+    TimerGPU timer("Stream Compaction");
+
+    streamCompactShader->use();
+
+    // Set uniforms
+    streamCompactShader->setInt("u_maxCells", cellLimit);
+
+    // Bind buffers
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, deadMarkersBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, prefixSumBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, deadIndicesBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
+
+    // Dispatch compute shader
+    GLuint numGroups = (cellCount + 255) / 256;
+    streamCompactShader->dispatch(numGroups, 1, 1);
+
+    // Add barrier to ensure compaction is complete
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Update counts
+    updateCounts();
+
+    // Rotate buffers after compaction
+    rotateBuffers();
 }
