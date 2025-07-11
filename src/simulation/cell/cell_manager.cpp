@@ -17,6 +17,10 @@
 #include <glm/gtx/quaternion.hpp>
 #include "../../utils/timer.h"
 
+// ============================================================================
+// CONSTRUCTOR & DESTRUCTOR
+// ============================================================================
+
 CellManager::CellManager()
 {
     // Generate sphere mesh - optimized for high cell counts
@@ -74,6 +78,10 @@ CellManager::~CellManager()
 {
     cleanup();
 }
+
+// ============================================================================
+// CLEANUP
+// ============================================================================
 
 void CellManager::cleanup()
 {
@@ -213,7 +221,9 @@ void CellManager::cleanup()
     sphereMesh.cleanup();
 }
 
-// Buffers
+// ============================================================================
+// BUFFER MANAGEMENT
+// ============================================================================
 
 void CellManager::initializeGPUBuffers()
 {    // Create triple buffered compute buffers for cell data
@@ -292,6 +302,10 @@ void CellManager::initializeGPUBuffers()
     cpuCells.reserve(cellLimit);
 }
 
+// ============================================================================
+// CELL ADDITION & QUEUE MANAGEMENT
+// ============================================================================
+
 void CellManager::addCellsToQueueBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = static_cast<int>(cells.size());
@@ -337,6 +351,9 @@ void CellManager::addStagedCellsToQueueBuffer()
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     applyCellAdditions(); // Add the cells from gpu queue buffer to main cell buffers
+
+    // CRITICAL FIX: Update CPU-side cell count to match GPU after adding cells
+    updateCounts();
 
     pendingCellCount = 0;      // Reset pending count
 }
@@ -396,6 +413,10 @@ void CellManager::setCPUCellData(const std::vector<ComputeCell> &cells)
     pendingCellCount = 0;
 }
 
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
 glm::vec3 pitchYawToVec3(float pitch, float yaw) {
     return glm::vec3(
         cos(pitch) * sin(yaw),
@@ -403,6 +424,10 @@ glm::vec3 pitchYawToVec3(float pitch, float yaw) {
         cos(pitch) * cos(yaw)
     );
 }
+
+// ============================================================================
+// GENOME & MODE MANAGEMENT
+// ============================================================================
 
 void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     int genomeBaseOffset = 0; // Later make it add to the end of the buffer
@@ -447,6 +472,10 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
     );
 }
 
+// ============================================================================
+// CELL DATA ACCESS & MODIFICATION
+// ============================================================================
+
 ComputeCell CellManager::getCellData(int index) const
 {
     if (index >= 0 && index < cellCount && index < static_cast<int>(cpuCells.size()))
@@ -480,7 +509,9 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
     }
 }
 
-// Cell Update
+// ============================================================================
+// CELL UPDATE & SIMULATION
+// ============================================================================
 
 void CellManager::updateCells(float deltaTime)
 {
@@ -692,6 +723,10 @@ void CellManager::runPhysicsCompute(float deltaTime)
     rotateBuffers();
 }
 
+// ============================================================================
+// COMPUTE SHADER DISPATCH
+// ============================================================================
+
 void CellManager::runUpdateCompute(float deltaTime)
 {
     TimerGPU timer("Cell Update Compute");
@@ -766,7 +801,14 @@ void CellManager::applyCellAdditions()
     cellAdditionShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // CRITICAL FIX: Rotate buffers after adding cells to ensure they're in the correct buffer for next frame
+    rotateBuffers();
 }
+
+// ============================================================================
+// SIMULATION RESET & CLEANUP
+// ============================================================================
 
 void CellManager::resetSimulation()
 {
@@ -869,6 +911,10 @@ void CellManager::resetSimulation()
     visibleCellCount = 0; // Reset visible cell count
 }
 
+// ============================================================================
+// CELL SPAWNING & RESET
+// ============================================================================
+
 void CellManager::spawnCells(int count)
 {
     TimerCPU cpuTimer("Spawning Cells");
@@ -902,8 +948,9 @@ void CellManager::spawnCells(int count)
     }
 }
 
-
-// Gizmo implementation
+// ============================================================================
+// GIZMO SYSTEM
+// ============================================================================
 
 void CellManager::initializeGizmoBuffers()
 {
@@ -1022,7 +1069,9 @@ void CellManager::cleanupGizmos()
     }
 }
 
-// Cell selection and interaction implementation // todo: REWRITE FOR GPU ONLY
+// ============================================================================
+// CELL SELECTION & INTERACTION
+// ============================================================================
 void CellManager::handleMouseInput(const glm::vec2 &mousePos, const glm::vec2 &screenSize,
                                    const Camera &camera, bool isMousePressed, bool isMouseDown,
                                    float scrollDelta)
@@ -1368,7 +1417,9 @@ bool CellManager::raySphereIntersection(const glm::vec3 &rayOrigin, const glm::v
     return false; // Both intersections are behind the ray origin or too close
 }
 
-// Ring Gizmo Implementation
+// ============================================================================
+// RING GIZMO SYSTEM
+// ============================================================================
 
 void CellManager::initializeRingGizmoBuffers()
 {
@@ -1508,7 +1559,9 @@ void CellManager::cleanupRingGizmos()
     }
 }
 
-// Adhesion Line Implementation
+// ============================================================================
+// ADHESION LINE SYSTEM
+// ============================================================================
 
 void CellManager::initializeAdhesionLineBuffers()
 {
@@ -1628,7 +1681,9 @@ void CellManager::cleanupAdhesionLines()
     }
 }
 
-// LOD System Implementation
+// ============================================================================
+// LOD SYSTEM
+// ============================================================================
 
 void CellManager::initializeLODSystem()
 {
@@ -1805,7 +1860,9 @@ int CellManager::getTotalVertexCount() const {
     return totalVertices;
 }
 
-// Unified Culling Implementation
+// ============================================================================
+// UNIFIED CULLING SYSTEM
+// ============================================================================
 
 void CellManager::initializeUnifiedCulling()
 {
@@ -2042,7 +2099,9 @@ void CellManager::setDistanceCullingParams(float maxDistance, float fadeStart, f
     fadeEndDistance = fadeEnd;
 }
 
-// Adhesion Connection System Implementation
+// ============================================================================
+// ADHESION CONNECTION SYSTEM
+// ============================================================================
 void CellManager::initializeAdhesionConnectionSystem()
 {
     // Create buffer for adhesionSettings connections
