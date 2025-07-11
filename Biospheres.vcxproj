@@ -164,9 +164,14 @@
   <ItemGroup>
     <ClCompile Include="src\audio\audio_engine.cpp" />
     <ClCompile Include="src\rendering\camera\camera.cpp" />
+    <ClCompile Include="src\simulation\cell\adhesion_manager.cpp" />
+    <ClCompile Include="src\simulation\cell\culling_system.cpp" />
+    <ClCompile Include="src\simulation\cell\lod_manager.cpp" />
     <ClCompile Include="src\simulation\cell\cell_manager.cpp" />
+    <ClCompile Include="src\simulation\cell\gizmos.cpp" />
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
     <ClCompile Include="src\simulation\cell\spatial_grid.cpp" />
+    <ClCompile Include="src\simulation\cell\cell_selection.cpp" />
     <ClCompile Include="third_party\glad.c" />
     <ClCompile Include="src\rendering\core\glad_helpers.cpp" />
     <ClCompile Include="src\rendering\core\glfw_helpers.cpp" />
@@ -190,6 +195,7 @@
     <ClInclude Include="src\audio\audio_engine.h" />
     <ClInclude Include="src\rendering\camera\camera.h" />
     <ClInclude Include="src\simulation\cell\cell_manager.h" />
+    <ClInclude Include="src\simulation\cell\cell_selection.h" />
     <ClInclude Include="src\core\config.h" />
     <ClInclude Include="src\rendering\systems\frustum_culling.h" />
     <ClInclude Include="src\simulation\cell\common_structs.h" />
