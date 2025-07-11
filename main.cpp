@@ -324,13 +324,13 @@ int main()
 	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
 	ComputeCell previewCell{};
 	previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
-	previewCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+	previewCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
 	
 	// Initialize Main Simulation
 	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
 	ComputeCell mainCell{};
 	mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
-	mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+	mainCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
 	
 	// Ensure both simulations have proper initial state by running one update cycle
 	previewCellManager.updateCells(config::physicsTimeStep);

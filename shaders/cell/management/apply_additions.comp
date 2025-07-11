@@ -30,15 +30,15 @@ layout(std430, binding = 2) buffer CellOutputBuffer {
 
 layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
-    uint pendingCellCount;
-    uint adhesionCount; // Not used in this shader, but kept for consistency
+    uint adhesionCount;
 };
 
 uniform int u_maxCells;
+uniform int u_pendingCellCount;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= pendingCellCount) return;
+    if (index >= u_pendingCellCount) return;
 
     ComputeCell queuedCell = newCells[index];
 
@@ -57,8 +57,6 @@ void main() {
     
     // Only the first thread updates the cell count after all cells are added
     if (index == 0) {
-        //cellCount = min(u_maxCells, cellCount + pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
-        // For now im gonna do it without clamping so that we can see any issues that may arise from attmepting to exceed the limit
-        atomicAdd(cellCount, pendingCellCount); // Increment cell count by the number of new cells added
+        cellCount = min(u_maxCells, cellCount + u_pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
     }
 }

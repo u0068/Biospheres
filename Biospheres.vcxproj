@@ -224,9 +224,12 @@
     <None Include="shaders\cell\management\extract_instances.comp" />
     <None Include="shaders\rendering\culling\frustum_cull.comp" />
     <None Include="shaders\rendering\culling\frustum_cull_lod.comp" />
+    <None Include="shaders\rendering\culling\unified_cull.comp" />
     <None Include="shaders\rendering\debug\gizmo.frag" />
     <None Include="shaders\rendering\debug\gizmo.vert" />
     <None Include="shaders\rendering\debug\gizmo_extract.comp" />
+    <None Include="shaders\rendering\sphere\sphere_distance_fade.frag" />
+    <None Include="shaders\rendering\sphere\sphere_distance_fade.vert" />
     <None Include="shaders\spatial\grid_assign.comp" />
     <None Include="shaders\spatial\grid_clear.comp" />
     <None Include="shaders\spatial\grid_insert.comp" />

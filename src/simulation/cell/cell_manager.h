@@ -121,12 +121,25 @@ struct CellManager
     
     // Cell count tracking (CPU-side approximation of GPU state)
     int cellCount{0};               // Approximate cell count, may not reflect exact GPU state due to being a frame behind
-    int cpuPendingCellCount{0};     // Number of cells pending addition by CPU
-    int gpuPendingCellCount{0};     // Approx number of cells pending addition by GPU
+    int pendingCellCount{0};     // Number of cells pending addition by CPU
     // Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
     int adhesionCount{ 0 };
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
+    void syncCounterBuffers()
+    {
+        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    }
+    void updateCounts()
+    {
+        syncCounterBuffers();
+
+        // Add buffer update barrier but don't flush yet
+        addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
+        cellCount = countPtr[0];
+        adhesionCount = countPtr[1]; // This is the number of adhesionSettings connections, not cells
+    }
 
     // Configuration
     static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
@@ -191,11 +204,12 @@ struct CellManager
     void runAdhesionPhysics();
     void cleanupAdhesionConnectionSystem();
 
-    void addCellsToGPUBuffer(const std::vector<ComputeCell> &cells);
-    void addCellToGPUBuffer(const ComputeCell &newCell);
+    // CELL ADDITION RULES:
+	// Add cells to the staging buffer, which is then processed by the GPU automatically every frame.
+	// Do not add cells directly to the GPU buffer, as they may not be processed immediately, and may be overwritten. Use the staging buffer instead.
+    void addCellsToQueueBuffer(const std::vector<ComputeCell> &cells);
     void addCellToStagingBuffer(const ComputeCell &newCell);
-    void addCell(const ComputeCell &newCell) { addCellToStagingBuffer(newCell); }
-    void addStagedCellsToGPUBuffer();
+    void addStagedCellsToQueueBuffer();
     void addGenomeToBuffer(GenomeData& genomeData) const;
     void updateCells(float deltaTime);
     void cleanup();

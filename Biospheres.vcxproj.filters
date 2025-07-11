@@ -254,5 +254,8 @@
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\cell\physics\adhesion_physics.comp" />
+    <None Include="shaders\rendering\culling\unified_cull.comp" />
+    <None Include="shaders\rendering\sphere\sphere_distance_fade.frag" />
+    <None Include="shaders\rendering\sphere\sphere_distance_fade.vert" />
   </ItemGroup>
 </Project>

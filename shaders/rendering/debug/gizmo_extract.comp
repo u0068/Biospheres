@@ -36,7 +36,7 @@ layout(std430, binding = 1) buffer GizmoBuffer {
 // Cell count
 layout(std430, binding = 2) buffer CellCountBuffer {
     uint cellCount;
-    uint pendingCellCount;
+    uint adhesionCount;
 };
 
 // Convert quaternion to rotation matrix

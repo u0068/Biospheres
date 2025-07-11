@@ -292,11 +292,9 @@ void CellManager::initializeGPUBuffers()
     cpuCells.reserve(cellLimit);
 }
 
-void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
+void CellManager::addCellsToQueueBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = static_cast<int>(cells.size());
-
-
 
     if (cellCount + newCellCount > cellLimit)
     {
@@ -304,32 +302,12 @@ void CellManager::addCellsToGPUBuffer(const std::vector<ComputeCell> &cells)
         return;
     }
 
-
     TimerGPU gpuTimer("Adding Cells to GPU Buffers");
-    // Update both cell buffers to keep them synchronized
-    //for (int i = 0; i < 2; i++)
-    //{
-    //    glNamedBufferSubData(cellBuffer[i],
-    //                         cellCount * sizeof(ComputeCell),
-    //                         newCellCount * sizeof(ComputeCell),
-    //                         cells.data());
-    //}
 
     glNamedBufferSubData(cellAdditionBuffer,
-        gpuPendingCellCount * sizeof(ComputeCell),
+        0,
         newCellCount * sizeof(ComputeCell),
         cells.data());
-
-    gpuPendingCellCount += newCellCount;
-    glNamedBufferSubData(gpuCellCountBuffer, sizeof(int), sizeof(int), &gpuPendingCellCount);
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-
-    //cellCount += newCellCount;    // Cell count should be kept track of by the counter on the gpu
-}
-
-void CellManager::addCellToGPUBuffer(const ComputeCell &newCell)
-{ // Prefer to not use this directly, use addCellToStagingBuffer instead
-    addCellsToGPUBuffer({newCell});
 }
 
 void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
@@ -347,16 +325,20 @@ void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
     // Add to CPU storage only (no immediate GPU sync)
     cellStagingBuffer.push_back(correctedCell);
     cpuCells.push_back(correctedCell);
-    cpuPendingCellCount++;
+    pendingCellCount++;
 }
 
-void CellManager::addStagedCellsToGPUBuffer()
+void CellManager::addStagedCellsToQueueBuffer()
 {
-    if (!cellStagingBuffer.empty()) {
-        addCellsToGPUBuffer(cellStagingBuffer);
-        cellStagingBuffer.clear(); // Clear after adding to GPU buffer
-        cpuPendingCellCount = 0;      // Reset pending count
-    }
+    if (cellStagingBuffer.empty()) return;
+    addCellsToQueueBuffer(cellStagingBuffer);
+    cellStagingBuffer.clear(); // Clear after adding to GPU buffer
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    applyCellAdditions(); // Add the cells from gpu queue buffer to main cell buffers
+
+    pendingCellCount = 0;      // Reset pending count
 }
 
 void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell> &cells)
@@ -387,11 +369,11 @@ void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell>
     
     // Update cell count directly
     cellCount = newCellCount;
-    GLuint counts[2] = { static_cast<GLuint>(cellCount), 0 }; // cellCount, pendingCellCount = 0
+    GLuint counts[2] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount) }; // cellCount, adhesionCount
     glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 2, counts);
     
     // Sync staging buffer
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+    syncCounterBuffers();
     
     // Clear addition buffer since we're not using it
     glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
@@ -411,7 +393,7 @@ void CellManager::setCPUCellData(const std::vector<ComputeCell> &cells)
     }
     
     cellCount = static_cast<int>(cells.size());
-    cpuPendingCellCount = 0;
+    pendingCellCount = 0;
 }
 
 glm::vec3 pitchYawToVec3(float pitch, float yaw) {
@@ -504,25 +486,18 @@ void CellManager::updateCells(float deltaTime)
 {
     // Clear any pending barriers from previous frame
     clearBarriers();
-    
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 3);
-    
-    // Add buffer update barrier but don't flush yet
-    addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
+    if (pendingCellCount > 0)
+    {
+        addStagedCellsToQueueBuffer(); // Sync any pending cells to GPU
+    }
 
     int previousCellCount = cellCount;
-    cellCount = countPtr[0];
-    gpuPendingCellCount = countPtr[1]; // This is effectively more of a bool than an int due to its horrific inaccuracy, but that's good enough for us
-	adhesionCount = countPtr[2]; // This is the number of adhesionSettings connections, not cells
+    updateCounts();
     
     // Invalidate cache if cell count changed (affects legacy calculation)
     if (previousCellCount != cellCount) {
         invalidateStatisticsCache();
-    }
-
-    if (cpuPendingCellCount > 0)
-    {
-        addStagedCellsToGPUBuffer(); // Sync any pending cells to GPU
     }
 
     if (cellCount > 0) // Don't update cells if there are no cells to update
@@ -552,30 +527,6 @@ void CellManager::updateCells(float deltaTime)
         // Single barrier after all simulation compute operations
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
-
-    // Optimized: Only apply cell additions when actually needed
-    // Use a frame counter to reduce frequency of cell addition checks
-    static int frameCounter = 0;
-    if (++frameCounter % 4 == 0 || gpuPendingCellCount > 0) { // Check every 4 frames or when pending
-        flushBarriers(); // Ensure previous operations complete
-        
-        // Copy cell count data for addition check (non-blocking)
-        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 3);
-        
-        // Use targeted barrier instead of expensive fence sync
-        addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-        flushBarriers();
-        
-        gpuPendingCellCount = countPtr[1];
-        
-        if (gpuPendingCellCount > 0) {
-            applyCellAdditions(); // Apply mitosis results
-            addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        }
-    }
-
-    // Final barrier flush and update cell count
-    cellCount = countPtr[0];
 }
 
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera, bool wireframe)
@@ -803,6 +754,7 @@ void CellManager::applyCellAdditions()
 
     // Set uniforms
     cellAdditionShader->setInt("u_maxCells", cellLimit);
+    cellAdditionShader->setInt("u_pendingCellCount", pendingCellCount);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
@@ -810,20 +762,10 @@ void CellManager::applyCellAdditions()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
-    GLuint numGroups = (cellLimit / 2 + 63) / 64; // Horrific over-dispatch but it's better than under-dispatch and surprisingly doesn't hurt performance
+    GLuint numGroups = (pendingCellCount + 63) / 64;
     cellAdditionShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    
-    // Use optimized barrier for cell additions
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    flushBarriers();
-
-    GLuint zero = 0;
-    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // offset = 4
-
-    glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
-
 }
 
 void CellManager::resetSimulation()
@@ -832,8 +774,7 @@ void CellManager::resetSimulation()
     cpuCells.clear();
     cellStagingBuffer.clear();
     cellCount = 0;
-    cpuPendingCellCount = 0;
-    gpuPendingCellCount = 0;
+    pendingCellCount = 0;
     adhesionCount = 0;
     
     // CRITICAL FIX: Reset buffer rotation state for consistent keyframe restoration

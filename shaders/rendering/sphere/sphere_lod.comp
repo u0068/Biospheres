@@ -61,7 +61,7 @@ layout(std430, binding = 1) buffer ModeBuffer {
 
 layout(std430, binding = 2) buffer CellCountBuffer {
     uint cellCount;
-    uint pendingCellCount;
+    uint adhesionCount;
 };
 
 // Output buffers - separate for each LOD level

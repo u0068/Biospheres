@@ -48,7 +48,6 @@ layout(std430, binding = 2) buffer AdhesionLineBuffer {
 // Cell count
 layout(std430, binding = 3) buffer CellCountBuffer {
     uint cellCount;
-    uint pendingCellCount;
     uint adhesionCount;
 };
 

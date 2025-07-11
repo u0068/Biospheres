@@ -309,7 +309,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
     int cellCount = cellManager.getCellCount();
     ImGui::Text("Active Cells: %i / %i", cellCount, config::MAX_CELLS);
-    ImGui::Text("Pending Cells: CPU: %i, GPU: %i", cellManager.cpuPendingCellCount, cellManager.gpuPendingCellCount);
+    ImGui::Text("Pending Cells: %i", cellManager.pendingCellCount);
     ImGui::Text("Adhesion Connections: %i / %i", cellManager.adhesionCount, config::MAX_ADHESIONS);
     ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
     ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
@@ -752,7 +752,7 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         // This keeps the initial cell orientation independent of Child A/B settings
         newCell.orientation = currentGenome.initialOrientation;
         cellManager.addCellToStagingBuffer(newCell);
-        cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+        cellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
         
         // Establish initial adhesionSettings connections
         cellManager.runAdhesionPhysics();
@@ -1331,7 +1331,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         }
           // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
-        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.1f, maxTime, "%.2f"))
+        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
         {
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
@@ -1487,7 +1487,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 cellManager.addCellToStagingBuffer(newCell);
-                cellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+                cellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
                 
                 // Reset simulation time
                 sceneManager.resetPreviewSimulationTime();
@@ -1575,7 +1575,7 @@ void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& pre
                 ComputeCell newCell{};
                 newCell.modeIndex = currentGenome.initialMode;
                 mainCellManager.addCellToStagingBuffer(newCell);
-                mainCellManager.addStagedCellsToGPUBuffer(); // Force immediate GPU buffer sync
+                mainCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
                 
                 // Advance simulation by one frame after reset
                 mainCellManager.updateCells(config::physicsTimeStep);
@@ -1667,7 +1667,7 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     ComputeCell newCell{};
     newCell.modeIndex = currentGenome.initialMode;
     cellManager.addCellToStagingBuffer(newCell);
-    cellManager.addStagedCellsToGPUBuffer();
+    cellManager.addStagedCellsToQueueBuffer();
     
     // Capture initial keyframe at time 0
     captureKeyframe(cellManager, 0.0f, 0);
