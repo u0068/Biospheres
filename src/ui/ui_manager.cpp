@@ -462,8 +462,9 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     addTooltip("Enable distance-based culling and fading for cells far from camera");
     
     // Sync settings with cell manager
-    cellManager.useFrustumCulling = enableFrustumCulling;
-    cellManager.useDistanceCulling = enableDistanceCulling;
+            cellManager.useFrustumCulling = enableFrustumCulling;
+        cellManager.useDistanceCulling = enableDistanceCulling;
+        cellManager.invalidateStatisticsCache(); // Invalidate cache since culling settings changed
     
     // Distance culling parameters (only show if distance culling is enabled)
     if (enableDistanceCulling) {

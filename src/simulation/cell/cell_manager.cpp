@@ -510,10 +510,15 @@ void CellManager::updateCells(float deltaTime)
     // Add buffer update barrier but don't flush yet
     addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 
+    int previousCellCount = cellCount;
     cellCount = countPtr[0];
     gpuPendingCellCount = countPtr[1]; // This is effectively more of a bool than an int due to its horrific inaccuracy, but that's good enough for us
 	adhesionCount = countPtr[2]; // This is the number of adhesionSettings connections, not cells
-    int previousCellCount = cellCount;
+    
+    // Invalidate cache if cell count changed (affects legacy calculation)
+    if (previousCellCount != cellCount) {
+        invalidateStatisticsCache();
+    }
 
     if (cpuPendingCellCount > 0)
     {
@@ -905,6 +910,9 @@ void CellManager::resetSimulation()
         }
         lodInstanceCounts[i] = 0; // Reset CPU-side LOD counts
     }
+    
+    // Invalidate cache since LOD counts have been reset
+    invalidateStatisticsCache();
     if (lodCountBuffer != 0) {
         glClearNamedBufferData(lodCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
@@ -1953,6 +1961,9 @@ void CellManager::runLODCompute(const Camera& camera)
     
     // Read back LOD counts for rendering
     glGetNamedBufferSubData(lodCountBuffer, 0, sizeof(lodInstanceCounts), lodInstanceCounts);
+    
+    // Invalidate cache since LOD counts have changed
+    invalidateStatisticsCache();
 }
 
 void CellManager::updateLODLevels(const Camera& camera)
@@ -1968,35 +1979,66 @@ void CellManager::updateLODLevels(const Camera& camera)
 
 
 int CellManager::getTotalTriangleCount() const {
+    // Check if cache is valid
+    if (cachedTriangleCount >= 0) {
+        return cachedTriangleCount;
+    }
+    
+    // Calculate and cache the result
+    int totalTriangles = 0;
+    
     // Unified culling system - use actual LOD distribution
     if (useFrustumCulling || useDistanceCulling || useLODSystem) {
-        int totalTriangles = 0;
+        // Check if LOD system is using icospheres (which it should be)
+        // For icospheres: 20 * 4^subdivisions triangles per sphere
+        // Subdivisions: 3, 2, 1, 0 for LOD levels 0, 1, 2, 3
+        int icosphereTriangles[4] = {1280, 320, 80, 20}; // 20 * 4^subdivisions
+        
         for (int lod = 0; lod < 4; lod++) {
-            int segments = SphereMesh::LOD_SEGMENTS[lod];
-            int trianglesPerSphere = segments * segments * 2; // 2 triangles per quad
-            totalTriangles += trianglesPerSphere * lodInstanceCounts[lod];
+            // Account for back face culling - only front faces are rendered
+            int visibleTriangles = icosphereTriangles[lod] / 2;
+            totalTriangles += visibleTriangles * lodInstanceCounts[lod];
         }
-        return totalTriangles;
     } else {
         // Fallback to old calculation for non-culling rendering
-        return 192 * cellCount; // 8x12 segments = 96 triangles, but comment says 192?
+        // Legacy system uses latitude/longitude sphere: 8x12 segments = 96 triangles
+        // Account for back face culling
+        totalTriangles = 96 * cellCount; // 96 triangles per sphere, all visible
     }
+    
+    // Update cache
+    cachedTriangleCount = totalTriangles;
+    
+    return totalTriangles;
 }
 
 int CellManager::getTotalVertexCount() const {
+    // Check if cache is valid
+    if (cachedVertexCount >= 0) {
+        return cachedVertexCount;
+    }
+    
+    // Calculate and cache the result
+    int totalVertices = 0;
+    
     // Unified culling system - use actual LOD distribution
     if (useFrustumCulling || useDistanceCulling || useLODSystem) {
-        int totalVertices = 0;
+        // Approximate icosphere vertex counts for each LOD level (subdivisions: 3, 2, 1, 0)
+        int icosphereVertices[4] = {642, 162, 42, 12}; // Approximate vertex counts
+        
         for (int lod = 0; lod < 4; lod++) {
-            int segments = SphereMesh::LOD_SEGMENTS[lod];
-            int verticesPerSphere = (segments + 1) * (segments + 1); // Vertices in a sphere mesh
-            totalVertices += verticesPerSphere * lodInstanceCounts[lod];
+            totalVertices += icosphereVertices[lod] * lodInstanceCounts[lod];
         }
-        return totalVertices;
     } else {
-        // Fallback to old calculation for non-culling rendering  
-        return 96 * cellCount; // Approximate vertex count for low-poly sphere
+        // Fallback to old calculation for non-culling rendering
+        // Legacy system uses latitude/longitude sphere: (8+1) * (12+1) = 9 * 13 = 117 vertices
+        totalVertices = 117 * cellCount; // More accurate vertex count for 8x12 latitude/longitude sphere
     }
+    
+    // Update cache
+    cachedVertexCount = totalVertices;
+    
+    return totalVertices;
 }
 
 // Unified Culling Implementation
@@ -2124,6 +2166,9 @@ void CellManager::runUnifiedCulling(const Camera& camera)
     // Read back LOD counts for rendering
     glGetNamedBufferSubData(unifiedCountBuffer, 0, sizeof(lodInstanceCounts), lodInstanceCounts);
     
+    // Invalidate cache since LOD counts have changed
+    invalidateStatisticsCache();
+    
     // Calculate total visible cells for statistics
     visibleCellCount = lodInstanceCounts[0] + lodInstanceCounts[1] + lodInstanceCounts[2] + lodInstanceCounts[3];
 }
@@ -2214,11 +2259,13 @@ void CellManager::renderCellsUnified(glm::vec2 resolution, const Camera& camera,
         useFrustumCulling = false;
         useDistanceCulling = false;
         useLODSystem = false;
+        invalidateStatisticsCache(); // Invalidate cache since culling settings changed
     } catch (...) {
         std::cerr << "Unknown exception in renderCellsUnified\n";
         useFrustumCulling = false;
         useDistanceCulling = false;
         useLODSystem = false;
+        invalidateStatisticsCache(); // Invalidate cache since culling settings changed
     }
 }
 

@@ -88,6 +88,16 @@ struct CellManager
     int getTotalTriangleCount() const;        // Calculate total triangles across all LOD levels
     int getTotalVertexCount() const;          // Calculate total vertices across all LOD levels
     
+    // Cached statistics for performance (updated when LOD counts change)
+    mutable int cachedTriangleCount = -1;     // -1 means invalid cache
+    mutable int cachedVertexCount = -1;       // -1 means invalid cache
+    
+    // Helper to invalidate cache when needed
+    void invalidateStatisticsCache() const {
+        cachedTriangleCount = -1;
+        cachedVertexCount = -1;
+    }
+    
     // Distance culling parameters
     glm::vec3 fogColor = config::defaultFogColor; // Atmospheric/fog color for distant cells
 

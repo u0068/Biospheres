@@ -13,7 +13,7 @@ public:
 
     // LOD level definitions
     static constexpr int LOD_LEVELS = 4;
-    static constexpr int LOD_SEGMENTS[LOD_LEVELS] = {32, 16, 8, 4}; // Latitude/longitude segments for each LOD
+    static constexpr int LOD_SEGMENTS[LOD_LEVELS] = {32, 16, 8, 4}; // DEPRECATED: Was used for latitude/longitude spheres, LOD system now uses icospheres
 
 private:
     // Per-LOD mesh data
