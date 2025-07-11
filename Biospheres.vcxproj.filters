@@ -90,7 +90,7 @@
     <ClCompile Include="third_party\imgui\imgui_tables.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="shaders\cell\management\FileName.cpp">
+    <ClCompile Include="src\simulation\cell\spatial_grid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -178,9 +178,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\cell\management\adhesion_connection.comp">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
     <None Include="shaders\rendering\debug\adhesion_line.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
@@ -256,5 +253,6 @@
     <None Include="shaders\rendering\sphere\sphere_lod.vert">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\cell\physics\adhesion_physics.comp" />
   </ItemGroup>
 </Project>

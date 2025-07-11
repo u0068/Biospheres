@@ -166,6 +166,7 @@
     <ClCompile Include="src\rendering\camera\camera.cpp" />
     <ClCompile Include="src\simulation\cell\cell_manager.cpp" />
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
+    <ClCompile Include="src\simulation\cell\spatial_grid.cpp" />
     <ClCompile Include="third_party\glad.c" />
     <ClCompile Include="src\rendering\core\glad_helpers.cpp" />
     <ClCompile Include="src\rendering\core\glfw_helpers.cpp" />
