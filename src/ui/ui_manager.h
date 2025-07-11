@@ -132,8 +132,10 @@ private:    // Helper to get window flags based on lock state
     struct SimulationKeyframe {
         float time = 0.0f;
         std::vector<ComputeCell> cellStates;
+        std::vector<AdhesionConnection> adhesionConnections; // Store adhesion connections
         GenomeData genome;
         int cellCount = 0;
+        int adhesionCount = 0; // Store adhesion count
         bool isValid = false;
     };
     

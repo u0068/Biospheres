@@ -47,7 +47,7 @@ struct GPUMode {
 struct AdhesionConnection {
     uint cellAIndex;      // Index of first cell in the connection
     uint cellBIndex;      // Index of second cell in the connection
-    uint parentID;        // Parent ID that both cells share
+    uint modeIndex;       // Mode index for the connection (to lookup adhesion settings)
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
 };
 

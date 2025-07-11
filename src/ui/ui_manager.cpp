@@ -1757,7 +1757,7 @@ void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
     
 
     
-    // Reset simulation
+    // Reset simulation (this clears adhesion connections)
     cellManager.resetSimulation();
     
     // Restore genome (make a non-const copy)
@@ -1781,6 +1781,14 @@ void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
         cellManager.updateSpatialGrid();
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
+    
+    // Restore adhesion connections AFTER cell restoration
+    if (keyframes[keyframeIndex].adhesionCount > 0) {
+        cellManager.restoreAdhesionConnections(keyframes[keyframeIndex].adhesionConnections, keyframes[keyframeIndex].adhesionCount);
+    }
+    
+    // Update CPU-side counts to match GPU state
+    cellManager.updateCounts();
     
     // Verify restoration by checking first cell position and age
     if (keyframes[keyframeIndex].cellCount > 0) {
@@ -1836,7 +1844,6 @@ void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyfra
     // Sync cell data from GPU to CPU to ensure we have latest state
     cellManager.syncCellPositionsFromGPU();
     
-       
     // Copy cell states
     keyframe.cellStates.clear();
     keyframe.cellStates.reserve(keyframe.cellCount);
@@ -1846,9 +1853,11 @@ void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyfra
         keyframe.cellStates.push_back(cellManager.getCellData(i));
     }
     
-    keyframe.isValid = true;
+    // Capture adhesion connections
+    keyframe.adhesionConnections = cellManager.getAdhesionConnections();
+    keyframe.adhesionCount = static_cast<int>(keyframe.adhesionConnections.size());
     
-
+    keyframe.isValid = true;
 }
 
 void UIManager::checkKeyframeTimingAccuracy()

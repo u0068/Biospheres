@@ -128,7 +128,7 @@ struct CellManager
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
     void syncCounterBuffers()
     {
-        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 2);
+        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 3);
     }
     void updateCounts()
     {
@@ -392,6 +392,10 @@ struct CellManager
 
     void restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell> &cells); // For keyframe restoration
     void setCPUCellData(const std::vector<ComputeCell> &cells); // For keyframe restoration
+    
+    // Adhesion connection methods for keyframe support
+    std::vector<AdhesionConnection> getAdhesionConnections() const; // Get current adhesion connections
+    void restoreAdhesionConnections(const std::vector<AdhesionConnection> &connections, int count); // Restore adhesion connections
 
 private:
     void runPhysicsCompute(float deltaTime);

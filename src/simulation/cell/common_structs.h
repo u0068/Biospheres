@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include "glad/glad.h"
 #include <glm/gtc/quaternion.hpp>
@@ -55,10 +56,10 @@ struct GPUMode {
 
 struct AdhesionConnection
 {
-    int cellIndexA; // Index of the first cell in the connection
-    int cellIndexB; // Index of the second cell in the connection
-	int modeIndex;  // Mode index for the connection (to look up adhesionSettings settings)
-	bool isActive; // Whether the connection is currently active
+    uint32_t cellAIndex; // Index of the first cell in the connection
+    uint32_t cellBIndex; // Index of the second cell in the connection
+    uint32_t modeIndex;  // Mode index for the connection (to look up adhesion settings)
+    uint32_t isActive;   // Whether the connection is currently active (1 = active, 0 = inactive)
 };
 
 struct ChildSettings

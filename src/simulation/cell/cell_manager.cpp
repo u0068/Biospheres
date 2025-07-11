@@ -386,8 +386,8 @@ void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell>
     
     // Update cell count directly
     cellCount = newCellCount;
-    GLuint counts[2] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount) }; // cellCount, adhesionCount
-    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 2, counts);
+    GLuint counts[3] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount), static_cast<GLuint>(pendingCellCount) }; // cellCount, adhesionCount, pendingCellCount
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 3, counts);
     
     // Sync staging buffer
     syncCounterBuffers();
@@ -2152,4 +2152,82 @@ void CellManager::cleanupAdhesionConnectionSystem()
         adhesionConnectionBuffer = 0;
     }
     adhesionCount = 0;
+}
+
+// ============================================================================
+// ADHESION CONNECTION KEYFRAME SUPPORT
+// ============================================================================
+
+std::vector<AdhesionConnection> CellManager::getAdhesionConnections() const
+{
+    std::vector<AdhesionConnection> connections;
+    
+    if (adhesionCount == 0) {
+        return connections;
+    }
+    
+    // Ensure GPU operations are complete
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
+    
+    // Create a staging buffer for adhesion connections
+    GLuint stagingBuffer;
+    glCreateBuffers(1, &stagingBuffer);
+    glNamedBufferStorage(
+        stagingBuffer,
+        adhesionCount * sizeof(AdhesionConnection),
+        nullptr,
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
+    );
+    
+    // Copy adhesion connections from GPU to staging buffer
+    glCopyNamedBufferSubData(adhesionConnectionBuffer, stagingBuffer, 0, 0, adhesionCount * sizeof(AdhesionConnection));
+    
+    // Map the staging buffer for reading
+    void* mappedPtr = glMapNamedBufferRange(stagingBuffer, 0, adhesionCount * sizeof(AdhesionConnection),
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+    
+    if (mappedPtr) {
+        AdhesionConnection* connectionData = static_cast<AdhesionConnection*>(mappedPtr);
+        
+        // Copy connections to vector
+        connections.reserve(adhesionCount);
+        for (int i = 0; i < adhesionCount; i++) {
+            connections.push_back(connectionData[i]);
+        }
+        
+        glUnmapNamedBuffer(stagingBuffer);
+    }
+    
+    // Cleanup staging buffer
+    glDeleteBuffers(1, &stagingBuffer);
+    
+    return connections;
+}
+
+void CellManager::restoreAdhesionConnections(const std::vector<AdhesionConnection> &connections, int count)
+{
+    if (count == 0) {
+        adhesionCount = 0;
+        // Clear the adhesion connection buffer
+        glClearNamedBufferData(adhesionConnectionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        return;
+    }
+    
+    // Update adhesion count
+    adhesionCount = count;
+    
+    // Update the adhesion connection buffer
+    glNamedBufferSubData(adhesionConnectionBuffer,
+                         0,
+                         count * sizeof(AdhesionConnection),
+                         connections.data());
+    
+    // Update the GPU cell count buffer to include adhesion count
+    GLuint counts[3] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount), static_cast<GLuint>(pendingCellCount) };
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 3, counts);
+    
+    // Ensure GPU buffers are synchronized
+    addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
 }
