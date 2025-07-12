@@ -91,7 +91,7 @@ uniform float u_deltaTime;
 uniform int u_maxCells;
 uniform int u_maxAdhesions;
 //uniform uint u_frameNumber;
-int u_frameNumber = 1; // Placeholder for frame number, can be set externally
+int u_frameNumber = 1; // Placeholder for frame number
 
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -246,7 +246,7 @@ void main() {
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
     for (int i = 0; i < 20; ++i) {
-        childA.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
+        childB.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
 
     // Inherit adhesions for the new child cells
