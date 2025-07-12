@@ -9,15 +9,16 @@ struct ComputeCell {
     vec4 positionAndMass; // x, y, z, mass
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
     // Internal:
     vec4 signallingSubstances; // 4 substances for now
-    int modeIndex;
+    int modeIndex;  // absolute index of the cell's mode
     float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 // Shader storage buffer objects
@@ -37,9 +38,11 @@ layout(std430, binding = 3) restrict buffer CellOutputBuffer {
     ComputeCell outputCells[];  // Current frame cell data (write-only)
 };
 
-layout(std430, binding = 4) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+layout(std430, binding = 4) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
 // Uniforms
@@ -77,7 +80,7 @@ bool isValidGridPos(ivec3 gridPos) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
       // Check bounds
-    if (index >= cellCount) {
+    if (index >= totalCellCount) {
         return;
     }
       // Skip physics for dragged cell - it will be positioned directly
@@ -133,7 +136,7 @@ void main() {
                     uint otherIndex = gridCells[gridBufferIndex];
                     
                     // Skip self and invalid indices
-                    if (otherIndex == index || otherIndex >= cellCount) {
+                    if (otherIndex == index || otherIndex >= totalCellCount) {
                         continue;
                     }
                     

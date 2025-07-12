@@ -49,7 +49,7 @@ void CellManager::initializeSpatialGrid()
 
 void CellManager::updateSpatialGrid()
 {
-    if (cellCount == 0)
+    if (totalCellCount == 0)
         return;
     TimerGPU timer("Spatial Grid Update");
 
@@ -144,7 +144,7 @@ void CellManager::runGridAssign()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // OPTIMIZED: Use larger work groups for better memory coalescing
-    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256
+    GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256
     gridAssignShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -179,7 +179,7 @@ void CellManager::runGridInsert()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // OPTIMIZED: Use larger work groups for better memory coalescing
-    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256
+    GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256
     gridInsertShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);

@@ -86,7 +86,7 @@ void CellManager::updateFrustum(const Camera& camera, float fov, float aspectRat
 
 void CellManager::runUnifiedCulling(const Camera& camera)
 {
-    if (cellCount == 0) return;
+    if (totalCellCount == 0) return;
     
     TimerGPU timer("Unified Culling");
     
@@ -132,7 +132,7 @@ void CellManager::runUnifiedCulling(const Camera& camera)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, unifiedCountBuffer);      // LOD counts
     
     // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64;
+    GLuint numGroups = (totalCellCount + 63) / 64;
     unifiedCullShader->dispatch(numGroups, 1, 1);
     
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -149,7 +149,7 @@ void CellManager::runUnifiedCulling(const Camera& camera)
 
 void CellManager::renderCellsUnified(glm::vec2 resolution, const Camera& camera, bool wireframe)
 {
-    if (cellCount == 0) {
+    if (totalCellCount == 0) {
         return;
     }
 

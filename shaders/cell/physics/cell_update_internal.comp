@@ -25,22 +25,27 @@ struct GPUMode {
     int genomeOffset;
     AdhesionSettings adhesionSettings;
     int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int padding[3];          // Padding to maintain alignment
+    int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
+    int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
+    int padding[1];         // Padding to maintain alignment
 };
 
+// Cell data structure for compute shader
 struct ComputeCell {
-    vec4 positionAndMass;
-    vec4 velocity;
-    vec4 acceleration;
-    vec4 orientation;
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
-
-    vec4 signallingSubstances;
-    int modeIndex;
-    float age;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells
@@ -63,17 +68,23 @@ layout(std430, binding = 2) restrict buffer WriteCellBuffer {
     ComputeCell outputCells[];
 };
 
-layout(std430, binding = 3) buffer CellAdditionQueue {
-    ComputeCell newCells[];
+layout(std430, binding = 3) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
-layout(std430, binding = 4) coherent buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
-};
-
-layout(std430, binding = 5) buffer AdhesionConnectionBuffer {
+layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
     AdhesionConnection connections[];
+};
+
+layout(std430, binding = 5) buffer freeCellSlotBuffer {
+    uint freeCellSlotIndices[];
+};
+
+layout(std430, binding = 6) buffer freeAdhesionSlotBuffer {
+    uint freeAdhesionSlotIndices[];
 };
 
 uniform float u_deltaTime;
@@ -111,17 +122,40 @@ float hash11(uint n) {
 }
 
 // Create a small random quaternion for a tiny rotation (angle in radians)
-vec4 smallRandomQuat(float angle, float rand1, float rand2, float rand3) {
+vec4 smallRandomQuat(float angle, uint seed) {
     // Random axis
+    float rand1 = hash11(seed * 3u + 0u);
+    float rand2 = hash11(seed * 3u + 1u);
+    float rand3 = hash11(seed * 3u + 2u);
     vec3 axis = normalize(vec3(rand1, rand2, rand3) * 2.0 - 1.0);
     float halfAngle = angle * 0.5;
     float s = sin(halfAngle);
     return normalize(vec4(axis * s, cos(halfAngle)));
 }
 
+uint getNewAdhesionIndex() {
+    uint reservation = atomicAdd(liveAdhesionCount, 1);
+    uint adhesionIndex = -1; // Default invalid index
+    if (reservation < totalAdhesionCount) {
+        // Reuse a slot from the free stack
+        uint topIndex = totalAdhesionCount - reservation - 1;
+        adhesionIndex = freeAdhesionSlotIndices[topIndex];
+    } else {
+        // Allocate a new slot
+        adhesionIndex = atomicAdd(totalAdhesionCount, 1) - 1;
+        if (adhesionIndex >= u_maxAdhesions) {
+            // No space for new adhesions, cancel the split and clamp counts
+            atomicMin(liveAdhesionCount, u_maxAdhesions);
+            atomicMin(totalAdhesionCount, u_maxAdhesions);
+            return -1; // Indicate failure to allocate
+        }
+    }
+    return adhesionIndex;
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= cellCount) {
+    if (index >= totalCellCount) {
         return;
     }
     ComputeCell cell = inputCells[index]; // Read from current buffer
@@ -134,9 +168,12 @@ void main() {
         return;
     }
     
-    uint newIndex = atomicAdd(cellCount, 1);
+    // When dead cells are implemented, update this to reuse slots
+    uint newIndex = atomicAdd(totalCellCount, 1);
+    atomicAdd(liveCellCount, 1);
     if (newIndex >= u_maxCells) {
-        atomicMin(cellCount, u_maxCells); // Clamp cell count
+        atomicMin(totalCellCount, u_maxCells); // Clamp cell count
+       atomicMin(liveCellCount, u_maxCells); // Clamp cell count
         // No space for new cells, cancel the split
         outputCells[index] = cell;
         return;
@@ -156,15 +193,10 @@ void main() {
 
     // Add a tiny random variance to each child orientation (0.001 degree = 0.001 * PI / 180 radians)
     float tinyAngle = 0.001 * 0.017453292519943295; // radians
+
     // Use cell index and newIndex to generate different seeds for each child
-    float rA1 = hash11(index * 3u + 0u);
-    float rA2 = hash11(index * 3u + 1u);
-    float rA3 = hash11(index * 3u + 2u);
-    float rB1 = hash11(newIndex * 3u + 0u);
-    float rB2 = hash11(newIndex * 3u + 1u);
-    float rB3 = hash11(newIndex * 3u + 2u);
-    vec4 q_varA = smallRandomQuat(tinyAngle, rA1, rA2, rA3);
-    vec4 q_varB = smallRandomQuat(tinyAngle, rB1, rB2, rB3);
+    vec4 q_varA = smallRandomQuat(tinyAngle, index);
+    vec4 q_varB = smallRandomQuat(tinyAngle, newIndex);
     q_childA = normalize(quatMultiply(q_childA, q_varA));
     q_childB = normalize(quatMultiply(q_childB, q_varB));
 
@@ -183,22 +215,91 @@ void main() {
     // Store new cells
     outputCells[index] = childA;
     outputCells[newIndex] = childB;
+    
+    return;
 
-    // Now we need to add the adhesion connection
+    // Inherit adhesions for the new child cells
+    for (int i = 0; i < 20; ++i) {
+        int oldAdhesionIndex = cell.adhesionIndices[i];
+        if (oldAdhesionIndex < 0) continue;
+
+        AdhesionConnection oldConnection = connections[oldAdhesionIndex];
+        if (oldConnection.isActive == 0) continue;
+
+        // Determine who the parent was connected to
+        uint neighborIndex = (oldConnection.cellAIndex == index)
+            ? oldConnection.cellBIndex
+            : oldConnection.cellAIndex;
+
+        // Remove the old connection
+        oldConnection.isActive = 0;
+        connections[oldAdhesionIndex] = oldConnection; // Mark as inactive
+        // Update free adhesion slot buffer
+        uint reservation = atomicAdd(liveAdhesionCount, -1);
+        // Allocate the slot at the top of the free stack
+        uint topIndex = totalAdhesionCount - reservation - 1;
+        freeAdhesionSlotIndices[topIndex] = oldAdhesionIndex;
+
+        // Child A keeps adhesion
+        if (mode.childAKeepAdhesion == 1) {
+            uint newIdx = getNewAdhesionIndex();
+            if (newIdx != uint(-1)) {
+                connections[newIdx] = AdhesionConnection(
+                    index,
+                    neighborIndex,
+                    oldConnection.modeIndex,
+                    1
+                );
+                // Add to childA's adhesionIndices
+                for (int j = 0; j < 20; ++j) {
+                    if (childA.adhesionIndices[j] < 0) {
+                        childA.adhesionIndices[j] = int(newIdx);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Child B keeps adhesion
+        if (mode.childBKeepAdhesion == 1) {
+            uint newIdx = getNewAdhesionIndex();
+            if (newIdx != uint(-1)) {
+                connections[newIdx] = AdhesionConnection(
+                    newIndex, // this is the queue-allocated child
+                    neighborIndex,
+                    oldConnection.modeIndex,
+                    1
+                );
+                // Add to childB's adhesionIndices
+                for (int j = 0; j < 20; ++j) {
+                    if (childB.adhesionIndices[j] < 0) {
+                        childB.adhesionIndices[j] = int(newIdx);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Now we need to add the adhesion connection between the children
     if (mode.parentMakeAdhesion == 0) {
         return;
     }
+
+    uint adhesionIndex = getNewAdhesionIndex();
+    if (adhesionIndex == -1) {
+        // Failed to reserve an adhesion index, don't create adhesion
+        // In the future, make this prevent the split instead
+        return;
+    }
+
     AdhesionConnection newAdhesion;
     newAdhesion.cellAIndex = index; // Parent cell index
     newAdhesion.cellBIndex = newIndex; // New child cell index
     newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
     newAdhesion.isActive = 1; // Active connection
 
-    // Reserve index for adhesion connection
-    uint adhesionIndex = atomicAdd(adhesionCount, 1);
-    if (adhesionIndex > u_maxAdhesions) {
-        atomicMin(adhesionCount, u_maxAdhesions); // Clamp adhesion count
-        return; // No space for new adhesion connections
-    }
     connections[adhesionIndex] = newAdhesion;
 }
+
+
