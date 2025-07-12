@@ -34,11 +34,6 @@ struct CellManager
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
 
-    // NEW: Stream compaction buffers
-    GLuint deadMarkersBuffer{};      // Buffer for marking dead cells (1 = dead, 0 = alive)
-    GLuint prefixSumBuffer{};        // Buffer for prefix sum calculation
-    GLuint deadIndicesBuffer{};      // Buffer for sorted list of dead cell indices
-
     // Cell data staging buffer for CPU reads (avoids GPU->CPU transfer warnings)
     GLuint stagingCellBuffer{};      // CPU-accessible cell data buffer
     void* mappedCellPtr = nullptr;   // Pointer to the cell data staging buffer
@@ -113,9 +108,6 @@ struct CellManager
     Shader* internalUpdateShader = nullptr;
     Shader* cellAdditionShader = nullptr;
 
-    // NEW: Stream compaction compute shader
-    Shader* streamCompactShader = nullptr; // Compact cells using prefix sum
-
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
     Shader* gridAssignShader = nullptr;    // Assign cells to grid
@@ -132,13 +124,11 @@ struct CellManager
     int pendingCellCount{0};     // Number of cells pending addition by CPU
     // Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
     int adhesionCount{ 0 };
-    // NEW: Live count tracking for efficient thread dispatch
-    int liveCellCount{0};           // Number of actually live cells (excluding dead ones)
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
     void syncCounterBuffers()
     {
-        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 4);
+        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 3);
     }
     void updateCounts()
     {
@@ -149,7 +139,6 @@ struct CellManager
 
         cellCount = countPtr[0];
         adhesionCount = countPtr[1]; // This is the number of adhesionSettings connections, not cells
-        liveCellCount = countPtr[2]; // NEW: Read live cell count
     }
 
     // Configuration
@@ -224,11 +213,6 @@ struct CellManager
     void addGenomeToBuffer(GenomeData& genomeData) const;
     void updateCells(float deltaTime);
     void cleanup();
-
-    // NEW: Stream compaction functions
-    void initializeStreamCompactionSystem();
-    void cleanupStreamCompactionSystem();
-    void performStreamCompaction();
 
     // Spatial partitioning functions
     void initializeSpatialGrid();
