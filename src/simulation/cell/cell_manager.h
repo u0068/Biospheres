@@ -132,7 +132,7 @@ struct CellManager
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
     void syncCounterBuffers()
     {
-        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 3);
+        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * config::COUNTER_NUMBER);
     }
     void updateCounts()
     {

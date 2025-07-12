@@ -259,8 +259,8 @@ void CellManager::restoreAdhesionConnections(const std::vector<AdhesionConnectio
                          count * sizeof(AdhesionConnection),
                          connections.data());
     
-    // Update the GPU cell count buffer to include adhesion count
-    GLuint counts[4] = { static_cast<GLuint>(totalCellCount), static_cast<GLuint>(totalAdhesionCount), static_cast<GLuint>(pendingCellCount) };
+    // Update the GPU cell count buffer
+    GLuint counts[4] = { static_cast<GLuint>(totalCellCount), static_cast<GLuint>(liveCellCount), static_cast<GLuint>(totalAdhesionCount), static_cast<GLuint>(liveAdhesionCount) };
     glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
     
     // Ensure GPU buffers are synchronized

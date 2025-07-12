@@ -286,19 +286,18 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &gpuCellCountBuffer);
     glNamedBufferStorage(
         gpuCellCountBuffer,
-        sizeof(GLuint) * 4, // stores current cell count and pending cell count, adhesionSettings count
+        sizeof(GLuint) * config::COUNTER_NUMBER, // stores current cell counts and adhesion counts
         nullptr,
         GL_DYNAMIC_STORAGE_BIT
     );
-
     glCreateBuffers(1, &stagingCellCountBuffer);
     glNamedBufferStorage(
         stagingCellCountBuffer,
-        sizeof(GLuint) * 4,
+        sizeof(GLuint) * config::COUNTER_NUMBER,
         nullptr,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
     );
-    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * 4,
+    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * config::COUNTER_NUMBER,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     countPtr = static_cast<GLuint*>(mappedPtr);
 
@@ -412,8 +411,8 @@ void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell>
     
     // Update cell count directly
     totalCellCount = newCellCount;
-    GLuint counts[4] = { static_cast<GLuint>(totalCellCount), static_cast<GLuint>(totalAdhesionCount), static_cast<GLuint>(pendingCellCount) }; // totalCellCount, totalAdhesionCount, pendingCellCount
-    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
+    GLuint counts[config::COUNTER_NUMBER] = { static_cast<GLuint>(totalCellCount), static_cast<GLuint>(totalAdhesionCount), static_cast<GLuint>(pendingCellCount) }; // totalCellCount, totalAdhesionCount, pendingCellCount
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * config::COUNTER_NUMBER, counts);
     
     // Sync staging buffer
     syncCounterBuffers();
@@ -483,6 +482,8 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         
         // Store adhesionSettings flag
         gmode.parentMakeAdhesion = mode.parentMakeAdhesion;
+        gmode.childAKeepAdhesion = 1;//mode.childA.keepAdhesion;
+        gmode.childBKeepAdhesion = 1;//mode.childB.keepAdhesion;
 
         // Store adhesionSettings settings
         gmode.adhesionSettings = mode.adhesionSettings;

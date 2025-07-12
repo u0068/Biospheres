@@ -38,8 +38,10 @@ layout(std430, binding = 1) buffer GizmoBuffer {
 
 // Cell count
 layout(std430, binding = 2) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
 // Convert quaternion to rotation matrix
@@ -60,7 +62,7 @@ mat3 quatToMat3(vec4 quat) {
 void main() {
     uint cellIndex = gl_GlobalInvocationID.x;
     
-    if (cellIndex >= cellCount) return;
+    if (cellIndex >= totalCellCount) return;
     
     ComputeCell cell = cells[cellIndex];
     vec3 cellPos = cell.positionAndMass.xyz;
