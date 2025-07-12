@@ -16,18 +16,17 @@ void Camera::processInput(Input &input, float deltaTime)
     if (input.isKeyPressed(GLFW_KEY_LEFT_SHIFT))
         velocity *= sprintMultiplier;
 
-    // Roll controls (Q and E for camera roll) - handle first so vectors are updated
-    float rollSpeed = 45.0f * deltaTime; // 45 degrees per second (reduced from 90)
-    bool rollChanged = false;
+    // Roll controls (Q and E for camera roll)
+    float rollSpeed = 45.0f * deltaTime; // 45 degrees per second
     if (input.isKeyPressed(GLFW_KEY_Q))
     {
         roll += rollSpeed;
-        rollChanged = true;
+        updateCameraVectors();
     }
     if (input.isKeyPressed(GLFW_KEY_E))
     {
         roll -= rollSpeed;
-        rollChanged = true;
+        updateCameraVectors();
     }
 
     // Handle mouse input for camera rotation
@@ -37,13 +36,13 @@ void Camera::processInput(Input &input, float deltaTime)
     {
         // Start dragging
         isDragging = true;
-        lastMousePos = input.getMousePosition(false); // Don't flip Y for mouse tracking        // Hide cursor when starting to drag
+        lastMousePos = input.getMousePosition(false);
         glfwSetInputMode(input.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
     else if (!isRightMousePressed && wasRightMousePressed)
     {
         // Stop dragging
-        isDragging = false; // Show cursor when stopping drag
+        isDragging = false;
         glfwSetInputMode(input.getWindow(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
 
@@ -58,12 +57,6 @@ void Camera::processInput(Input &input, float deltaTime)
 
     wasRightMousePressed = isRightMousePressed;
 
-    // Update camera vectors only if roll changed (mouse movement handles its own vector updates)
-    if (rollChanged)
-    {
-        updateCameraVectors();
-    }
-
     // Movement controls (WASD for forward/back/left/right, Space/C for up/down)
     // Use camera's actual orientation vectors so movement follows full camera orientation (including roll)
     glm::vec3 moveDirection(0.0f);
@@ -77,9 +70,9 @@ void Camera::processInput(Input &input, float deltaTime)
     if (input.isKeyPressed(GLFW_KEY_D))
         moveDirection += right;
     if (input.isKeyPressed(GLFW_KEY_SPACE))
-        moveDirection += up; // Move up relative to camera orientation
+        moveDirection += up;
     if (input.isKeyPressed(GLFW_KEY_C))
-        moveDirection -= up; // Move down relative to camera orientation
+        moveDirection -= up;
 
     // Apply movement
     if (glm::length(moveDirection) > 0.0f)
@@ -93,38 +86,43 @@ void Camera::processMouseMovement(float xOffset, float yOffset)
     xOffset *= mouseSensitivity;
     yOffset *= mouseSensitivity;
 
-    // Invert Y axis for natural mouse look (moving mouse up should look up)
+    // Invert Y axis for natural mouse look
     yOffset = -yOffset;
 
-    // Apply inverted look if enabled (double inversion)
+    // Apply inverted look if enabled
     if (invertLook)
     {
         yOffset = -yOffset;
     }
 
+    // Convert mouse movement to camera's local coordinate system
+    // This ensures mouse movement follows the camera's orientation, including roll
+    
+    // Get the current camera orientation as a rotation matrix
+    glm::mat3 cameraRotation = glm::mat3(right, up, front);
+    
+    // Create rotation matrices for the mouse movement
     // Rotate around the camera's local up axis (horizontal mouse movement)
-    glm::mat4 yawRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-xOffset), up);
-
-    // Rotate around the camera's local right axis (vertical mouse movement)
-    glm::mat4 pitchRotation = glm::rotate(glm::mat4(1.0f), glm::radians(yOffset), right);
-
-    // Apply pitch rotation first, then yaw rotation to the front vector
-    glm::vec4 newFront = yawRotation * pitchRotation * glm::vec4(front, 0.0f);
-    front = glm::normalize(glm::vec3(newFront));
-
-    // Also rotate the up vector to maintain proper orientation
-    glm::vec4 newUp = yawRotation * pitchRotation * glm::vec4(up, 0.0f);
-    up = glm::normalize(glm::vec3(newUp));
-
-    // Update right vector based on new front and up
-    right = glm::normalize(glm::cross(front, up));
-
-    // Update Euler angles to match the new orientation (for consistency)
+    glm::mat3 yawRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-xOffset), up);
+    // Rotate around the camera's local right axis (vertical mouse movement)  
+    glm::mat3 pitchRotation = glm::rotate(glm::mat4(1.0f), glm::radians(yOffset), right);
+    
+    // Apply rotations to the front vector
+    glm::vec3 newFront = pitchRotation * yawRotation * front;
+    newFront = glm::normalize(newFront);
+    
+    // Update Euler angles to match the new front vector
     // Extract yaw from the front vector
-    yaw = glm::degrees(atan2(front.z, front.x));
-
+    yaw = glm::degrees(atan2(newFront.z, newFront.x));
+    
     // Extract pitch from the front vector
-    pitch = glm::degrees(asin(front.y));
+    pitch = glm::degrees(asin(newFront.y));
+    
+    // Clamp pitch to prevent gimbal lock
+    pitch = std::clamp(pitch, -89.0f, 89.0f);
+    
+    // Update camera vectors based on new Euler angles
+    updateCameraVectors();
 }
 
 glm::mat4 Camera::getViewMatrix() const
@@ -134,19 +132,26 @@ glm::mat4 Camera::getViewMatrix() const
 
 void Camera::updateCameraVectors()
 {
-    // Calculate the new front vector from Euler angles
-    glm::vec3 newFront;
-    newFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    newFront.y = sin(glm::radians(pitch));
-    newFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-    front = glm::normalize(newFront);
+    // Calculate the base front vector from yaw and pitch (no roll)
+    glm::vec3 baseFront;
+    baseFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    baseFront.y = sin(glm::radians(pitch));
+    baseFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    baseFront = glm::normalize(baseFront);
 
-    // Re-calculate the right and up vector
-    glm::vec3 tempRight = glm::normalize(glm::cross(front, worldUp));
-    glm::vec3 tempUp = glm::normalize(glm::cross(tempRight, front));
+    // Calculate base right and up vectors (no roll)
+    glm::vec3 baseRight = glm::normalize(glm::cross(baseFront, worldUp));
+    glm::vec3 baseUp = glm::normalize(glm::cross(baseRight, baseFront));
 
-    // Apply roll rotation
+    // Apply roll rotation to the base vectors
     float rollRad = glm::radians(roll);
-    right = tempRight * cos(rollRad) + tempUp * sin(rollRad);
-    up = tempUp * cos(rollRad) - tempRight * sin(rollRad);
+    float cosRoll = cos(rollRad);
+    float sinRoll = sin(rollRad);
+
+    // Rotate the up and right vectors around the front vector
+    right = baseRight * cosRoll + baseUp * sinRoll;
+    up = baseUp * cosRoll - baseRight * sinRoll;
+    
+    // Front vector remains the same (roll doesn't affect where we're looking)
+    front = baseFront;
 }
