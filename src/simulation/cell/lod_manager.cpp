@@ -77,7 +77,7 @@ void CellManager::cleanupLODSystem()
 
 void CellManager::runLODCompute(const Camera& camera)
 {
-    if (cellCount == 0) return;
+    if (totalCellCount == 0) return;
     
     TimerGPU timer("LOD Instance Extraction");
     
@@ -105,7 +105,7 @@ void CellManager::runLODCompute(const Camera& camera)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, lodCountBuffer);        // LOD counts
     
     // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64;
+    GLuint numGroups = (totalCellCount + 63) / 64;
     lodComputeShader->dispatch(numGroups, 1, 1);
     
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -119,7 +119,7 @@ void CellManager::runLODCompute(const Camera& camera)
 
 void CellManager::updateLODLevels(const Camera& camera)
 {
-    if (!useLODSystem || cellCount == 0) return;
+    if (!useLODSystem || totalCellCount == 0) return;
     
     // Use unified culling system for all cases
     runUnifiedCulling(camera);
@@ -154,7 +154,7 @@ int CellManager::getTotalTriangleCount() const {
         // Fallback to old calculation for non-culling rendering
         // Legacy system uses latitude/longitude sphere: 8x12 segments = 96 triangles
         // Account for back face culling
-        totalTriangles = 96 * cellCount; // 96 triangles per sphere, all visible
+        totalTriangles = 96 * totalCellCount; // 96 triangles per sphere, all visible
     }
     
     // Update cache
@@ -183,7 +183,7 @@ int CellManager::getTotalVertexCount() const {
     } else {
         // Fallback to old calculation for non-culling rendering
         // Legacy system uses latitude/longitude sphere: (8+1) * (12+1) = 9 * 13 = 117 vertices
-        totalVertices = 117 * cellCount; // More accurate vertex count for 8x12 latitude/longitude sphere
+        totalVertices = 117 * totalCellCount; // More accurate vertex count for 8x12 latitude/longitude sphere
     }
     
     // Update cache

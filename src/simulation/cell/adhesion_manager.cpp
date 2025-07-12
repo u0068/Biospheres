@@ -23,7 +23,7 @@ void CellManager::initializeAdhesionLineBuffers()
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &adhesionLineBuffer);
     glNamedBufferData(adhesionLineBuffer,
-        cellLimit * 2 * sizeof(glm::vec4) * 2, // 2 vertices per line, position + color for each vertex
+        cellLimit * config::MAX_ADHESIONS_PER_CELL * sizeof(glm::vec4) * 2, // 2 vertices per line, position + color for each vertex
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for adhesionSettings line rendering
@@ -32,7 +32,7 @@ void CellManager::initializeAdhesionLineBuffers()
     // Create VBO that will be bound to the adhesionSettings line buffer
     glCreateBuffers(1, &adhesionLineVBO);
     glNamedBufferData(adhesionLineVBO,
-        cellLimit * 2 * sizeof(glm::vec4) * 2,
+        cellLimit * config::MAX_ADHESIONS_PER_CELL * sizeof(glm::vec4) * 2,
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
@@ -51,7 +51,7 @@ void CellManager::initializeAdhesionLineBuffers()
 
 void CellManager::updateAdhesionLineData()
 {
-    if (adhesionCount == 0) return;
+    if (totalAdhesionCount == 0) return;
 
     TimerGPU timer("Adhesion Data Update");
 
@@ -67,7 +67,7 @@ void CellManager::updateAdhesionLineData()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
 
     // Dispatch compute shader
-    GLuint numGroups = (adhesionCount + 63) / 64;
+    GLuint numGroups = (totalAdhesionCount + 63) / 64;
     adhesionLineExtractShader->dispatch(numGroups, 1, 1);
 
     // Use targeted barrier for buffer copy
@@ -75,14 +75,14 @@ void CellManager::updateAdhesionLineData()
     flushBarriers();
 
     // Copy data from compute buffer to VBO for rendering
-    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, adhesionCount * 2 * sizeof(glm::vec4) * 2);
+    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, totalAdhesionCount * 2 * sizeof(glm::vec4) * 2);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
 {
-    if (!showAdhesionLines || adhesionCount == 0) return;
+    if (!showAdhesionLines || totalAdhesionCount == 0) return;
 
     updateAdhesionLineData();
 
@@ -111,7 +111,7 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
 
     // Render gizmo lines
     glBindVertexArray(adhesionLineVAO);
-    glDrawArrays(GL_LINES, 0, adhesionCount * 2); // 2 vertices per adhesionSettings
+    glDrawArrays(GL_LINES, 0, totalAdhesionCount * 2); // 2 vertices per adhesionSettings
     glBindVertexArray(0);
     glLineWidth(1.0f);
 }
@@ -144,15 +144,15 @@ void CellManager::initializeAdhesionConnectionSystem()
     // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive (4 uints = 16 bytes)
     glCreateBuffers(1, &adhesionConnectionBuffer);
     glNamedBufferData(adhesionConnectionBuffer,
-        cellLimit * sizeof(AdhesionConnection),
+        cellLimit * config::MAX_ADHESIONS_PER_CELL * sizeof(AdhesionConnection) / 2,
         nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for connection count
     
-    std::cout << "Initialized adhesionSettings connection system with capacity for " << cellLimit << " connections\n";
+    std::cout << "Initialized adhesionSettings connection system with capacity for " << cellLimit * config::MAX_ADHESIONS_PER_CELL << " connections\n";
 }
 
 void CellManager::runAdhesionPhysics()
 {
-    if (cellCount == 0) return;
+    if (totalCellCount == 0) return;
     
     TimerGPU timer("Adhesion Physics");
     
@@ -163,7 +163,7 @@ void CellManager::runAdhesionPhysics()
     adhesionPhysicsShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     adhesionPhysicsShader->setFloat("u_worldSize", config::WORLD_SIZE);
     adhesionPhysicsShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
-    adhesionPhysicsShader->setInt("u_maxConnections", cellLimit);
+    adhesionPhysicsShader->setInt("u_maxConnections", cellLimit * config::MAX_ADHESIONS_PER_CELL);
     
     // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer()); // Cell data
@@ -174,7 +174,7 @@ void CellManager::runAdhesionPhysics()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, gpuCellCountBuffer); // Cell count
     
     // Dispatch compute shader
-    GLuint numGroups = (adhesionCount + 255) / 256;
+    GLuint numGroups = (totalAdhesionCount + 255) / 256;
     adhesionPhysicsShader->dispatch(numGroups, 1, 1);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -187,7 +187,7 @@ void CellManager::cleanupAdhesionConnectionSystem()
         glDeleteBuffers(1, &adhesionConnectionBuffer);
         adhesionConnectionBuffer = 0;
     }
-    adhesionCount = 0;
+    totalAdhesionCount = 0;
 }
 
 // ============================================================================
@@ -198,7 +198,7 @@ std::vector<AdhesionConnection> CellManager::getAdhesionConnections() const
 {
     std::vector<AdhesionConnection> connections;
     
-    if (adhesionCount == 0) {
+    if (totalAdhesionCount == 0) {
         return connections;
     }
     
@@ -211,24 +211,24 @@ std::vector<AdhesionConnection> CellManager::getAdhesionConnections() const
     glCreateBuffers(1, &stagingBuffer);
     glNamedBufferStorage(
         stagingBuffer,
-        adhesionCount * sizeof(AdhesionConnection),
+        totalAdhesionCount * sizeof(AdhesionConnection),
         nullptr,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
     );
     
     // Copy adhesion connections from GPU to staging buffer
-    glCopyNamedBufferSubData(adhesionConnectionBuffer, stagingBuffer, 0, 0, adhesionCount * sizeof(AdhesionConnection));
+    glCopyNamedBufferSubData(adhesionConnectionBuffer, stagingBuffer, 0, 0, totalAdhesionCount * sizeof(AdhesionConnection));
     
     // Map the staging buffer for reading
-    void* mappedPtr = glMapNamedBufferRange(stagingBuffer, 0, adhesionCount * sizeof(AdhesionConnection),
+    void* mappedPtr = glMapNamedBufferRange(stagingBuffer, 0, totalAdhesionCount * sizeof(AdhesionConnection),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     
     if (mappedPtr) {
         AdhesionConnection* connectionData = static_cast<AdhesionConnection*>(mappedPtr);
         
         // Copy connections to vector
-        connections.reserve(adhesionCount);
-        for (int i = 0; i < adhesionCount; i++) {
+        connections.reserve(totalAdhesionCount);
+        for (int i = 0; i < totalAdhesionCount; i++) {
             connections.push_back(connectionData[i]);
         }
         
@@ -244,14 +244,14 @@ std::vector<AdhesionConnection> CellManager::getAdhesionConnections() const
 void CellManager::restoreAdhesionConnections(const std::vector<AdhesionConnection> &connections, int count)
 {
     if (count == 0) {
-        adhesionCount = 0;
+        totalAdhesionCount = 0;
         // Clear the adhesion connection buffer
         glClearNamedBufferData(adhesionConnectionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
         return;
     }
     
     // Update adhesion count
-    adhesionCount = count;
+    totalAdhesionCount = count;
     
     // Update the adhesion connection buffer
     glNamedBufferSubData(adhesionConnectionBuffer,
@@ -259,9 +259,9 @@ void CellManager::restoreAdhesionConnections(const std::vector<AdhesionConnectio
                          count * sizeof(AdhesionConnection),
                          connections.data());
     
-    // Update the GPU cell count buffer to include adhesion count
-    GLuint counts[3] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount), static_cast<GLuint>(pendingCellCount) };
-    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 3, counts);
+    // Update the GPU cell count buffer
+    GLuint counts[4] = { static_cast<GLuint>(totalCellCount), static_cast<GLuint>(liveCellCount), static_cast<GLuint>(totalAdhesionCount), static_cast<GLuint>(liveAdhesionCount) };
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
     
     // Ensure GPU buffers are synchronized
     addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);

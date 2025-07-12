@@ -51,7 +51,7 @@ void CellManager::initializeGizmoBuffers()
 
 void CellManager::updateGizmoData()
 {
-    if (cellCount == 0) return;
+    if (totalCellCount == 0) return;
     
     TimerGPU timer("Gizmo Data Update");
     
@@ -65,7 +65,7 @@ void CellManager::updateGizmoData()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer);
     
     // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64;
+    GLuint numGroups = (totalCellCount + 63) / 64;
     gizmoExtractShader->dispatch(numGroups, 1, 1);
     
     // Use targeted barrier for buffer copy
@@ -73,14 +73,14 @@ void CellManager::updateGizmoData()
     flushBarriers();
     
     // Copy data from compute buffer to VBO for rendering
-    glCopyNamedBufferSubData(gizmoBuffer, gizmoVBO, 0, 0, cellCount * 6 * sizeof(glm::vec4) * 2);
+    glCopyNamedBufferSubData(gizmoBuffer, gizmoVBO, 0, 0, totalCellCount * 6 * sizeof(glm::vec4) * 2);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::renderGizmos(glm::vec2 resolution, const Camera& camera, bool showGizmos)
 {
-    if (!showGizmos || cellCount == 0) return;
+    if (!showGizmos || totalCellCount == 0) return;
     
     // Update gizmo data from current cell orientations
     updateGizmoData();
@@ -110,7 +110,7 @@ void CellManager::renderGizmos(glm::vec2 resolution, const Camera& camera, bool 
     
     // Render gizmo lines
     glBindVertexArray(gizmoVAO);
-    glDrawArrays(GL_LINES, 0, cellCount * 6); // 6 vertices per cell (3 lines * 2 vertices)
+    glDrawArrays(GL_LINES, 0, totalCellCount * 6); // 6 vertices per cell (3 lines * 2 vertices)
     glBindVertexArray(0);
     glLineWidth(1.0f);
 }
@@ -172,7 +172,7 @@ void CellManager::initializeRingGizmoBuffers()
 
 void CellManager::updateRingGizmoData()
 {
-    if (cellCount == 0) return;
+    if (totalCellCount == 0) return;
     
     TimerGPU timer("Ring Gizmo Data Update");
     
@@ -188,7 +188,7 @@ void CellManager::updateRingGizmoData()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
     
     // Dispatch compute shader
-    GLuint numGroups = (cellCount + 63) / 64;
+    GLuint numGroups = (totalCellCount + 63) / 64;
     ringGizmoExtractShader->dispatch(numGroups, 1, 1);
     
     // Use targeted barrier for buffer copy
@@ -196,14 +196,14 @@ void CellManager::updateRingGizmoData()
     flushBarriers();
     
     // Copy data from compute buffer to VBO for rendering
-    glCopyNamedBufferSubData(ringGizmoBuffer, ringGizmoVBO, 0, 0, cellCount * 384 * sizeof(glm::vec4) * 2);
+    glCopyNamedBufferSubData(ringGizmoBuffer, ringGizmoVBO, 0, 0, totalCellCount * 384 * sizeof(glm::vec4) * 2);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::renderRingGizmos(glm::vec2 resolution, const Camera& camera, const UIManager& uiManager)
 {
-    if (!uiManager.showOrientationGizmos || cellCount == 0) return;
+    if (!uiManager.showOrientationGizmos || totalCellCount == 0) return;
     
     // Update ring gizmo data from current cell orientations and split directions
     updateRingGizmoData();
@@ -242,7 +242,7 @@ void CellManager::renderRingGizmos(glm::vec2 resolution, const Camera& camera, c
     
     // Render each ring as triangles - both rings with proper depth testing
     // Blue ring will be visible from one side, red ring from the other side
-    for (int i = 0; i < cellCount; i++) {
+    for (int i = 0; i < totalCellCount; i++) {
         // Blue ring (positioned forward along split direction)
         glDrawArrays(GL_TRIANGLES, i * 384, 192);
         // Red ring (positioned backward along split direction)

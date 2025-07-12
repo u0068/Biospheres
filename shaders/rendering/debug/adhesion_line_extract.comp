@@ -2,19 +2,22 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Cell data structure matching the one in the main simulation
+// Cell data structure for compute shader
 struct ComputeCell {
+    // Physics:
     vec4 positionAndMass; // x, y, z, mass
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation;     // quaternion: w, x, y, z
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
-    vec4 signallingSubstances;
-    int modeIndex;
-    float age;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells
@@ -46,15 +49,17 @@ layout(std430, binding = 2) buffer AdhesionLineBuffer {
 };
 
 // Cell count
-layout(std430, binding = 3) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+layout(std430, binding = 3) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= adhesionCount) {
+    if (index >= totalAdhesionCount) {
         return;
     }
     
@@ -66,6 +71,9 @@ void main() {
     
     // Use a distinctive color for adhesion lines (orange/amber)
     vec4 lineColor = vec4(1.0, 0.6, 0.2, 1.0); // Orange color
+    if (currentAdhesion.isActive == 0) {
+        lineColor = vec4(0.5, 0.5, 0.5, 1.0); // Gray color for inactive connections
+    }
     
     // Each cell pair generates one line (2 vertices)
     // We use the current cell's index to determine where to store the line

@@ -124,6 +124,16 @@ void CellManager::cleanup()
         glDeleteBuffers(1, &cellAdditionBuffer);
         cellAdditionBuffer = 0;
     }
+    if (freeCellSlotBuffer != 0)
+    {
+        glDeleteBuffers(1, &freeCellSlotBuffer);
+        freeCellSlotBuffer = 0;
+    }
+    if (freeAdhesionSlotBuffer != 0)
+    {
+        glDeleteBuffers(1, &freeAdhesionSlotBuffer);
+        freeAdhesionSlotBuffer = 0;
+    }
 
     cleanupSpatialGrid();
     cleanupLODSystem();
@@ -248,6 +258,22 @@ void CellManager::initializeGPUBuffers()
         GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
     );
 
+    // Create free slot buffers for storing indices of dead cells and adhesions
+    glCreateBuffers(1, &freeCellSlotBuffer);
+    glNamedBufferData(
+        freeCellSlotBuffer,
+        cellLimit * sizeof(int),
+        nullptr,
+        GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+    );
+    glCreateBuffers(1, &freeAdhesionSlotBuffer);
+    glNamedBufferData(
+        freeAdhesionSlotBuffer,
+        cellLimit * config::MAX_ADHESIONS_PER_CELL * sizeof(int) / 2,
+        nullptr,
+        GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+    );
+
     // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
     glNamedBufferData(modeBuffer,
@@ -260,19 +286,18 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &gpuCellCountBuffer);
     glNamedBufferStorage(
         gpuCellCountBuffer,
-        sizeof(GLuint) * 3, // stores current cell count and pending cell count, adhesionSettings count
+        sizeof(GLuint) * config::COUNTER_NUMBER, // stores current cell counts and adhesion counts
         nullptr,
         GL_DYNAMIC_STORAGE_BIT
     );
-
     glCreateBuffers(1, &stagingCellCountBuffer);
     glNamedBufferStorage(
         stagingCellCountBuffer,
-        sizeof(GLuint) * 3,
+        sizeof(GLuint) * config::COUNTER_NUMBER,
         nullptr,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
     );
-    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * 3,
+    mappedPtr = glMapNamedBufferRange(stagingCellCountBuffer, 0, sizeof(GLuint) * config::COUNTER_NUMBER,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
     countPtr = static_cast<GLuint*>(mappedPtr);
 
@@ -310,7 +335,7 @@ void CellManager::addCellsToQueueBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = static_cast<int>(cells.size());
 
-    if (cellCount + newCellCount > cellLimit)
+    if (totalCellCount + newCellCount > cellLimit)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -326,7 +351,7 @@ void CellManager::addCellsToQueueBuffer(const std::vector<ComputeCell> &cells)
 
 void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
 {
-    if (cellCount + 1 > cellLimit)
+    if (totalCellCount + 1 > cellLimit)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -385,9 +410,9 @@ void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell>
     }
     
     // Update cell count directly
-    cellCount = newCellCount;
-    GLuint counts[3] = { static_cast<GLuint>(cellCount), static_cast<GLuint>(adhesionCount), static_cast<GLuint>(pendingCellCount) }; // cellCount, adhesionCount, pendingCellCount
-    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 3, counts);
+    totalCellCount = newCellCount;
+    GLuint counts[config::COUNTER_NUMBER] = { static_cast<GLuint>(totalCellCount), static_cast<GLuint>(totalAdhesionCount), static_cast<GLuint>(pendingCellCount) }; // totalCellCount, totalAdhesionCount, pendingCellCount
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * config::COUNTER_NUMBER, counts);
     
     // Sync staging buffer
     syncCounterBuffers();
@@ -409,7 +434,7 @@ void CellManager::setCPUCellData(const std::vector<ComputeCell> &cells)
         cpuCells.push_back(cell);
     }
     
-    cellCount = static_cast<int>(cells.size());
+    totalCellCount = static_cast<int>(cells.size());
     pendingCellCount = 0;
 }
 
@@ -457,6 +482,8 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         
         // Store adhesionSettings flag
         gmode.parentMakeAdhesion = mode.parentMakeAdhesion;
+        gmode.childAKeepAdhesion = 1;//mode.childA.keepAdhesion;
+        gmode.childBKeepAdhesion = 1;//mode.childB.keepAdhesion;
 
         // Store adhesionSettings settings
         gmode.adhesionSettings = mode.adhesionSettings;
@@ -478,7 +505,7 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
 
 ComputeCell CellManager::getCellData(int index) const
 {
-    if (index >= 0 && index < cellCount && index < static_cast<int>(cpuCells.size()))
+    if (index >= 0 && index < totalCellCount && index < static_cast<int>(cpuCells.size()))
     {
         return cpuCells[index];
     }
@@ -488,7 +515,7 @@ ComputeCell CellManager::getCellData(int index) const
 
 void CellManager::updateCellData(int index, const ComputeCell &newData)
 {
-    if (index >= 0 && index < cellCount)
+    if (index >= 0 && index < totalCellCount)
     {
         cpuCells[index] = newData;
 
@@ -523,20 +550,19 @@ void CellManager::updateCells(float deltaTime)
         addStagedCellsToQueueBuffer(); // Sync any pending cells to GPU
     }
 
-    int previousCellCount = cellCount;
+    int previousCellCount = totalCellCount;
     updateCounts();
     
     // Invalidate cache if cell count changed (affects legacy calculation)
-    if (previousCellCount != cellCount) {
+    if (previousCellCount != totalCellCount) {
         invalidateStatisticsCache();
     }
 
-    if (cellCount > 0) // Don't update cells if there are no cells to update
+    if (totalCellCount > 0) // Don't update cells if there are no cells to update
     {
         // Flush barriers before starting compute pipeline
         flushBarriers();
-        
-		// OPTIMIZED: Batch all simulation compute operations // I feel like this will cause race conditions
+
         // Update spatial grid before physics
         updateSpatialGrid(); // This handles its own barriers internally
 
@@ -560,6 +586,10 @@ void CellManager::updateCells(float deltaTime)
     }
 }
 
+// ============================================================================
+// COMPUTE SHADER DISPATCH
+// ============================================================================
+
 void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &camera, bool wireframe)
 {
     // Use unified culling system if any culling is enabled
@@ -568,7 +598,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         return;
     }
     
-    if (cellCount == 0)
+    if (totalCellCount == 0)
         return;
 
     // Safety check for zero-sized framebuffer (minimized window)
@@ -610,7 +640,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, instanceBuffer); // Dispatch extract compute shader
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Bind GPU cell count buffer
-            GLuint numGroups = (cellCount + 255) / 256; // Updated to 256 for consistency
+            GLuint numGroups = (totalCellCount + 255) / 256; // Updated to 256 for consistency
             extractShader->dispatch(numGroups, 1, 1);
             
             // Add barrier for instance extraction but don't flush yet
@@ -670,7 +700,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         }
 
         // Render instanced spheres with appropriate count
-        int renderCount = (useFrustumCulling || useDistanceCulling || useLODSystem) ? visibleCellCount : cellCount;
+        int renderCount = (useFrustumCulling || useDistanceCulling || useLODSystem) ? visibleCellCount : totalCellCount;
         sphereMesh.render(renderCount);
         
         // Restore OpenGL state - disable culling for other rendering operations
@@ -714,7 +744,7 @@ void CellManager::runPhysicsCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
-    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
+    GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     physicsShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -722,10 +752,6 @@ void CellManager::runPhysicsCompute(float deltaTime)
     // Swap buffers for next frame
     rotateBuffers();
 }
-
-// ============================================================================
-// COMPUTE SHADER DISPATCH
-// ============================================================================
 
 void CellManager::runUpdateCompute(float deltaTime)
 {
@@ -745,7 +771,7 @@ void CellManager::runUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
-    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
+    GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     updateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -763,16 +789,17 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
     internalUpdateShader->setInt("u_maxCells", cellLimit);
-    internalUpdateShader->setInt("u_maxAdhesions", cellLimit*12);
+    internalUpdateShader->setInt("u_maxAdhesions", cellLimit*config::MAX_ADHESIONS_PER_CELL/2);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellAdditionBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, adhesionConnectionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionConnectionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, freeCellSlotBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, freeAdhesionSlotBuffer);
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
-    GLuint numGroups = (cellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
+    GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     internalUpdateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -815,9 +842,11 @@ void CellManager::resetSimulation()
     // Clear CPU-side data
     cpuCells.clear();
     cellStagingBuffer.clear();
-    cellCount = 0;
+    totalCellCount = 0;
+    liveCellCount = 0;
     pendingCellCount = 0;
-    adhesionCount = 0;
+    totalAdhesionCount = 0;
+    liveAdhesionCount = 0;
     
     // CRITICAL FIX: Reset buffer rotation state for consistent keyframe restoration
     bufferRotation = 0;
@@ -829,9 +858,10 @@ void CellManager::resetSimulation()
     GLuint zero = 0;
     
     // Reset cell count buffers
-    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint), &zero); // cellCount = 0
-    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // pendingCellCount = 0
-    glNamedBufferSubData(gpuCellCountBuffer, 2 * sizeof(GLuint), sizeof(GLuint), &zero); // adhesion = 0
+    glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint), &zero); // totalCellCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, sizeof(GLuint), sizeof(GLuint), &zero); // liveCellCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, 2 * sizeof(GLuint), sizeof(GLuint), &zero); // totalAdhesionCount = 0
+    glNamedBufferSubData(gpuCellCountBuffer, 3 * sizeof(GLuint), sizeof(GLuint), &zero); // liveAdhesionCount = 0
     
     // Clear all cell buffers
     for (int i = 0; i < 3; i++)
@@ -844,7 +874,15 @@ void CellManager::resetSimulation()
     if (instanceBuffer != 0) {
         glClearNamedBufferData(instanceBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
-    
+
+    // Clear free slot buffers
+    if (freeCellSlotBuffer != 0) {
+        glClearNamedBufferData(freeCellSlotBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    if (freeAdhesionSlotBuffer != 0) {
+        glClearNamedBufferData(freeAdhesionSlotBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+
     // Clear addition buffer
     if (cellAdditionBuffer != 0) {
         glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
@@ -876,7 +914,7 @@ void CellManager::resetSimulation()
     if (adhesionConnectionBuffer != 0) {
         glClearNamedBufferData(adhesionConnectionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
-    adhesionCount = 0;
+    totalAdhesionCount = 0;
     
     // Clear debug visualization buffers to prevent lingering elements after reset
     if (gizmoBuffer != 0) {
@@ -919,7 +957,7 @@ void CellManager::spawnCells(int count)
 {
     TimerCPU cpuTimer("Spawning Cells");
 
-    for (int i = 0; i < count && cellCount < cellLimit; ++i)
+    for (int i = 0; i < count && totalCellCount < cellLimit; ++i)
     {
         // Random position within spawn radius
         float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;

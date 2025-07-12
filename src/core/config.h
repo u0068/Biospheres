@@ -21,8 +21,10 @@ namespace config
 	// ========== Cell Simulation Configuration ==========
 	constexpr int MAX_CELLS{100000};
 	constexpr int DEFAULT_CELL_COUNT{100000};
-	constexpr int MAX_ADHESIONS{ MAX_CELLS * 12 };
+	constexpr int MAX_ADHESIONS_PER_CELL{ 20 }; // Maximum number of adhesions per cell
+	constexpr int MAX_ADHESIONS{ MAX_CELLS * MAX_ADHESIONS_PER_CELL / 2};
 	constexpr float DEFAULT_SPAWN_RADIUS{50.0f};
+	constexpr int COUNTER_NUMBER{ 4 }; // Number of counters in the cell count buffer
 
 	// ========== Spatial Partitioning Configuration ==========
 	constexpr float WORLD_SIZE{100.0f};                          // Size of the simulation world (cube from -50 to +50)

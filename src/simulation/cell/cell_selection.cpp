@@ -103,9 +103,9 @@ int closestCellIndex = -1;
 int intersectionCount = 0;
 
 // Debug output for raycasting
-std::cout << "Testing " << cellCount << " cells for intersection..." << std::endl;
+std::cout << "Testing " << totalCellCount << " cells for intersection..." << std::endl;
 
-for (int i = 0; i < cellCount; i++)
+for (int i = 0; i < totalCellCount; i++)
 {
 glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndMass);
 float cellRadius = cpuCells[i].getRadius();
@@ -194,7 +194,7 @@ isDraggingCell = false;
 
 void CellManager::syncCellPositionsFromGPU()
 { // This will fail if the CPU buffer has the wrong size, which will happen once cell division is implemented so i will have to rewrite this
-if (cellCount == 0)
+if (totalCellCount == 0)
 return;
 
 // OPTIMIZED: Use barrier batching for GPU sync
@@ -202,7 +202,7 @@ addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 flushBarriers();
 
 // Copy data from GPU buffer to staging buffer (no GPU->CPU transfer warning)
-glCopyNamedBufferSubData(getCellReadBuffer(), stagingCellBuffer, 0, 0, cellCount * sizeof(ComputeCell));
+glCopyNamedBufferSubData(getCellReadBuffer(), stagingCellBuffer, 0, 0, totalCellCount * sizeof(ComputeCell));
 
 // Memory barrier to ensure copy is complete
 addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
@@ -224,9 +224,9 @@ ComputeCell* stagedData = static_cast<ComputeCell*>(mappedCellPtr);
 
 if (stagedData)
 {
-cpuCells.reserve(cellCount);
+cpuCells.reserve(totalCellCount);
 // Copy data from staging buffer to CPU storage
-for (int i = 0; i < cellCount; i++)
+for (int i = 0; i < totalCellCount; i++)
 {
 if (i < cpuCells.size())
 {

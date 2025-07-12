@@ -34,6 +34,9 @@ struct CellManager
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
 
+	GLuint freeCellSlotBuffer{}; // Buffer for tracking free slots in the cell buffer
+    GLuint freeAdhesionSlotBuffer{}; // Buffer for tracking free slots in the adhesion buffer
+
     // Cell data staging buffer for CPU reads (avoids GPU->CPU transfer warnings)
     GLuint stagingCellBuffer{};      // CPU-accessible cell data buffer
     void* mappedCellPtr = nullptr;   // Pointer to the cell data staging buffer
@@ -120,15 +123,16 @@ struct CellManager
     std::vector<ComputeCell> cellStagingBuffer;
     
     // Cell count tracking (CPU-side approximation of GPU state)
-    int cellCount{0};               // Approximate cell count, may not reflect exact GPU state due to being a frame behind
-    int pendingCellCount{0};     // Number of cells pending addition by CPU
-    // Mysteriously the value read on cpu is always undershooting significantly so you're better off treating it as a bool than an int
-    int adhesionCount{ 0 };
+    int totalCellCount{ 0 };    // Approximate cell count, may not reflect exact GPU state due to being a frame behind
+	int liveCellCount{ 0 };     // Number of live cells (not dead or pending)
+	int totalAdhesionCount{ 0 };     // Total number of adhesion connections
+    int liveAdhesionCount{ 0 };     // Number of live adhesion connections
+    int pendingCellCount{ 0 };  // Number of cells pending addition by CPU
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
     void syncCounterBuffers()
     {
-        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * 3);
+        glCopyNamedBufferSubData(gpuCellCountBuffer, stagingCellCountBuffer, 0, 0, sizeof(GLuint) * config::COUNTER_NUMBER);
     }
     void updateCounts()
     {
@@ -137,8 +141,10 @@ struct CellManager
         // Add buffer update barrier but don't flush yet
         addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 
-        cellCount = countPtr[0];
-        adhesionCount = countPtr[1]; // This is the number of adhesionSettings connections, not cells
+        totalCellCount = countPtr[0];
+        liveCellCount = countPtr[1];
+        totalAdhesionCount = countPtr[2]; // This is the number of adhesion connections, not cells
+        liveAdhesionCount = countPtr[3]; 
     }
 
     // Configuration
@@ -220,7 +226,7 @@ struct CellManager
     void cleanupSpatialGrid();
 
     // Getter functions for debug information
-    int getCellCount() const { return cellCount; }
+    int getCellCount() const { return totalCellCount; }
     float getSpawnRadius() const { return spawnRadius; }
 
     // Performance testing function

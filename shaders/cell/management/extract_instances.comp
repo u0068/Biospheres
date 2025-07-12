@@ -27,7 +27,9 @@ struct GPUMode {
     int genomeOffset;
     AdhesionSettings adhesionSettings;
     int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int padding[3];          // Padding to maintain alignment
+    int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
+    int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
+    int padding[1];         // Padding to maintain alignment
 };
 
 // Cell data structure for compute shader
@@ -45,6 +47,7 @@ struct ComputeCell {
     float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 struct InstanceData {
@@ -68,14 +71,16 @@ layout(std430, binding = 2) buffer InstanceBuffer {
 };
 
 layout(std430, binding = 3) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= cellCount) return;
+    if (index >= totalCellCount) return;
     
     float myRadius = pow(cellData[index].positionAndMass.w, 1./3.);
     instanceData[index].positionAndRadius = vec4(cellData[index].positionAndMass.xyz, myRadius);

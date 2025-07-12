@@ -6,6 +6,8 @@
 #include "glad/glad.h"
 #include <glm/gtc/quaternion.hpp>
 
+#include "../../core/config.h"
+
 // GPU compute cell structure matching the compute shader
 struct ComputeCell {
     // Physics:
@@ -17,15 +19,16 @@ struct ComputeCell {
     glm::quat angularAcceleration{ 1., 0., 0., 0. };
 
     // Internal:
-    glm::vec4 signallingSubstances{}; // 4 substances for now
+    glm::vec4 signallingSubstances{};   // 4 substances for now
     int modeIndex{ 0 };
-    float age{ 0 };                      // also used for split timer
+    float age{ 0 };                     // also used for split timer
     float toxins{ 0 };
     float nitrates{ 1 };
+    int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, };
 
     float getRadius() const
     {
-        return static_cast<float>(pow(positionAndMass.w, 1.0f / 3.0f));
+        return pow(positionAndMass.w, 1.0f / 3.0f);
     }
 };
 
@@ -51,7 +54,9 @@ struct GPUMode {
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
 	AdhesionSettings adhesionSettings{}; // Adhesion settings for the parent cell
     int parentMakeAdhesion{ 0 };  // Boolean flag for adhesionSettings creation (0 = false, 1 = true) + padding
-	int padding[3]{ 0 }; // Padding to ensure 16-byte alignment for GPU compatibility
+    int childAKeepAdhesion{ 1 };
+	int childBKeepAdhesion{ 1 };
+	int padding[1]{ 0 }; // Padding to ensure 16-byte alignment for GPU compatibility
 };
 
 struct AdhesionConnection

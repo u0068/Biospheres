@@ -2,18 +2,22 @@
 
 layout(local_size_x = 64) in;
 
+// Cell data structure for compute shader
 struct ComputeCell {
-    vec4 positionAndMass;
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation;
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
-    vec4 signallingSubstances;
-    int modeIndex;
-    float age;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 layout(std430, binding = 0) buffer CellAdditionQueue {
@@ -28,9 +32,11 @@ layout(std430, binding = 2) buffer CellOutputBuffer {
     ComputeCell outputCells[];
 };
 
-layout(std430, binding = 3) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+layout(std430, binding = 3) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
 uniform int u_maxCells;
@@ -43,7 +49,7 @@ void main() {
     ComputeCell queuedCell = newCells[index];
 
     // FIXED: Calculate target index based on current cell count + queue index
-    uint targetIndex = cellCount + index;
+    uint targetIndex = totalCellCount + index;
     
     // Check bounds
     if (targetIndex >= uint(u_maxCells)) return;
@@ -57,6 +63,7 @@ void main() {
     
     // Only the first thread updates the cell count after all cells are added
     if (index == 0) {
-        cellCount = min(u_maxCells, cellCount + u_pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
+        totalCellCount = min(u_maxCells, totalCellCount + u_pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
+        liveCellCount = min(u_maxCells, liveCellCount + u_pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
     }
 }

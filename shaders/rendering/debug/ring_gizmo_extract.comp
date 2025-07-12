@@ -2,19 +2,22 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Cell data structure matching the one in the main simulation
+// Cell data structure for compute shader
 struct ComputeCell {
+    // Physics:
     vec4 positionAndMass; // x, y, z, mass
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation;     // quaternion: w, x, y, z
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
-    vec4 signallingSubstances;
-    int modeIndex;
-    float age;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 struct AdhesionSettings
@@ -66,8 +69,10 @@ layout(std430, binding = 2) buffer RingBuffer {
 
 // Cell count
 layout(std430, binding = 3) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint liveAdhesionCount;
 };
 
 // Convert quaternion to rotation matrix
@@ -88,7 +93,7 @@ mat3 quatToMat3(vec4 quat) {
 void main() {
     uint cellIndex = gl_GlobalInvocationID.x;
     
-    if (cellIndex >= cellCount) return;
+    if (cellIndex >= totalCellCount) return;
     
     ComputeCell cell = cells[cellIndex];
     vec3 cellPos = cell.positionAndMass.xyz;
