@@ -2,19 +2,22 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Cell data structure matching the one in the main simulation
+// Cell data structure for compute shader
 struct ComputeCell {
+    // Physics:
     vec4 positionAndMass; // x, y, z, mass
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation;     // quaternion: w, x, y, z
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
-    vec4 signallingSubstances;
-    int modeIndex;
-    float age;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 // Gizmo line data - each cell generates 6 vertices (3 lines, 2 vertices each)

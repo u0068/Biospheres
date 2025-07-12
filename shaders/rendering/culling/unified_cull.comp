@@ -2,19 +2,22 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Cell data structure (matches ComputeCell in cell_manager.h)
+// Cell data structure for compute shader
 struct ComputeCell {
-    vec4 positionAndMass;           // xyz = position, w = mass
-    vec4 velocity;                  // xyz = velocity, w = unused
-    vec4 acceleration;              // xyz = acceleration, w = unused
-    vec4 orientation;               // quaternion (w, x, y, z)
-    vec4 angularVelocity;          // quaternion (w, x, y, z)
-    vec4 angularAcceleration;      // quaternion (w, x, y, z)
-    vec4 signallingSubstances;     // 4 substances
-    int modeIndex;                 // Index into mode array
-    float age;                     // Cell age
-    float toxins;                  // Toxin level
-    float nitrates;                // Nitrate level
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
 };
 
 // Instance data structure for rendering with optional fade factor

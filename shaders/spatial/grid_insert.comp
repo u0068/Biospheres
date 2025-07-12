@@ -9,15 +9,16 @@ struct ComputeCell {
     vec4 positionAndMass; // x, y, z, mass
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation; // angular stuff in quaternion to prevent gimbal lock
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
     vec4 angularVelocity;
     vec4 angularAcceleration;
     // Internal:
     vec4 signallingSubstances; // 4 substances for now
-    int modeIndex;
+    int modeIndex;  // absolute index of the cell's mode
     float age; // also used for split timer
     float toxins;
     float nitrates;
+    int adhesionIndices[20];
 };
 
 // Shader storage buffer objects

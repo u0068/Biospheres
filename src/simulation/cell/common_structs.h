@@ -24,7 +24,7 @@ struct ComputeCell {
     float age{ 0 };                     // also used for split timer
     float toxins{ 0 };
     float nitrates{ 1 };
-    int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, };
+    int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1, };
 
     float getRadius() const
     {
