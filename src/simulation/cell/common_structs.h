@@ -71,7 +71,7 @@ struct ChildSettings
 {
     int modeNumber = 0;
     glm::quat orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // quaternion, identity by default
-    bool keepAdhesion = false;
+    bool keepAdhesion = true;
 };
 
 struct ModeSettings

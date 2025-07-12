@@ -155,6 +155,35 @@ uint getNewAdhesionIndex() {
     return adhesionIndex;
 }
 
+bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
+    uint newIndex = getNewAdhesionIndex();
+    if (newIndex == -1) {
+        // Failed to reserve an adhesion index, don't create adhesion
+        return false;
+    }
+    connections[newIndex] = AdhesionConnection(
+        cellAIndex,
+        cellBIndex,
+        modeIndex,
+        1
+    );
+    // Add to cellA's adhesionIndices
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
+            outputCells[cellAIndex].adhesionIndices[j] = int(newIndex);
+            break;
+        }
+    }
+    // Add to cellB's adhesionIndices
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
+            outputCells[cellBIndex].adhesionIndices[j] = int(newIndex);
+            break;
+        }
+    }
+    return true;
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
@@ -216,7 +245,6 @@ void main() {
     // we need to subtract the excess age beyond the split interval
     float startAge = cell.age - mode.splitInterval;
 
-
     // Apply rotation deltas to parent orientation
     vec4 q_parent = cell.orientation;
     vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
@@ -225,7 +253,7 @@ void main() {
     // Add a tiny random variance to each child orientation (0.001 degree = 0.001 * PI / 180 radians)
     float tinyAngle = 0.001 * 0.017453292519943295; // radians
 
-    // Use cell index and newIndex to generate different seeds for each child
+    // Use child indices to generate different seeds for each child
     vec4 q_varA = smallRandomQuat(tinyAngle, childAIndex);
     vec4 q_varB = smallRandomQuat(tinyAngle, childBIndex);
     q_childA = normalize(quatMultiply(q_childA, q_varA));
@@ -248,6 +276,10 @@ void main() {
     for (int i = 0; i < 20; ++i) {
         childB.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
+    
+    // Store new cells
+    outputCells[childAIndex] = childA;
+    outputCells[childBIndex] = childB;
 
     // Inherit adhesions for the new child cells
     for (int i = 0; i < 20; ++i) {
@@ -273,86 +305,22 @@ void main() {
 
         // Child A keeps adhesion
         if (mode.childAKeepAdhesion == 1) {
-            uint newIdx = getNewAdhesionIndex();
-            if (newIdx != uint(-1)) {
-                connections[newIdx] = AdhesionConnection(
-                    childAIndex,
-                    neighborIndex,
-                    oldConnection.modeIndex,
-                    1
-                );
-                // Add to childA's adhesionIndices
-                for (int j = 0; j < 20; ++j) {
-                    if (childA.adhesionIndices[j] < 0) {
-                        childA.adhesionIndices[j] = int(newIdx);
-                        break;
-                    }
-                }
-            }
+            addAdhesion(childAIndex, neighborIndex, oldConnection.modeIndex);
         }
 
         // Child B keeps adhesion
         if (mode.childBKeepAdhesion == 1) {
-            uint newIdx = getNewAdhesionIndex();
-            if (newIdx != uint(-1)) {
-                connections[newIdx] = AdhesionConnection(
-                    childBIndex, // this is the queue-allocated child
-                    neighborIndex,
-                    oldConnection.modeIndex,
-                    1
-                );
-                // Add to childB's adhesionIndices
-                for (int j = 0; j < 20; ++j) {
-                    if (childB.adhesionIndices[j] < 0) {
-                        childB.adhesionIndices[j] = int(newIdx);
-                        break;
-                    }
-                }
-            }
+            addAdhesion(childBIndex, neighborIndex, oldConnection.modeIndex);
         }
     }
-
-    // Store new cells
-    outputCells[childAIndex] = childA;
-    outputCells[childBIndex] = childB;
     
     // Now we need to add the adhesion connection between the children
     if (mode.parentMakeAdhesion == 0) {
         return;
     }
-
-    uint adhesionIndex = getNewAdhesionIndex();
-    if (adhesionIndex == -1) {
-        // Failed to reserve an adhesion index, don't create adhesion
-        // In the future, make this prevent the split instead
-        return;
-    }
-
-    AdhesionConnection newAdhesion;
-    newAdhesion.cellAIndex = childAIndex; // Child A index
-    newAdhesion.cellBIndex = childBIndex; // Child B index index
-    newAdhesion.modeIndex = cell.modeIndex; // Use parent mode for adhesion settings
-    newAdhesion.isActive = 1; // Active connection
-
-    connections[adhesionIndex] = newAdhesion;
-
-    for (int j = 0; j < 20; ++j) {
-        if (childA.adhesionIndices[j] < 0) {
-            childA.adhesionIndices[j] = int(adhesionIndex);
-            break;
-        }
-    }
-    for (int j = 0; j < 20; ++j) {
-        if (childB.adhesionIndices[j] < 0) {
-            childB.adhesionIndices[j] = int(adhesionIndex);
-            break;
-        }
-    }
-
-    // Store new cells
-    outputCells[childAIndex] = childA;
-    outputCells[childBIndex] = childB;
-
+    
+    // Create a new adhesion connection between the two children
+    addAdhesion(childAIndex, childBIndex, cell.modeIndex);
 }
 
 
