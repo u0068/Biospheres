@@ -162,7 +162,6 @@ void main() {
     ComputeCell cell = inputCells[index];
     GPUMode mode = modes[cell.modeIndex];
 
-    cell.age += u_deltaTime;
     if (cell.age < mode.splitInterval) {
         outputCells[index] = cell;
         return;
@@ -185,7 +184,7 @@ void main() {
         ComputeCell other = inputCells[otherIdx];
         GPUMode otherMode = modes[other.modeIndex];
 
-        if (other.age + 2 * u_deltaTime < otherMode.splitInterval) continue; // Other cell not splitting
+        if (other.age < otherMode.splitInterval) continue; // Other cell not splitting
 
         // If other cell wants to split, compare priority
         float otherPriority = hash11(otherIdx ^ u_frameNumber);

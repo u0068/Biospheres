@@ -57,6 +57,8 @@ void main() {
 
     ComputeCell cell = inputCells[index];
     
+    cell.age += u_deltaTime;
+
     // Update velocity based on acceleration
     cell.velocity.xyz += cell.acceleration.xyz * u_deltaTime;
     
