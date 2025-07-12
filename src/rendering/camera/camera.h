@@ -12,37 +12,36 @@ public:
     // Main input processing
     void processInput(class Input& input, float deltaTime);
     void processMouseMovement(float xOffset, float yOffset);
-    void processMouseScroll(float yOffset);    // Getters
+    void processMouseScroll(float yOffset);
+
+    // Getters
     glm::vec3 getPosition() const { return position; }
     glm::vec3 getFront() const { return front; }
     glm::vec3 getRight() const { return right; }
     glm::vec3 getUp() const { return up; }
     glm::mat4 getViewMatrix() const;
 
-    // Camera settings
-    float moveSpeed = 10.0f;
-    float sprintMultiplier = 2.0f;
-    float mouseSensitivity = 0.2f;
-    float zoomSpeed = 200.0f;
-    float minDistance = 1.0f;
-    float maxDistance = 100.0f;
-    bool invertLook = false;
+    // Camera settings (Space Engineers style)
+    float moveSpeed = 15.0f;           // Base movement speed
+    float sprintMultiplier = 3.0f;     // Sprint speed multiplier
+    float mouseSensitivity = 0.1f;     // Mouse look sensitivity
+    float zoomSpeed = 50.0f;           // Zoom speed
+    float minDistance = 0.5f;          // Minimum zoom distance
+    float maxDistance = 1000.0f;       // Maximum zoom distance
+    bool invertLook = false;           // Invert mouse Y axis
 
 private:
     // Camera attributes
     glm::vec3 position;
-    glm::vec3 front;
-    glm::vec3 up;
-    glm::vec3 right;
-    glm::vec3 worldUp;    // Euler angles
-    float yaw;   // Y-axis rotation
-    float pitch; // X-axis rotation
-    float roll;  // Z-axis rotation
+    glm::vec3 worldUp;
+
+    // Camera orientation (space-like, no world-relative constraints)
+    glm::vec3 front;     // Direction camera is facing
+    glm::vec3 right;     // Camera's right vector
+    glm::vec3 up;        // Camera's up vector
+    float roll;          // Roll around forward vector
 
     // Mouse tracking
     bool isDragging = false;
     glm::vec2 lastMousePos;
-
-    // Update camera vectors based on updated Euler angles
-    void updateCameraVectors();
 };
