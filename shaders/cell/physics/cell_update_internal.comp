@@ -240,7 +240,7 @@ void main() {
     // Begin split logic
 
     // === Compute Split Priority ===
-    float myPriority = float(index);
+    float myPriority = hash11(index ^ u_frameNumber);
 
     // === Check Adhered Cells ===
     for (int i = 0; i < 20; ++i) {
@@ -257,7 +257,7 @@ void main() {
         if (other.age + u_deltaTime < otherMode.splitInterval) continue; // Other cell not splitting
 
         // If other cell wants to split, compare priority
-        float otherPriority = float(otherIdx);
+        float otherPriority = hash11(otherIdx ^ u_frameNumber);
         if (otherPriority < myPriority) {
             // Defer this split - other cell has higher priority (lower index)
             return;
