@@ -70,10 +70,10 @@ void main() {
     vec3 posB = cells[currentAdhesion.cellBIndex].positionAndMass.xyz;
     
     // Use a distinctive color for adhesion lines (orange/amber)
-    vec4 lineColor = vec4(1.0, index/float(totalAdhesionCount-1), 0.0, 1.0); // Orange color
+    vec4 lineColor = vec4(1.0, index/float(totalAdhesionCount-1), 0.0, 1.0);
     if (currentAdhesion.isActive == 0) {
-        return;
-        lineColor = vec4(0.0, index/float(totalAdhesionCount-1), 1.0, 1.0); // Gray color for inactive connections
+        //return;
+        lineColor = vec4(0.0, index/float(totalAdhesionCount-1), 1.0, 1.0);
     }
     
     // Each cell pair generates one line (2 vertices)

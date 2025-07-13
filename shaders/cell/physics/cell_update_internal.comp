@@ -186,8 +186,8 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
 
     if (slotA == -1 || slotB == -1) {
         // Roll back the reservation if any cell has no free slot
-        uint reservation = atomicAdd(freeAdhesionTop, 1);
-        uint topIndex = reservation;
+        int reservation = atomicAdd(freeAdhesionTop, 1);
+        int topIndex = reservation;
         freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
         return false;
     }
@@ -223,7 +223,7 @@ void removeAdhesion(int adhesionIndex){
     }
 
     // Push to free stack safely
-    uint freeIndex = atomicAdd(freeAdhesionTop, 1);
+    int freeIndex = atomicAdd(freeAdhesionTop, 1);
     if (freeIndex < u_maxAdhesions) {
         freeAdhesionSlotIndices[freeIndex] = adhesionIndex;
     } else {
