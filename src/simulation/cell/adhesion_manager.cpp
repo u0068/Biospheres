@@ -75,7 +75,7 @@ void CellManager::updateAdhesionLineData()
     flushBarriers();
 
     // Copy data from compute buffer to VBO for rendering
-    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, getAdhesionLimit() * 2 * sizeof(glm::vec4) * 2);
+    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, getAdhesionLimit() * sizeof(glm::vec4) * 2);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
