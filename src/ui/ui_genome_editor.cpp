@@ -548,7 +548,8 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     // Add divider before Parent Make Adhesion checkbox
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Spacing();    if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
+    ImGui::Spacing();
+	if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
     {
         genomeChanged = true;
     }
@@ -588,7 +589,9 @@ void UIManager::drawChildSettings(const char *label, ChildSettings &child)
     ImGui::Spacing();
 
     // Add divider before Keep Adhesion checkbox
-    ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion);
+    if (ImGui::Checkbox("Keep Adhesion", &child.keepAdhesion)) {
+        genomeChanged = true;
+    }
     addTooltip("Whether this child maintains adhesive connections with its parent and siblings");
 }
 
