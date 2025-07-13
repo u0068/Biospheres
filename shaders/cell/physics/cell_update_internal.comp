@@ -72,10 +72,10 @@ layout(std430, binding = 3) coherent buffer CellCountBuffer {
     uint totalCellCount;
     uint liveCellCount;
     uint totalAdhesionCount;
-    uint liveAdhesionCount;
+    uint freeAdhesionTop;
 };
 
-layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
+layout(std430, binding = 4) coherent buffer AdhesionConnectionBuffer {
     AdhesionConnection connections[];
 };
 
@@ -136,23 +136,21 @@ vec4 smallRandomQuat(float angle, uint seed) {
 }
 
 uint getNewAdhesionIndex() {
-    uint reservation = atomicAdd(liveAdhesionCount, 1);
-    uint adhesionIndex = -1; // Default invalid index
-    if (reservation < totalAdhesionCount) {
-        // Reuse a slot from the free stack
-        uint topIndex = totalAdhesionCount - reservation;
-        adhesionIndex = freeAdhesionSlotIndices[topIndex];
+    // Try to reserve a free adhesion slot
+    uint freeTop = atomicAdd(freeAdhesionTop, -1);
+    if (freeTop > 0) {
+        return freeAdhesionSlotIndices[freeTop - 1];
     } else {
-        // Allocate a new slot
-        adhesionIndex = atomicAdd(totalAdhesionCount, 1);
-        if (adhesionIndex >= u_maxAdhesions) {
-            // No space for new adhesions, cancel the split and clamp counts
-            atomicMin(liveAdhesionCount, u_maxAdhesions);
+        // Revert decrement if no free slots
+        atomicAdd(freeAdhesionTop, 1);
+        // Fallback to allocating a new slot
+        uint newIndex = atomicAdd(totalAdhesionCount, 1);
+        if (newIndex >= u_maxAdhesions) {
             atomicMin(totalAdhesionCount, u_maxAdhesions);
-            return -1; // Indicate failure to allocate
+            return -1;
         }
+        return newIndex;
     }
-    return adhesionIndex;
 }
 
 bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
@@ -184,6 +182,34 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     return true;
 }
 
+void removeAdhesion(int adhesionIndex){
+    // Mark as inactive
+    connections[adhesionIndex].isActive = 0;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[j] == int(adhesionIndex)) {
+            outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[j] = -1;
+            break;
+        }
+    }
+
+    // Remove from cellB
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[j] == int(adhesionIndex)) {
+            outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[j] = -1;
+            break;
+        }
+    }
+
+
+    // Push to free stack safely
+    uint freeIndex = atomicAdd(freeAdhesionTop, 1);
+    if (freeIndex < u_maxAdhesions) {
+        freeAdhesionSlotIndices[freeIndex] = adhesionIndex;
+    } else {
+        freeAdhesionTop = u_maxAdhesions;
+    }
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
@@ -191,8 +217,9 @@ void main() {
     ComputeCell cell = inputCells[index];
     GPUMode mode = modes[cell.modeIndex];
 
+    outputCells[index] = cell; // Default output is the same cell
+
     if (cell.age < mode.splitInterval) {
-        outputCells[index] = cell;
         return;
     }
 
@@ -219,7 +246,6 @@ void main() {
         float otherPriority = hash11(otherIdx ^ u_frameNumber);
         if (otherPriority > myPriority) {
             // Defer this split
-            outputCells[index] = cell;
             return;
         }
     }
@@ -295,13 +321,7 @@ void main() {
             : oldConnection.cellAIndex;
 
         // Remove the old connection
-        oldConnection.isActive = 0;
-        connections[oldAdhesionIndex] = oldConnection; // Mark as inactive
-        // Update free adhesion slot buffer
-        uint reservation = atomicAdd(liveAdhesionCount, -1);
-        // Allocate the slot at the top of the free stack
-        uint topIndex = totalAdhesionCount - reservation;
-        freeAdhesionSlotIndices[topIndex] = oldAdhesionIndex;
+        removeAdhesion(oldAdhesionIndex);
 
         // Child A keeps adhesion
         if (mode.childAKeepAdhesion == 1) {

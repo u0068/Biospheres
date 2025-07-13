@@ -109,9 +109,9 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
     // Enable line width for better visibility
     glLineWidth(4.0f);
 
-    // Render gizmo lines
+    // Render adhesion lines
     glBindVertexArray(adhesionLineVAO);
-    glDrawArrays(GL_LINES, 0, totalAdhesionCount * 2); // 2 vertices per adhesionSettings
+    glDrawArrays(GL_LINES, 0, totalAdhesionCount * 2); // 2 vertices per adhesion
     glBindVertexArray(0);
     glLineWidth(1.0f);
 }
@@ -147,7 +147,7 @@ void CellManager::initializeAdhesionConnectionSystem()
         cellLimit * config::MAX_ADHESIONS_PER_CELL * sizeof(AdhesionConnection) / 2,
         nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for connection count
     
-    std::cout << "Initialized adhesionSettings connection system with capacity for " << cellLimit * config::MAX_ADHESIONS_PER_CELL << " connections\n";
+    std::cout << "Initialized adhesionSettings connection system with capacity for " << cellLimit * config::MAX_ADHESIONS_PER_CELL / 2 << " connections\n";
 }
 
 void CellManager::runAdhesionPhysics()
@@ -163,7 +163,7 @@ void CellManager::runAdhesionPhysics()
     adhesionPhysicsShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     adhesionPhysicsShader->setFloat("u_worldSize", config::WORLD_SIZE);
     adhesionPhysicsShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
-    adhesionPhysicsShader->setInt("u_maxConnections", cellLimit * config::MAX_ADHESIONS_PER_CELL);
+    adhesionPhysicsShader->setInt("u_maxConnections", cellLimit * config::MAX_ADHESIONS_PER_CELL / 2);
     
     // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer()); // Cell data

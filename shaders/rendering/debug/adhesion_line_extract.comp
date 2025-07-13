@@ -39,12 +39,12 @@ layout(std430, binding = 0) buffer CellBuffer {
     ComputeCell cells[];
 };
 
-layout(std430, binding = 1) buffer AdhesionConnectionBuffer {
+layout(std430, binding = 1) coherent buffer AdhesionConnectionBuffer {
     AdhesionConnection connections[];
 };
 
 // Output: Adhesion line vertices
-layout(std430, binding = 2) buffer AdhesionLineBuffer {
+layout(std430, binding = 2) coherent buffer AdhesionLineBuffer {
     AdhesionLineVertex lineVertices[];
 };
 
@@ -66,8 +66,8 @@ void main() {
     AdhesionConnection currentAdhesion = connections[index];
     
     // Calculate line vertices
-    vec3 posA = cells[currentAdhesion.cellAIndex].positionAndMass.xyz + vec3(index * 0.1);
-    vec3 posB = cells[currentAdhesion.cellBIndex].positionAndMass.xyz + vec3(index * 0.1);
+    vec3 posA = cells[currentAdhesion.cellAIndex].positionAndMass.xyz;
+    vec3 posB = cells[currentAdhesion.cellBIndex].positionAndMass.xyz;
     
     // Use a distinctive color for adhesion lines (orange/amber)
     vec4 lineColor = vec4(1.0, index/float(totalAdhesionCount-1), 0.0, 1.0); // Orange color

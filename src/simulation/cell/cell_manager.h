@@ -144,7 +144,7 @@ struct CellManager
         totalCellCount = countPtr[0];
         liveCellCount = countPtr[1];
         totalAdhesionCount = countPtr[2]; // This is the number of adhesion connections, not cells
-        liveAdhesionCount = countPtr[3]; 
+        liveAdhesionCount = totalAdhesionCount - countPtr[3];
     }
 
     // Configuration
