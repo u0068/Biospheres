@@ -56,6 +56,17 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
         ImGui::Text("Age: %.2f", age);
 
         ImGui::Separator();
+        ImGui::Text("Adhesion Indices:");
+        for (int i = 0; i < 20; ++i) {
+            int adhesionIndex = selectedCell.cellData.adhesionIndices[i];
+            if (adhesionIndex < 0) {
+				continue; // Skip invalid indices
+            }
+            ImGui::SameLine();
+            ImGui::Text("%i", adhesionIndex);
+        }
+
+        ImGui::Separator();
 
         // Editable properties
         ImGui::Text("Edit Properties:");
