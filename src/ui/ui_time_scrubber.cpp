@@ -218,14 +218,14 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     // Temporarily pause to prevent normal time updates during fast-forward
                     bool wasPaused = sceneManager.isPaused();
                     sceneManager.setPaused(true);
-                      // Use a coarser time step for scrubbing to make it more responsive
+                	// Use a coarser time step for scrubbing to make it more responsive
                     float scrubTimeStep = config::scrubTimeStep;
                     float timeRemaining = targetTime;
                     int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
                     
-                    for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
+                    for (int i = 0; i < maxSteps && timeRemaining > scrubTimeStep; ++i)
                     {
-                        float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
+                        float stepTime = scrubTimeStep;
                         cellManager.updateCells(stepTime);
                         timeRemaining -= stepTime;
                         
