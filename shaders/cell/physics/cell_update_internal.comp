@@ -136,23 +136,100 @@ vec4 smallRandomQuat(float angle, uint seed) {
 }
 
 uint getNewAdhesionIndex() {
-    uint reservation = atomicAdd(liveAdhesionCount, 1);
-    uint adhesionIndex = -1; // Default invalid index
-    if (reservation < totalAdhesionCount) {
-        // Reuse a slot from the free stack
-        uint topIndex = totalAdhesionCount - reservation;
-        adhesionIndex = freeAdhesionSlotIndices[topIndex];
-    } else {
-        // Allocate a new slot
-        adhesionIndex = atomicAdd(totalAdhesionCount, 1);
-        if (adhesionIndex >= u_maxAdhesions) {
-            // No space for new adhesions, cancel the split and clamp counts
-            atomicMin(liveAdhesionCount, u_maxAdhesions);
-            atomicMin(totalAdhesionCount, u_maxAdhesions);
-            return -1; // Indicate failure to allocate
+    // Try to reserve a free adhesion slot
+    // Snapshot free top value without modifying it first
+    int freeTopBefore = freeAdhesionTop;
+    if (freeTopBefore > 0) {
+        // Now reserve slot *safely*
+        int freeTop = atomicAdd(freeAdhesionTop, -1);
+        if (freeTop > 0) {
+            return freeAdhesionSlotIndices[freeTop - 1];
+        } else {
+            // Another thread raced and depleted the stack before we got here
+            atomicAdd(freeAdhesionTop, 1); // revert
         }
     }
-    return adhesionIndex;
+
+    // Fallback to allocating a new slot
+    uint newAdhesionIndex = atomicAdd(totalAdhesionCount, 1);
+    if (newAdhesionIndex >= u_maxAdhesions) {
+        atomicMin(totalAdhesionCount, u_maxAdhesions);
+        return -1;
+    }
+    return newAdhesionIndex;
+}
+
+bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
+    uint newAdhesionIndex = getNewAdhesionIndex();
+    if (newAdhesionIndex == uint(-1)) {
+        // Failed to reserve an adhesion index
+        return false;
+    }
+
+    // Check for available slot in cell A
+    int slotA = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
+            slotA = j;
+            break;
+        }
+    }
+
+    // Check for available slot in cell B
+    int slotB = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
+            slotB = j;
+            break;
+        }
+    }
+
+    if (slotA == -1 || slotB == -1) {
+        // Roll back the reservation if any cell has no free slot
+        int reservation = atomicAdd(freeAdhesionTop, 1);
+        int topIndex = reservation;
+        freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
+        return false;
+    }
+
+    // Write connection and assign indices
+    connections[newAdhesionIndex] = AdhesionConnection(
+        cellAIndex,
+        cellBIndex,
+        modeIndex,
+        1
+    );
+    outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
+    outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
+    return true;
+}
+
+void removeAdhesion(int adhesionIndex){
+    // Mark as inactive
+    connections[adhesionIndex].isActive = 0;
+    for (int i = 0; i < 20; ++i) {
+        if (outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] == adhesionIndex) {
+            outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] = -1;
+            break;
+        }
+    }
+
+    // Remove from cellB
+    for (int i = 0; i < 20; ++i) {
+        if (outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[i] == adhesionIndex) {
+            outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[i] = -1;
+            break;
+        }
+    }
+
+    // Push to free stack safely
+    int freeIndex = atomicAdd(freeAdhesionTop, 1);
+    if (freeIndex >= u_maxAdhesions) {
+        // Do not write to the slot array, but let the counter grow to clamp
+        atomicMin(freeAdhesionTop, u_maxAdhesions);
+        return;
+    }
+    freeAdhesionSlotIndices[freeIndex] = adhesionIndex;
 }
 
 void main() {
@@ -162,10 +239,9 @@ void main() {
     ComputeCell cell = inputCells[index];
     GPUMode mode = modes[cell.modeIndex];
 
-    if (cell.age < mode.splitInterval) {
-        outputCells[index] = cell;
-        return;
-    }
+    outputCells[index] = cell; // Default output is the same cell
+    
+    if (cell.age < mode.splitInterval) return;
 
     // Begin split logic
 

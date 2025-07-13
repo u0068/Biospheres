@@ -138,9 +138,6 @@ struct CellManager
     {
         syncCounterBuffers();
 
-        // Add buffer update barrier but don't flush yet
-        addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-
         totalCellCount = countPtr[0];
         liveCellCount = countPtr[1];
         totalAdhesionCount = countPtr[2]; // This is the number of adhesion connections, not cells
