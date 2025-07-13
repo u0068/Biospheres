@@ -789,7 +789,7 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
     internalUpdateShader->setInt("u_maxCells", cellLimit);
-    internalUpdateShader->setInt("u_maxAdhesions", cellLimit*config::MAX_ADHESIONS_PER_CELL/2);
+    internalUpdateShader->setInt("u_maxAdhesions", getAdhesionLimit());
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());

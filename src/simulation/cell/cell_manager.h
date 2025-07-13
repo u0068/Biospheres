@@ -151,6 +151,7 @@ struct CellManager
     static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
     float spawnRadius = config::DEFAULT_SPAWN_RADIUS;
     int cellLimit = config::MAX_CELLS;
+	int getAdhesionLimit() const { return cellLimit * config::MAX_ADHESIONS_PER_CELL / 2; } // Maximum number of adhesion connections
 
     // Constructor and destructor
     CellManager();

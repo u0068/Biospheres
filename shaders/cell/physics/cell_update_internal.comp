@@ -144,41 +144,57 @@ uint getNewAdhesionIndex() {
         // Revert decrement if no free slots
         atomicAdd(freeAdhesionTop, 1);
         // Fallback to allocating a new slot
-        uint newIndex = atomicAdd(totalAdhesionCount, 1);
-        if (newIndex >= u_maxAdhesions) {
+        uint newAdhesionIndex = atomicAdd(totalAdhesionCount, 1);
+        if (newAdhesionIndex >= u_maxAdhesions) {
             atomicMin(totalAdhesionCount, u_maxAdhesions);
             return -1;
         }
-        return newIndex;
+        return newAdhesionIndex;
     }
 }
 
 bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
-    uint newIndex = getNewAdhesionIndex();
-    if (newIndex == -1) {
-        // Failed to reserve an adhesion index, don't create adhesion
+    uint newAdhesionIndex = getNewAdhesionIndex();
+    if (newAdhesionIndex == uint(-1)) {
+        // Failed to reserve an adhesion index
         return false;
     }
-    connections[newIndex] = AdhesionConnection(
+
+    // Check for available slot in cell A
+    int slotA = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
+            slotA = j;
+            break;
+        }
+    }
+
+    // Check for available slot in cell B
+    int slotB = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
+            slotB = j;
+            break;
+        }
+    }
+
+    if (slotA == -1 || slotB == -1) {
+        // Roll back the reservation if any cell has no free slot
+        uint reservation = atomicAdd(freeAdhesionTop, 1);
+        uint topIndex = reservation;
+        freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
+        return false;
+    }
+
+    // Write connection and assign indices
+    connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
         cellBIndex,
         modeIndex,
         1
     );
-    // Add to cellA's adhesionIndices
-    for (int j = 0; j < 20; ++j) {
-        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
-            outputCells[cellAIndex].adhesionIndices[j] = int(newIndex);
-            break;
-        }
-    }
-    // Add to cellB's adhesionIndices
-    for (int j = 0; j < 20; ++j) {
-        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
-            outputCells[cellBIndex].adhesionIndices[j] = int(newIndex);
-            break;
-        }
-    }
+    outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
+    outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
     return true;
 }
 
@@ -219,14 +235,12 @@ void main() {
 
     outputCells[index] = cell; // Default output is the same cell
 
-    if (cell.age < mode.splitInterval) {
-        return;
-    }
+    if (cell.age < mode.splitInterval) return;
 
     // Begin split logic
 
     // === Compute Split Priority ===
-    float myPriority = hash11(index ^ u_frameNumber);
+    float myPriority = (index);
 
     // === Check Adhered Cells ===
     for (int i = 0; i < 20; ++i) {
@@ -240,11 +254,11 @@ void main() {
         ComputeCell other = inputCells[otherIdx];
         GPUMode otherMode = modes[other.modeIndex];
 
-        if (other.age < otherMode.splitInterval) continue; // Other cell not splitting
+        if (other.age + u_deltaTime < otherMode.splitInterval) continue; // Other cell not splitting
 
         // If other cell wants to split, compare priority
-        float otherPriority = hash11(otherIdx ^ u_frameNumber);
-        if (otherPriority > myPriority) {
+        float otherPriority = (otherIdx);
+        if (otherPriority < myPriority) {
             // Defer this split
             return;
         }
@@ -335,9 +349,7 @@ void main() {
     }
     
     // Now we need to add the adhesion connection between the children
-    if (mode.parentMakeAdhesion == 0) {
-        return;
-    }
+    if (mode.parentMakeAdhesion == 0)  return;
     
     // Create a new adhesion connection between the two children
     addAdhesion(childAIndex, childBIndex, cell.modeIndex);

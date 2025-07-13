@@ -180,10 +180,8 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     ImGui::Separator();
 
     int cellCount = cellManager.getCellCount();
-    ImGui::Text("Total Cells: %i / %i", cellManager.totalCellCount, config::MAX_CELLS);
-    ImGui::Text("Live Cells: %i / %i", cellManager.liveCellCount, cellManager.totalCellCount);
-    ImGui::Text("Total Adhesion Connections: %i / %i", cellManager.totalAdhesionCount, config::MAX_ADHESIONS);
-    ImGui::Text("Live Adhesion Connections: %i / %i", cellManager.liveAdhesionCount, cellManager.totalAdhesionCount);
+    ImGui::Text("Cells: %i / %i / %i", cellManager.liveCellCount, cellManager.totalCellCount, cellManager.cellLimit);
+    ImGui::Text("Adhesion Connections: %i / %i / %i", cellManager.liveAdhesionCount, cellManager.totalAdhesionCount, cellManager.getAdhesionLimit());
     ImGui::Text("Pending Cells: %i", cellManager.pendingCellCount);
     ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
     ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
