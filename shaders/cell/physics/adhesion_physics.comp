@@ -76,8 +76,10 @@ layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
 
 // Cell count
 layout(std430, binding = 5) buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
 };
 
 // Uniforms
@@ -115,7 +117,7 @@ bool isValidGridPos(ivec3 gridPos) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= cellCount) {
+    if (index >= totalCellCount) {
         return;
     }
 } 

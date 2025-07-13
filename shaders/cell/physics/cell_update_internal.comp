@@ -72,7 +72,7 @@ layout(std430, binding = 3) coherent buffer CellCountBuffer {
     uint totalCellCount;
     uint liveCellCount;
     uint totalAdhesionCount;
-    uint freeAdhesionTop;
+    int freeAdhesionTop;
 };
 
 layout(std430, binding = 4) coherent buffer AdhesionConnectionBuffer {
@@ -137,20 +137,26 @@ vec4 smallRandomQuat(float angle, uint seed) {
 
 uint getNewAdhesionIndex() {
     // Try to reserve a free adhesion slot
-    uint freeTop = atomicAdd(freeAdhesionTop, -1);
-    if (freeTop > 0) {
-        return freeAdhesionSlotIndices[freeTop - 1];
-    } else {
-        // Revert decrement if no free slots
-        atomicAdd(freeAdhesionTop, 1);
-        // Fallback to allocating a new slot
-        uint newAdhesionIndex = atomicAdd(totalAdhesionCount, 1);
-        if (newAdhesionIndex >= u_maxAdhesions) {
-            atomicMin(totalAdhesionCount, u_maxAdhesions);
-            return -1;
+    // Snapshot free top value without modifying it first
+    int freeTopBefore = freeAdhesionTop;
+    if (freeTopBefore > 0) {
+        // Now reserve slot *safely*
+        int freeTop = atomicAdd(freeAdhesionTop, -1);
+        if (freeTop > 0) {
+            return freeAdhesionSlotIndices[freeTop - 1];
+        } else {
+            // Another thread raced and depleted the stack before we got here
+            atomicAdd(freeAdhesionTop, 1); // revert
         }
-        return newAdhesionIndex;
     }
+
+    // Fallback to allocating a new slot
+    uint newAdhesionIndex = atomicAdd(totalAdhesionCount, 1);
+    if (newAdhesionIndex >= u_maxAdhesions) {
+        atomicMin(totalAdhesionCount, u_maxAdhesions);
+        return -1;
+    }
+    return newAdhesionIndex;
 }
 
 bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
@@ -201,21 +207,20 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
 void removeAdhesion(int adhesionIndex){
     // Mark as inactive
     connections[adhesionIndex].isActive = 0;
-    for (int j = 0; j < 20; ++j) {
-        if (outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[j] == int(adhesionIndex)) {
-            outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[j] = -1;
+    for (int i = 0; i < 20; ++i) {
+        if (outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] == adhesionIndex) {
+            outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] = -1;
             break;
         }
     }
 
     // Remove from cellB
-    for (int j = 0; j < 20; ++j) {
-        if (outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[j] == int(adhesionIndex)) {
-            outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[j] = -1;
+    for (int i = 0; i < 20; ++i) {
+        if (outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[i] == adhesionIndex) {
+            outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[i] = -1;
             break;
         }
     }
-
 
     // Push to free stack safely
     uint freeIndex = atomicAdd(freeAdhesionTop, 1);
@@ -339,12 +344,12 @@ void main() {
 
         // Child A keeps adhesion
         if (mode.childAKeepAdhesion == 1) {
-            addAdhesion(childAIndex, neighborIndex, oldConnection.modeIndex);
+            if (!addAdhesion(childAIndex, neighborIndex, oldConnection.modeIndex)) return;
         }
 
         // Child B keeps adhesion
         if (mode.childBKeepAdhesion == 1) {
-            addAdhesion(childBIndex, neighborIndex, oldConnection.modeIndex);
+            if (!addAdhesion(childBIndex, neighborIndex, oldConnection.modeIndex)) return;
         }
     }
     
@@ -352,7 +357,7 @@ void main() {
     if (mode.parentMakeAdhesion == 0)  return;
     
     // Create a new adhesion connection between the two children
-    addAdhesion(childAIndex, childBIndex, cell.modeIndex);
+    if (!addAdhesion(childAIndex, childBIndex, cell.modeIndex)) return;
 }
 
 

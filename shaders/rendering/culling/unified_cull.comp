@@ -70,8 +70,10 @@ layout(std430, binding = 1) readonly buffer ModeBuffer {
 };
 
 layout(std430, binding = 2) readonly buffer CellCountBuffer {
-    uint cellCount;
-    uint adhesionCount;
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
 };
 
 // Unified output buffers - can be used for different modes
@@ -155,7 +157,7 @@ int determineLODLevel(float distanceToCamera) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
-    if (index >= cellCount) return;
+    if (index >= totalCellCount) return;
     
     // Calculate cell radius from mass (assuming sphere volume formula)
     vec3 cellPos = cellData[index].positionAndMass.xyz;

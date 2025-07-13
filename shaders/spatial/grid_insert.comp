@@ -42,8 +42,9 @@ layout(std430, binding = 4) buffer CellCountBuffer {
     uint totalCellCount;
     uint liveCellCount;
     uint totalAdhesionCount;
-    uint liveAdhesionCount;
+    uint freeAdhesionTop;
 };
+
 // Uniforms
 uniform int u_gridResolution;
 uniform float u_gridCellSize;
