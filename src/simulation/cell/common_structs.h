@@ -56,7 +56,7 @@ struct GPUMode {
     int parentMakeAdhesion{ 0 };  // Boolean flag for adhesionSettings creation (0 = false, 1 = true) + padding
     int childAKeepAdhesion{ 1 };
 	int childBKeepAdhesion{ 1 };
-	int padding[1]{ 0 }; // Padding to ensure 16-byte alignment for GPU compatibility
+	int maxAdhesions{ config::MAX_ADHESIONS_PER_CELL }; // Maximum number of adhesions for this mode
 };
 
 struct AdhesionConnection

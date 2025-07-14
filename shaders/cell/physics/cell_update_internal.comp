@@ -27,7 +27,7 @@ struct GPUMode {
     int parentMakeAdhesion; // Boolean flag for adhesion creation
     int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
     int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
-    int padding[1];         // Padding to maintain alignment
+    int maxAdhesions;       // Max number of adhesions
 };
 
 // Cell data structure for compute shader
@@ -231,6 +231,11 @@ void removeAdhesion(int adhesionIndex){
     }
 }
 
+float priority(uint seed) {
+    // Generate a pseudo-random priority based on the seed
+    return hash11(seed ^ u_frameNumber);
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
@@ -242,10 +247,18 @@ void main() {
 
     if (cell.age < mode.splitInterval) return;
 
+    int adhesionCount = 0;
+    for (int i = 0; i < 20; ++i) {
+        if (cell.adhesionIndices[i] >= 0) {
+            adhesionCount++;
+        }
+    }
+    if (adhesionCount >= mode.maxAdhesions) return; // Too many adhesions, cannot split
+
     // Begin split logic
 
     // === Compute Split Priority ===
-    float myPriority = hash11(index ^ u_frameNumber);
+    float myPriority = priority(index);
 
     // === Check Adhered Cells ===
     for (int i = 0; i < 20; ++i) {
@@ -255,14 +268,14 @@ void main() {
         AdhesionConnection conn = connections[adhesionIdx];
         if (conn.isActive == 0) continue;
 
-        uint otherIdx = (conn.cellAIndex == index) ? conn.cellBIndex : conn.cellAIndex;
-        ComputeCell other = inputCells[otherIdx];
+        uint otherIndex = (conn.cellAIndex == index) ? conn.cellBIndex : conn.cellAIndex;
+        ComputeCell other = inputCells[otherIndex];
         GPUMode otherMode = modes[other.modeIndex];
 
-        if (other.age + u_deltaTime < otherMode.splitInterval) continue; // Other cell not splitting
+        if (other.age < otherMode.splitInterval) continue; // Other cell not splitting
 
         // If other cell wants to split, compare priority
-        float otherPriority = hash11(otherIdx ^ u_frameNumber);
+        float otherPriority = priority(otherIndex);
         if (otherPriority < myPriority) {
             // Defer this split - other cell has higher priority (lower index)
             return;
