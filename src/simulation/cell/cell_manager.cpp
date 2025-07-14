@@ -573,6 +573,10 @@ void CellManager::updateCells(float deltaTime)
 
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+        runAdhesionPhysics(deltaTime);
+
+    	addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
         // Run position/velocity update on GPU (still working on current buffer)
         runUpdateCompute(deltaTime);
 
@@ -766,6 +770,7 @@ void CellManager::runUpdateCompute(float deltaTime)
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     updateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
+
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer

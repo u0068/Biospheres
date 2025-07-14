@@ -150,15 +150,14 @@ void CellManager::initializeAdhesionConnectionSystem()
     std::cout << "Initialized adhesionSettings connection system with capacity for " << getAdhesionLimit() << " connections\n";
 }
 
-void CellManager::runAdhesionPhysics()
+void CellManager::runAdhesionPhysics(float deltaTime)
 {
-    if (totalCellCount == 0) return;
-    
     TimerGPU timer("Adhesion Physics");
     
     adhesionPhysicsShader->use();
     
     // Set uniforms
+    adhesionPhysicsShader->setFloat("u_deltaTime", deltaTime);
     
     // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Cell data
@@ -170,8 +169,11 @@ void CellManager::runAdhesionPhysics()
     // Dispatch compute shader
     GLuint numGroups = (totalAdhesionCount + 255) / 256;
     adhesionPhysicsShader->dispatch(numGroups, 1, 1);
-    
+
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Swap buffers for next frame
+    rotateBuffers();
 }
 
 void CellManager::cleanupAdhesionConnectionSystem()

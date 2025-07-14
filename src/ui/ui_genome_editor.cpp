@@ -250,9 +250,6 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         cellManager.addCellToStagingBuffer(newCell);
         cellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
         
-        // Establish initial adhesionSettings connections
-        cellManager.runAdhesionPhysics();
-        
         // Reset simulation time
         sceneManager.resetPreviewSimulationTime();
         

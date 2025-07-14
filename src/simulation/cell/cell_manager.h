@@ -208,7 +208,6 @@ struct CellManager
     void cleanupAdhesionLines();
 
     void initializeAdhesionConnectionSystem();
-    void runAdhesionPhysics();
     void cleanupAdhesionConnectionSystem();
 
     // CELL ADDITION RULES:
@@ -408,6 +407,7 @@ private:
     void runPhysicsCompute(float deltaTime);
     void runUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
+    void runAdhesionPhysics(float deltaTime);
     void applyCellAdditions();
 
     // Spatial grid helper functions

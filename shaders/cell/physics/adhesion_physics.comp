@@ -2,21 +2,6 @@
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
-// Cell data structure matching the one in the main simulation
-struct ComputeCell {
-    vec4 positionAndMass; // x, y, z, mass
-    vec4 velocity;        // Fixed to match CPU layout
-    vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation;     // quaternion: w, x, y, z
-    vec4 angularVelocity;
-    vec4 angularAcceleration;
-    vec4 signallingSubstances;
-    int modeIndex;
-    float age;
-    float toxins;
-    float nitrates;
-};
-
 struct AdhesionSettings
 {
     bool canBreak;
@@ -40,20 +25,40 @@ struct GPUMode {
     int genomeOffset;
     AdhesionSettings adhesionSettings;
     int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int padding[3];          // Padding to maintain alignment
+    int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
+    int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
+    int maxAdhesions;       // Max number of adhesions
+};
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass; // x, y, z, mass
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells
 struct AdhesionConnection {
     uint cellAIndex;      // Index of first cell in the connection
     uint cellBIndex;      // Index of second cell in the connection
-    uint modeIndex;       // Mode index for the connection (to lookup adhesion settings)
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
 };
 
 // Input Cell data
-layout(std430, binding = 0) buffer CellBuffer {
-    ComputeCell cells[];
+layout(std430, binding = 0) restrict buffer ReadCellBuffer {
+    ComputeCell inputCells[];
 };
 
 // Input: Mode data
@@ -74,11 +79,12 @@ layout(std430, binding = 3) buffer CellCountBuffer {
 };
 
 // Output Cell data
-layout(std430, binding = 4) buffer CellBuffer {
-    ComputeCell cells[];
+layout(std430, binding = 4) restrict buffer WriteCellBuffer {
+    ComputeCell outputCells[];
 };
 
 // Uniforms
+uniform float u_deltaTime;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -86,4 +92,9 @@ void main() {
     if (index >= totalCellCount) {
         return;
     }
+
+    ComputeCell cell = inputCells[index];
+    outputCells[index] = cell; // Copy input to output to make sure that the output buffer contains up-to-date data
+
+    float allUniformsMustBeUsed = u_deltaTime;
 } 
