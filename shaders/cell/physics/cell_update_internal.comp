@@ -355,7 +355,7 @@ void main() {
         // Remove the old connection
         removeAdhesion(oldAdhesionIndex);
 
-        vec3 direction = normalize(outputCells[neighborIndex].positionAndMass.xyz - cell.positionAndMass.xyz);
+        vec3 direction = normalize(inputCells[neighborIndex].positionAndMass.xyz - cell.positionAndMass.xyz);
         vec3 splitDirWorld = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation);
         float adhesionZone = dot(direction, splitDirWorld);
         float equatorWidth = 0.10; // Width of the shared adhesion zone
