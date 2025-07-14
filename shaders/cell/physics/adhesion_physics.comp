@@ -95,6 +95,4 @@ void main() {
 
     ComputeCell cell = inputCells[index];
     outputCells[index] = cell; // Copy input to output to make sure that the output buffer contains up-to-date data
-
-    float allUniformsMustBeUsed = u_deltaTime;
 } 
