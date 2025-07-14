@@ -328,7 +328,7 @@ void main() {
 
     ComputeCell childB = cell;
     childB.positionAndMass.xyz -= offset;
-    childB.age = startAge;
+    childB.age = startAge + 0.001;
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
     for (int i = 0; i < 20; ++i) {
@@ -355,13 +355,18 @@ void main() {
         // Remove the old connection
         removeAdhesion(oldAdhesionIndex);
 
+        vec3 direction = normalize(outputCells[neighborIndex].positionAndMass.xyz - cell.positionAndMass.xyz);
+        vec3 splitDirWorld = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation);
+        float adhesionZone = dot(direction, splitDirWorld);
+        float equatorWidth = 0.5; // Width of the shared adhesion zone
+
         // Child A keeps adhesion
-        if (mode.childAKeepAdhesion == 1) {
+        if (mode.childAKeepAdhesion == 1 && adhesionZone > -equatorWidth) {
             if (!addAdhesion(childAIndex, neighborIndex, oldConnection.modeIndex)) return;
         }
 
         // Child B keeps adhesion
-        if (mode.childBKeepAdhesion == 1) {
+        if (mode.childBKeepAdhesion == 1 && adhesionZone < equatorWidth) {
             if (!addAdhesion(childBIndex, neighborIndex, oldConnection.modeIndex)) return;
         }
     }
