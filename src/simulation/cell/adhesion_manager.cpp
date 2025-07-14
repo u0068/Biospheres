@@ -167,7 +167,7 @@ void CellManager::runAdhesionPhysics(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, getCellWriteBuffer()); // Output Cell data
     
     // Dispatch compute shader
-    GLuint numGroups = (totalAdhesionCount + 255) / 256;
+    GLuint numGroups = (totalCellCount + 255) / 256;
     adhesionPhysicsShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);

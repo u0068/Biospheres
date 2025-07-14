@@ -568,7 +568,7 @@ void CellManager::updateCells(float deltaTime)
 
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        // Run physics computation on GPU (reads from previous, writes to current)
+        // Run physics computation on GPU
         runPhysicsCompute(deltaTime);
 
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -577,7 +577,7 @@ void CellManager::updateCells(float deltaTime)
 
     	addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        // Run position/velocity update on GPU (still working on current buffer)
+        // Run position/velocity update on GPU
         runUpdateCompute(deltaTime);
 
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
