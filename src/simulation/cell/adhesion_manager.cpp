@@ -159,19 +159,13 @@ void CellManager::runAdhesionPhysics()
     adhesionPhysicsShader->use();
     
     // Set uniforms
-    adhesionPhysicsShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
-    adhesionPhysicsShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
-    adhesionPhysicsShader->setFloat("u_worldSize", config::WORLD_SIZE);
-    adhesionPhysicsShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
-    adhesionPhysicsShader->setInt("u_maxConnections", getAdhesionLimit());
     
     // Bind buffers
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellWriteBuffer()); // Cell data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Cell data
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer); // Mode data
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridBuffer); // Spatial grid
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer); // Grid counts
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionConnectionBuffer); // Output connections
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, gpuCellCountBuffer); // Cell count
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer); // Input connections
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Cell count
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, getCellWriteBuffer()); // Output Cell data
     
     // Dispatch compute shader
     GLuint numGroups = (totalAdhesionCount + 255) / 256;

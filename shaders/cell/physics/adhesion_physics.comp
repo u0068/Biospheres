@@ -51,7 +51,7 @@ struct AdhesionConnection {
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
 };
 
-// Input: Cell data
+// Input Cell data
 layout(std430, binding = 0) buffer CellBuffer {
     ComputeCell cells[];
 };
@@ -61,58 +61,24 @@ layout(std430, binding = 1) buffer ModeBuffer {
     GPUMode modes[];
 };
 
-// Input: Spatial grid data
-layout(std430, binding = 2) buffer GridBuffer {
-    uint gridCells[];  // Stores cell indices for each grid cell
-};
-
-layout(std430, binding = 3) buffer GridCountBuffer {
-    uint gridCounts[];
-};
-
-layout(std430, binding = 4) buffer AdhesionConnectionBuffer {
+layout(std430, binding = 2) buffer AdhesionConnectionBuffer {
     AdhesionConnection connections[];
 };
 
 // Cell count
-layout(std430, binding = 5) buffer CellCountBuffer {
+layout(std430, binding = 3) buffer CellCountBuffer {
     uint totalCellCount;
     uint liveCellCount;
     uint totalAdhesionCount;
     uint freeAdhesionTop;
 };
 
+// Output Cell data
+layout(std430, binding = 4) buffer CellBuffer {
+    ComputeCell cells[];
+};
+
 // Uniforms
-uniform int u_gridResolution;
-uniform float u_gridCellSize;
-uniform float u_worldSize;
-uniform int u_maxCellsPerGrid;
-uniform int u_maxConnections;
-
-// Function to convert world position to grid coordinates
-ivec3 worldToGrid(vec3 worldPos) {
-    // Clamp to world bounds first
-    vec3 clampedPos = clamp(worldPos, vec3(-u_worldSize * 0.5), vec3(u_worldSize * 0.5));
-    
-    // Convert to grid coordinates [0, gridResolution)
-    vec3 normalizedPos = (clampedPos + u_worldSize * 0.5) / u_worldSize;
-    ivec3 gridPos = ivec3(normalizedPos * u_gridResolution);
-    
-    // Ensure we stay within bounds
-    return clamp(gridPos, ivec3(0), ivec3(u_gridResolution - 1));
-}
-
-// Function to convert 3D grid coordinates to 1D index
-uint gridToIndex(ivec3 gridPos) {
-    return uint(gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution);
-}
-
-// Function to check if grid coordinates are valid
-bool isValidGridPos(ivec3 gridPos) {
-    return gridPos.x >= 0 && gridPos.x < u_gridResolution &&
-           gridPos.y >= 0 && gridPos.y < u_gridResolution &&
-           gridPos.z >= 0 && gridPos.z < u_gridResolution;
-}
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
