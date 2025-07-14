@@ -358,7 +358,7 @@ void main() {
         vec3 direction = normalize(outputCells[neighborIndex].positionAndMass.xyz - cell.positionAndMass.xyz);
         vec3 splitDirWorld = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation);
         float adhesionZone = dot(direction, splitDirWorld);
-        float equatorWidth = 0.5; // Width of the shared adhesion zone
+        float equatorWidth = 0.10; // Width of the shared adhesion zone
 
         // Child A keeps adhesion
         if (mode.childAKeepAdhesion == 1 && adhesionZone > -equatorWidth) {
