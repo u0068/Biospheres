@@ -828,12 +828,12 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    // Swap buffers for next frame
-    rotateBuffers();
-    
     // CRITICAL FIX: Ensure all buffers are consistent after splitting
     // Copy the write buffer to the standby buffer to maintain consistency
     glCopyNamedBufferSubData(getCellWriteBuffer(), cellBuffer[getRotatedIndex(2, 3)], 0, 0, totalCellCount * sizeof(ComputeCell));
+
+    // Swap buffers for next frame
+    rotateBuffers();
     
     // CRITICAL FIX: Add safety check for high cell counts
     if (totalCellCount > cellLimit * 0.95) { // If we're at 95% capacity

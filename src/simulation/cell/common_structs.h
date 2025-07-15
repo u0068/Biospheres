@@ -41,7 +41,7 @@ struct AdhesionSettings
     float linearSpringDamping = 0.5f;
     float orientationSpringStiffness = 2.0f;
     float orientationSpringDamping = 0.5f;
-    float maxAngularDeviation = 45.0f; // degrees
+    float maxAngularDeviation = 0.0f; // degrees - 0 = strict orientation locking, >0 = flexible with max deviation
 };
 
 struct GPUMode {

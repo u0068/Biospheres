@@ -37,7 +37,7 @@ struct AdhesionSettings
     float linearSpringDamping;
     float orientationSpringStiffness;
     float orientationSpringDamping;
-    float maxAngularDeviation; // degrees
+    float maxAngularDeviation; // degrees - 0 = strict orientation locking, >0 = flexible with max deviation
 };
 
 // GPU Mode structure (matches GPUMode in common_structs.h)

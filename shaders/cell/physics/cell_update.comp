@@ -41,6 +41,16 @@ uniform float u_deltaTime;
 uniform float u_damping;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 
+// Quaternion multiplication function
+vec4 quatMultiply(vec4 q1, vec4 q2) {
+    return vec4(
+        q1.w*q2.x + q1.x*q2.w + q1.y*q2.z - q1.z*q2.y,
+        q1.w*q2.y - q1.x*q2.z + q1.y*q2.w + q1.z*q2.x,
+        q1.w*q2.z + q1.x*q2.y - q1.y*q2.x + q1.z*q2.w,
+        q1.w*q2.w - q1.x*q2.x - q1.y*q2.y - q1.z*q2.z
+    );
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
@@ -49,7 +59,7 @@ void main() {
         return;
     }
     
-    // Skip position updates for dragged cell - position is set directly by dragging
+    // Skip position and orientation updates for dragged cell - these are set directly by dragging
     if (int(index) == u_draggedCellIndex) {
         return;
     }
@@ -66,6 +76,30 @@ void main() {
     
     // Update position based on velocity (Euler integration)
     cell.positionAndMass.xyz += cell.velocity.xyz * u_deltaTime;
+    
+    // Update angular velocity based on angular acceleration
+    cell.angularVelocity.xyz += cell.angularAcceleration.xyz * u_deltaTime;
+    
+    // Apply angular damping
+    cell.angularVelocity.xyz *= pow(u_damping, u_deltaTime*100.);
+    
+    // Update orientation based on angular velocity
+    // Convert angular velocity to quaternion derivative and integrate
+    vec3 angularVel = cell.angularVelocity.xyz;
+    float angularSpeed = length(angularVel);
+    
+    if (angularSpeed > 0.001) {
+        // Normalize angular velocity to get rotation axis
+        vec3 rotationAxis = angularVel / angularSpeed;
+        
+        // Create quaternion for this rotation
+        float halfAngle = angularSpeed * u_deltaTime * 0.5;
+        vec4 rotationQuat = vec4(rotationAxis * sin(halfAngle), cos(halfAngle));
+        
+        // Apply rotation to current orientation
+        cell.orientation = quatMultiply(cell.orientation, rotationQuat);
+        cell.orientation = normalize(cell.orientation);
+    }
     
     // Optional: Add boundary constraints here
     // For example, keep cells within a certain bounds

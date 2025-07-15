@@ -612,5 +612,5 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     addTooltip("How strongly the adhesionSettings resists rotational changes between connected cells");
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
-    addTooltip("How far the adhesive connection can bend freely before angular constraints kick in");
+    addTooltip("Maximum angle between connected cells (0° = strict orientation locking, >0° = flexible with max deviation)");
 }

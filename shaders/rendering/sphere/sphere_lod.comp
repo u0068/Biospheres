@@ -26,7 +26,7 @@ struct AdhesionSettings
     float linearSpringDamping;
     float orientationSpringStiffness;
     float orientationSpringDamping;
-    float maxAngularDeviation; // degrees
+    float maxAngularDeviation; // degrees - 0 = strict orientation locking, >0 = flexible with max deviation
 };
 
 // mode data structure for compute shader
