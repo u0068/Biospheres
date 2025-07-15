@@ -63,7 +63,17 @@ void main() {
     
     // Only the first thread updates the cell count after all cells are added
     if (index == 0) {
-        totalCellCount = min(u_maxCells, totalCellCount + u_pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
-        liveCellCount = min(u_maxCells, liveCellCount + u_pendingCellCount); // Clamp cell count to ensure it can never exceed the limit
+        // CRITICAL FIX: Check bounds before updating to prevent overflow
+        uint newTotalCount = totalCellCount + u_pendingCellCount;
+        uint newLiveCount = liveCellCount + u_pendingCellCount;
+        
+        if (newTotalCount <= uint(u_maxCells)) {
+            totalCellCount = newTotalCount;
+            liveCellCount = newLiveCount;
+        } else {
+            // Clamp to maximum
+            totalCellCount = uint(u_maxCells);
+            liveCellCount = uint(u_maxCells);
+        }
     }
 }

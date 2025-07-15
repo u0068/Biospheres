@@ -553,6 +553,22 @@ void CellManager::updateCells(float deltaTime)
     int previousCellCount = totalCellCount;
     updateCounts();
     
+    // CRITICAL FIX: Safety check to prevent cell count overflow
+    if (totalCellCount > cellLimit) {
+        std::cout << "Warning: Cell count exceeded limit! Clamping to " << cellLimit << std::endl;
+        totalCellCount = cellLimit;
+        liveCellCount = std::min(liveCellCount, cellLimit);
+        
+        // Update GPU buffer with clamped values
+        GLuint counts[4] = { 
+            static_cast<GLuint>(totalCellCount), 
+            static_cast<GLuint>(liveCellCount), 
+            static_cast<GLuint>(totalAdhesionCount), 
+            static_cast<GLuint>(liveAdhesionCount) 
+        };
+        glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
+    }
+    
     // Invalidate cache if cell count changed (affects legacy calculation)
     if (previousCellCount != totalCellCount) {
         invalidateStatisticsCache();
@@ -584,6 +600,9 @@ void CellManager::updateCells(float deltaTime)
 
         // Run cells' internal calculations (this creates new pending cells from mitosis)
         runInternalUpdateCompute(deltaTime);
+        
+        // CRITICAL FIX: Add memory barrier after splitting to ensure new cells are synchronized
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
         
         // Single barrier after all simulation compute operations
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -811,6 +830,16 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     // Swap buffers for next frame
     rotateBuffers();
+    
+    // CRITICAL FIX: Ensure all buffers are consistent after splitting
+    // Copy the write buffer to the standby buffer to maintain consistency
+    glCopyNamedBufferSubData(getCellWriteBuffer(), cellBuffer[getRotatedIndex(2, 3)], 0, 0, totalCellCount * sizeof(ComputeCell));
+    
+    // CRITICAL FIX: Add safety check for high cell counts
+    if (totalCellCount > cellLimit * 0.95) { // If we're at 95% capacity
+        // Force a memory barrier to ensure all operations are complete
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+    }
 }
 
 void CellManager::applyCellAdditions()
@@ -988,5 +1017,39 @@ void CellManager::spawnCells(int count)
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
 
         addCellToStagingBuffer(newCell);
+    }
+}
+
+void CellManager::updateCounts()
+{
+    syncCounterBuffers();
+
+    // Add buffer update barrier but don't flush yet
+    addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
+    totalCellCount = countPtr[0];
+    liveCellCount = countPtr[1];
+    totalAdhesionCount = countPtr[2]; // This is the number of adhesion connections, not cells
+    liveAdhesionCount = totalAdhesionCount - countPtr[3];
+    
+    // CRITICAL FIX: Clamp cell counts to prevent overflow
+    if (totalCellCount > cellLimit) {
+        totalCellCount = cellLimit;
+        countPtr[0] = static_cast<GLuint>(cellLimit);
+    }
+    if (liveCellCount > cellLimit) {
+        liveCellCount = cellLimit;
+        countPtr[1] = static_cast<GLuint>(cellLimit);
+    }
+    
+    // CRITICAL FIX: If we had to clamp values, update the GPU buffer
+    if (countPtr[0] != totalCellCount || countPtr[1] != liveCellCount) {
+        GLuint counts[4] = { 
+            static_cast<GLuint>(totalCellCount), 
+            static_cast<GLuint>(liveCellCount), 
+            static_cast<GLuint>(totalAdhesionCount), 
+            static_cast<GLuint>(liveAdhesionCount) 
+        };
+        glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
     }
 }

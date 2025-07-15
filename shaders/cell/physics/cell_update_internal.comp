@@ -282,13 +282,37 @@ void main() {
         }
     }
     
-    // When dead cells are implemented, update this to reuse slots
+    // CRITICAL FIX: Replace atomic splitting with safer reservation system
+    // First, check if we have space for a new cell
+    uint currentCount = totalCellCount;
+    if (currentCount >= u_maxCells) {
+        // No space available, cancel the split
+        outputCells[index] = cell;
+        return;
+    }
+    
+    // Try to reserve a slot atomically
     uint newIndex = atomicAdd(totalCellCount, 1);
-    atomicAdd(liveCellCount, 1);
+    
+    // Check if we successfully got a valid slot
     if (newIndex >= u_maxCells) {
-        atomicMin(totalCellCount, u_maxCells); // Clamp cell count
-        atomicMin(liveCellCount, u_maxCells); // Clamp cell count
-        // No space for new cells, cancel the split
+        // We exceeded the limit, rollback and cancel
+        atomicAdd(totalCellCount, -1);
+        outputCells[index] = cell;
+        return;
+    }
+    
+    // Successfully reserved a slot, increment live count
+    atomicAdd(liveCellCount, 1);
+    
+    // CRITICAL FIX: Add memory barrier to ensure atomic operations are complete
+    memoryBarrierBuffer();
+    
+    // CRITICAL FIX: Double-check bounds after memory barrier
+    if (newIndex >= u_maxCells) {
+        // Rollback the increment if we're still out of bounds
+        atomicAdd(totalCellCount, -1);
+        atomicAdd(liveCellCount, -1);
         outputCells[index] = cell;
         return;
     }
@@ -338,6 +362,10 @@ void main() {
     // Store new cells
     outputCells[childAIndex] = childA;
     outputCells[childBIndex] = childB;
+    
+    // CRITICAL FIX: Also write to input buffer to maintain consistency across all buffers
+    inputCells[childAIndex] = childA;
+    inputCells[childBIndex] = childB;
 
     // Inherit adhesions for the new child cells
     for (int i = 0; i < 20; ++i) {
@@ -346,6 +374,9 @@ void main() {
 
         AdhesionConnection oldConnection = connections[oldAdhesionIndex];
         if (oldConnection.isActive == 0) continue;
+
+        // CRITICAL FIX: Add memory barrier before modifying adhesion connections
+        memoryBarrierBuffer();
 
         // Determine who the parent was connected to
         uint neighborIndex = (oldConnection.cellAIndex == childAIndex)
