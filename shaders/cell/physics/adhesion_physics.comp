@@ -166,9 +166,11 @@ void computeAdhesionForces(
     springForce -= dir * dampMag;
 
     forceA += springForce;
-    forceB -= springForce; // why do i need to make this positive as well??? i thought it should be negative
+    forceB -= springForce;
 
     // Orientation spring: try to align anchor with adhesion vector
+    // This doesn't take into account the genome, it just makes the cells face the same direction.
+    // Later it should be upgraded to store the anchor position in the adhesion
     vec3 anchorA = rotateVectorByQuaternion(adhesionMode.splitDirection.xyz, A.orientation);
     vec3 anchorB = rotateVectorByQuaternion(-adhesionMode.splitDirection.xyz, B.orientation);
         
