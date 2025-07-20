@@ -166,7 +166,7 @@ void computeAdhesionForces(
     springForce -= dir * dampMag;
 
     forceA += springForce;
-    forceB += springForce; // why do i need to make this positive as well??? i thought it should be negative
+    forceB -= springForce; // why do i need to make this positive as well??? i thought it should be negative
 
     // Orientation spring: try to align anchor with adhesion vector
     vec3 anchorA = rotateVectorByQuaternion(adhesionMode.splitDirection.xyz, A.orientation);
@@ -183,19 +183,20 @@ void computeAdhesionForces(
         torqueA -= axisA * angleA * settings.orientationSpringStiffness; // not sure if this is a valid way to make a quaternion from axis-angle
     }
 
-    vec3 axisB = cross(anchorB, adhesionDir);
+    vec3 axisB = cross(anchorB, -adhesionDir);
     float sinB = length(axisB);
-    float cosB = dot(anchorB, adhesionDir);
+    float cosB = dot(anchorB, -adhesionDir);
     float angleB = atan(sinB, cosB);
     if (sinB > 0.0001) {
         axisB = normalize(axisB);
         torqueB -= axisB * angleB * settings.orientationSpringStiffness;
     }
 
-    // Lever force to stabilize orientation spring
+    // Lever force
     vec3 rA = A.positionAndMass.xyz - B.positionAndMass.xyz;
     vec3 rB = B.positionAndMass.xyz - A.positionAndMass.xyz;
 
+    // This currently makes it spin out, which is bad
     //forceA += cross(rA, -torqueB);
     //forceB += cross(rB, -torqueA);
 }
@@ -220,13 +221,16 @@ void main() {
         uint otherIndex        = isCellA ? connection.cellBIndex : connection.cellAIndex;
         ComputeCell otherCell  = inputCells[otherIndex];
         
+        ComputeCell cellA = isCellA ? thisCell : otherCell;
+        ComputeCell cellB = isCellA ? otherCell : thisCell;
+
         //GPUMode thisMode      = modes[thisCell.modeIndex];
         //GPUMode otherMode     = modes[otherCell.modeIndex];
 
         GPUMode adhesionMode = modes[connection.modeIndex];
 
         vec3 fA, tA, fB, tB;
-        computeAdhesionForces(thisCell, otherCell, adhesionMode, fA, tA, fB, tB);
+        computeAdhesionForces(cellA, cellB, adhesionMode, fA, tA, fB, tB);
 
         if (isCellA) {
             thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
