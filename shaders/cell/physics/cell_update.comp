@@ -118,6 +118,10 @@ void main() {
         cell.positionAndMass.z = sign(pos.z) * bounds;
         cell.velocity.z *= -0.8;
     }
+    
+    // Reset accelerations for this frame
+    cell.acceleration = vec4(0.0);
+    cell.angularAcceleration = vec4(0.0);
 
     outputCells[index] = cell; // Write updated cell back to output buffer
 }
