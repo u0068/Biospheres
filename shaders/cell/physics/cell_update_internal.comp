@@ -206,6 +206,8 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
 
 void removeAdhesion(int adhesionIndex){
     // Mark as inactive
+    
+    // Remove from cellA
     connections[adhesionIndex].isActive = 0;
     for (int i = 0; i < 20; ++i) {
         if (outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] == adhesionIndex) {

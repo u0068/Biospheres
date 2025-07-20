@@ -138,6 +138,68 @@ vec4 axisAngleToQuat(vec4 axisAngle) {
     return vec4(axisAngle.xyz * s, cos(halfAngle));
 }
 
+void computeAdhesionForces(
+    ComputeCell A, ComputeCell B,
+    GPUMode adhesionMode,
+    out vec3 forceA, out vec3 torqueA,
+    out vec3 forceB, out vec3 torqueB
+) {
+    forceA = vec3(0.0); torqueA = vec3(0.0);
+    forceB = vec3(0.0); torqueB = vec3(0.0);
+    
+    AdhesionSettings settings = adhesionMode.adhesionSettings;
+
+    vec3 deltaPos = B.positionAndMass.xyz - A.positionAndMass.xyz;
+    float dist = length(deltaPos);
+    if (dist < 0.0001) return;
+    
+    vec3 dir = deltaPos / dist;
+    float restLength = settings.restLength + getRadius(A) + getRadius(B);
+    
+    // Linear spring
+    float forceMag = settings.linearSpringStiffness * (dist - restLength);
+    vec3 springForce = dir * forceMag;
+
+    // Damping
+    vec3 relVel = B.velocity.xyz - A.velocity.xyz;
+    float dampMag = settings.linearSpringDamping * dot(relVel, dir);
+    springForce -= dir * dampMag;
+
+    forceA += springForce;
+    forceB += springForce; // why do i need to make this positive as well??? i thought it should be negative
+
+    // Orientation spring: try to align anchor with adhesion vector
+    vec3 anchorA = rotateVectorByQuaternion(adhesionMode.splitDirection.xyz, A.orientation);
+    vec3 anchorB = rotateVectorByQuaternion(-adhesionMode.splitDirection.xyz, B.orientation);
+        
+    vec3 adhesionDir = normalize(deltaPos);
+
+    vec3 axisA = cross(anchorA, adhesionDir);
+    float sinA = length(axisA);
+    float cosA = dot(anchorA, adhesionDir);
+    float angleA = atan(sinA, cosA);
+    if (sinA > 0.0001) {
+        axisA = normalize(axisA);
+        torqueA -= axisA * angleA * settings.orientationSpringStiffness;
+    }
+
+    vec3 axisB = cross(anchorB, adhesionDir);
+    float sinB = length(axisB);
+    float cosB = dot(anchorB, adhesionDir);
+    float angleB = atan(sinB, cosB);
+    if (sinB > 0.0001) {
+        axisB = normalize(axisB);
+        torqueB -= axisB * angleB * settings.orientationSpringStiffness;
+    }
+
+    // Lever force to stabilize orientation spring
+    vec3 rA = A.positionAndMass.xyz - B.positionAndMass.xyz;
+    vec3 rB = B.positionAndMass.xyz - A.positionAndMass.xyz;
+
+    //forceA += cross(rA, -torqueB);
+    //forceB += cross(rB, -torqueA);
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
@@ -145,85 +207,38 @@ void main() {
         return;
     }
 
-    ComputeCell cell = inputCells[index];
+    ComputeCell thisCell = inputCells[index];
     
     // Reset accelerations for this frame
-    cell.acceleration = vec4(0.0);
-    cell.angularAcceleration = vec4(0.0);
+    thisCell.acceleration = vec4(0.0);
+    thisCell.angularAcceleration = vec4(0.0);
 
     // Apply forces for each adhesion connection
     for (int i = 0; i < 20; ++i) {
-        int adhesionIndex = cell.adhesionIndices[i];
+        int adhesionIndex = thisCell.adhesionIndices[i];
         if (adhesionIndex < 0) continue; // No adhesion connection
         AdhesionConnection connection = connections[adhesionIndex];
         if (connection.isActive == 0) continue; // Inactive connection
-        uint otherIndex = (connection.cellAIndex == index) ? connection.cellBIndex : connection.cellAIndex;
-        ComputeCell otherCell = inputCells[otherIndex];
+        bool isCellA = (connection.cellAIndex == index);
+        uint otherIndex        = isCellA ? connection.cellBIndex : connection.cellAIndex;
+        ComputeCell otherCell  = inputCells[otherIndex];
         
-        AdhesionSettings settings = modes[connection.modeIndex].adhesionSettings;
-        
-        // Linear spring force (position-based)
-        vec3 deltaPosition = otherCell.positionAndMass.xyz - cell.positionAndMass.xyz;
-        float springLength = length(deltaPosition);
-        if (springLength < 0.0001) continue; // Prevent division by zero
-        
-        vec3 forceDirection = normalize(deltaPosition);
-        float forceMagnitude = settings.linearSpringStiffness * (springLength - settings.restLength - getRadius(cell) - getRadius(otherCell));
-        vec3 springForce = forceDirection * forceMagnitude;
-        
-        // Apply linear damping
-        vec3 relativeVelocity = otherCell.velocity.xyz - cell.velocity.xyz;
-        float dampingForceMagnitude = settings.linearSpringDamping * dot(relativeVelocity, forceDirection);
-        springForce -= forceDirection * dampingForceMagnitude;
-        
-        // Update linear acceleration
-        cell.acceleration.xyz += springForce / cell.positionAndMass.w;
-        
-        // Orientation locking/constraint
-        if (settings.maxAngularDeviation >= 0.0) {
-            // Calculate the relative orientation between the two cells
-            vec4 relativeOrientation = quatMultiply(quatInverse(cell.orientation), otherCell.orientation);
-            
-            // Convert to axis-angle representation
-            vec4 axisAngle = quatToAxisAngle(relativeOrientation);
-            float currentAngle = abs(axisAngle.w);
-            
-            // Check if we need to apply orientation constraint
-            float maxAngleRadians = radians(settings.maxAngularDeviation);
-            bool needsConstraint = (settings.maxAngularDeviation == 0.0) || (currentAngle > maxAngleRadians);
-            
-            if (needsConstraint) {
-                // Calculate the target orientation that respects the constraint
-                vec4 targetRelativeOrientation;
-                
-                if (settings.maxAngularDeviation == 0.0) {
-                    // Strict locking: force identical orientation
-                    targetRelativeOrientation = vec4(0.0, 0.0, 0.0, 1.0); // Identity quaternion
-                } else {
-                    // Flexible constraint: clamp to max deviation
-                    float clampedAngle = min(currentAngle, maxAngleRadians);
-                    targetRelativeOrientation = axisAngleToQuat(vec4(axisAngle.xyz, clampedAngle));
-                }
-                
-                // Calculate the orientation correction needed
-                vec4 orientationCorrection = quatMultiply(relativeOrientation, quatInverse(targetRelativeOrientation));
-                
-                // Convert correction to angular velocity
-                vec4 correctionAxisAngle = quatToAxisAngle(orientationCorrection);
-                vec3 angularCorrection = correctionAxisAngle.xyz * correctionAxisAngle.w;
-                
-                // Apply orientation spring force
-                vec3 orientationForce = angularCorrection * settings.orientationSpringStiffness;
-                
-                // Apply orientation damping
-                vec3 relativeAngularVelocity = otherCell.angularVelocity.xyz - cell.angularVelocity.xyz;
-                vec3 orientationDamping = relativeAngularVelocity * settings.orientationSpringDamping;
-                
-                // Update angular acceleration
-                cell.angularAcceleration.xyz += (orientationForce - orientationDamping) / cell.positionAndMass.w;
-            }
+        //GPUMode thisMode      = modes[thisCell.modeIndex];
+        //GPUMode otherMode     = modes[otherCell.modeIndex];
+
+        GPUMode adhesionMode = modes[connection.modeIndex];
+
+        vec3 fA, tA, fB, tB;
+        computeAdhesionForces(thisCell, otherCell, adhesionMode, fA, tA, fB, tB);
+
+        if (isCellA) {
+            thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
+            thisCell.angularAcceleration.xyz += tA;
+        } else {
+            thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
+            thisCell.angularAcceleration.xyz += tB;
         }
     }
 
-    outputCells[index] = cell; // Write the updated cell back to output buffer
+    outputCells[index] = thisCell; // Write the updated cell back to output buffer
 } 
