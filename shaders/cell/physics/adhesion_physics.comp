@@ -199,8 +199,8 @@ void computeAdhesionForces(
     vec3 rB = B.positionAndMass.xyz - A.positionAndMass.xyz;
 
     // This currently makes it spin out, which is bad
-    //forceA += cross(rA, -torqueB);
-    //forceB += cross(rB, -torqueA);
+    forceA += cross(rA, torqueB);
+    forceB += cross(rB, torqueA);
 }
 
 void main() {
