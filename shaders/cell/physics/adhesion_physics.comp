@@ -235,10 +235,10 @@ void main() {
         computeAdhesionForces(cellA, cellB, adhesionMode, fA, tA, fB, tB);
 
         if (isCellA) {
-            thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
+            thisCell.acceleration.xyz += (fA - fB) / thisCell.positionAndMass.w;
             thisCell.angularAcceleration.xyz += tA;
         } else {
-            thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
+            thisCell.acceleration.xyz += (fB - fA) / thisCell.positionAndMass.w;
             thisCell.angularAcceleration.xyz += tB;
         }
     }
