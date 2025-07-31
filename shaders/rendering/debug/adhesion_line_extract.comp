@@ -29,6 +29,7 @@ struct AdhesionConnection {
 };
 
 // Adhesion line vertex data - each line has 2 vertices
+// This struct must match the C++ AdhesionLineVertex struct exactly
 struct AdhesionLineVertex {
     vec4 position;    // World position (w unused, but needed for alignment)
     vec4 color;       // RGB color (a unused, but needed for alignment)
@@ -65,6 +66,16 @@ void main() {
     
     AdhesionConnection currentAdhesion = connections[index];
     
+    // Only process active connections
+    if (currentAdhesion.isActive == 0) {
+        return;
+    }
+    
+    // Additional bounds checking to prevent invalid cell access
+    if (currentAdhesion.cellAIndex >= totalCellCount || currentAdhesion.cellBIndex >= totalCellCount) {
+        return;
+    }
+    
     // Calculate line vertices
     vec3 posA = cells[currentAdhesion.cellAIndex].positionAndMass.xyz;
     vec3 posB = cells[currentAdhesion.cellBIndex].positionAndMass.xyz;
@@ -72,9 +83,6 @@ void main() {
     // Use a distinctive color for adhesion lines (orange/amber)
     float ratio = (totalAdhesionCount > 1) ? (index / float(totalAdhesionCount - 1)) : 0.0;
     vec4 lineColor = vec4(1.0, ratio, 0.0, 1.0); // Orange/Amber for active
-    if (currentAdhesion.isActive == 0) {
-        lineColor = vec4(0.0, 0.0, 1.0, 1.0); // Solid blue for inactive
-    }
     
     // Each cell pair generates one line (2 vertices)
     // We use the current cell's index to determine where to store the line

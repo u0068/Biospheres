@@ -17,6 +17,14 @@ class Camera;
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
 static_assert(sizeof(GPUMode) % 16 == 0, "GPUMode must be 16-byte aligned for GPU usage");
+static_assert(sizeof(AdhesionConnection) % 16 == 0, "AdhesionConnection must be 16-byte aligned for GPU usage");
+
+// Adhesion line vertex structure for rendering
+struct AdhesionLineVertex {
+    glm::vec4 position;    // World position (w unused, but needed for alignment)
+    glm::vec4 color;       // RGB color (a unused, but needed for alignment)
+};
+static_assert(sizeof(AdhesionLineVertex) % 16 == 0, "AdhesionLineVertex must be 16-byte aligned for GPU usage");
 
 struct CellManager
 {

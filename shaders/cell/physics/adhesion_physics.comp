@@ -160,13 +160,13 @@ void computeAdhesionForces(
     float forceMag = settings.linearSpringStiffness * (dist - restLength);
     vec3 springForce = dir * forceMag;
 
-    // Damping
+    // Damping - oppose relative motion
     vec3 relVel = B.velocity.xyz - A.velocity.xyz;
     float dampMag = settings.linearSpringDamping * dot(relVel, dir);
-    springForce -= dir * dampMag;
+    vec3 dampingForce = -dir * dampMag; // Negative to oppose motion
 
-    forceA += springForce;
-    forceB -= springForce;
+    forceA += springForce + dampingForce;
+    forceB -= springForce + dampingForce;
 
     // Orientation spring: try to align anchor with adhesion vector
     // This doesn't take into account the genome, it just makes the cells face the same direction.
@@ -182,7 +182,10 @@ void computeAdhesionForces(
     float angleA = atan(sinA, cosA);
     if (sinA > 0.0001) {
         axisA = normalize(axisA);
-        torqueA -= axisA * angleA * settings.orientationSpringStiffness; // not sure if this is a valid way to make a quaternion from axis-angle
+        // Orientation spring and damping
+        vec3 springTorqueA = axisA * angleA * settings.orientationSpringStiffness;
+        vec3 dampingTorqueA = axisA * dot(A.angularVelocity.xyz, axisA) * settings.orientationSpringDamping;
+        torqueA -= springTorqueA + dampingTorqueA;
     }
 
     vec3 axisB = cross(anchorB, -adhesionDir);
@@ -191,16 +194,14 @@ void computeAdhesionForces(
     float angleB = atan(sinB, cosB);
     if (sinB > 0.0001) {
         axisB = normalize(axisB);
-        torqueB -= axisB * angleB * settings.orientationSpringStiffness;
+        // Orientation spring and damping
+        vec3 springTorqueB = axisB * angleB * settings.orientationSpringStiffness;
+        vec3 dampingTorqueB = axisB * dot(B.angularVelocity.xyz, axisB) * settings.orientationSpringDamping;
+        torqueB -= springTorqueB + dampingTorqueB;
     }
 
-    // Lever force
-    vec3 rA = A.positionAndMass.xyz - B.positionAndMass.xyz;
-    vec3 rB = B.positionAndMass.xyz - A.positionAndMass.xyz;
-
-    // This currently makes it spin out, which is bad
-    forceA += cross(rA, torqueB);
-    forceB += cross(rB, torqueA);
+    // Apply torques directly - no lever force conversion needed
+    // The torques will naturally affect the orientation and position through the physics integration
 }
 
 void main() {
@@ -235,10 +236,10 @@ void main() {
         computeAdhesionForces(cellA, cellB, adhesionMode, fA, tA, fB, tB);
 
         if (isCellA) {
-            thisCell.acceleration.xyz += (fA - fB) / thisCell.positionAndMass.w;
+            thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
             thisCell.angularAcceleration.xyz += tA;
         } else {
-            thisCell.acceleration.xyz += (fB - fA) / thisCell.positionAndMass.w;
+            thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
             thisCell.angularAcceleration.xyz += tB;
         }
     }

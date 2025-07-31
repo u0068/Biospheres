@@ -941,7 +941,10 @@ void CellManager::resetSimulation()
     
     // Clear adhesionSettings line buffer to prevent lingering lines after reset
     if (adhesionLineBuffer != 0) {
-        glClearNamedBufferData(adhesionLineBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glClearNamedBufferData(adhesionLineBuffer, GL_R32F, GL_RED, GL_FLOAT, nullptr);
+    }
+    if (adhesionLineVBO != 0) {
+        glClearNamedBufferData(adhesionLineVBO, GL_R32F, GL_RED, GL_FLOAT, nullptr);
     }
     
     // Clear adhesionSettings connection buffer to prevent lingering connections after reset
