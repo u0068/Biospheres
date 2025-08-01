@@ -67,6 +67,17 @@ struct AdhesionConnection
     uint32_t isActive;   // Whether the connection is currently active (1 = active, 0 = inactive)
 };
 
+// Anchor instance data for gizmo rendering (matches GPU AnchorInstance structure)
+// Must be 16-byte aligned and total 48 bytes to match shader
+struct AnchorInstance
+{
+    glm::vec4 positionAndRadius;  // xyz = position, w = radius (16 bytes)
+    glm::vec4 color;              // rgb = color, a = unused (16 bytes)  
+    glm::vec4 orientation;        // quaternion (unused for spheres, but matches structure) (16 bytes)
+};
+static_assert(sizeof(AnchorInstance) == 48, "AnchorInstance must be 48 bytes for GPU compatibility");
+static_assert(sizeof(AnchorInstance) % 16 == 0, "AnchorInstance must be 16-byte aligned for GPU usage");
+
 struct ChildSettings
 {
     int modeNumber = 0;

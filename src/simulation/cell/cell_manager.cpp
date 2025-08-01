@@ -51,6 +51,10 @@ CellManager::CellManager()
     ringGizmoExtractShader = new Shader("shaders/rendering/debug/ring_gizmo_extract.comp");
     ringGizmoShader = new Shader("shaders/rendering/debug/ring_gizmo.vert", "shaders/rendering/debug/ring_gizmo.frag");
     
+    // Initialize anchor gizmo shaders
+    anchorGizmoExtractShader = new Shader("shaders/rendering/debug/anchor_gizmo_extract.comp");
+    anchorGizmoShader = new Shader("shaders/rendering/debug/anchor_gizmo.vert", "shaders/rendering/debug/anchor_gizmo.frag");
+    
     // Initialize adhesionSettings line shaders
     adhesionLineExtractShader = new Shader("shaders/rendering/debug/adhesion_line_extract.comp");
     adhesionLineShader = new Shader("shaders/rendering/debug/adhesion_line.vert", "shaders/rendering/debug/adhesion_line.frag");
@@ -61,6 +65,7 @@ CellManager::CellManager()
     // Initialize gizmo buffers
     initializeGizmoBuffers();
     initializeRingGizmoBuffers();
+    initializeAnchorGizmoBuffers();
     initializeAdhesionLineBuffers();
     initializeAdhesionConnectionSystem();
     
@@ -203,11 +208,24 @@ void CellManager::cleanup()
         delete ringGizmoExtractShader;
         ringGizmoExtractShader = nullptr;
     }
+    if (anchorGizmoExtractShader)
+    {
+        anchorGizmoExtractShader->destroy();
+        delete anchorGizmoExtractShader;
+        anchorGizmoExtractShader = nullptr;
+    }
     if (ringGizmoShader)
     {
         ringGizmoShader->destroy();
         delete ringGizmoShader;
         ringGizmoShader = nullptr;
+    }
+
+    if (anchorGizmoShader)
+    {
+        anchorGizmoShader->destroy();
+        delete anchorGizmoShader;
+        anchorGizmoShader = nullptr;
     }
 
     if (adhesionLineShader)
@@ -226,6 +244,7 @@ void CellManager::cleanup()
     
     cleanupGizmos();
     cleanupRingGizmos();
+    cleanupAnchorGizmos();
     cleanupAdhesionLines();
     cleanupLODSystem();
     sphereMesh.cleanup();

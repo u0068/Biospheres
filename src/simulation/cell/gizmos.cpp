@@ -7,6 +7,7 @@
 #include <cfloat>
 #include <cmath>
 #include <vector>
+#include <cstdint>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -140,7 +141,8 @@ void CellManager::cleanupGizmos()
 
 void CellManager::initializeRingGizmoBuffers()
 {
-    // Create buffer for ring vertices (each cell produces 2 rings * 32 segments * 6 vertices = 384 vertices)
+    // Create buffer for ring vertices (fixed size per cell)
+    // Each cell produces: 2 rings (384 vertices)
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &ringGizmoBuffer);
     glNamedBufferData(ringGizmoBuffer,
@@ -170,6 +172,32 @@ void CellManager::initializeRingGizmoBuffers()
     glVertexArrayAttribBinding(ringGizmoVAO, 1, 0);
 }
 
+void CellManager::initializeAnchorGizmoBuffers()
+{
+    // Create buffer for anchor instances (variable size - depends on number of adhesions)
+    // Maximum possible anchors: cellLimit * 20 adhesions per cell
+    // Each instance is AnchorInstance = 48 bytes (verified by static_assert)
+    glCreateBuffers(1, &anchorGizmoBuffer);
+    glNamedBufferData(anchorGizmoBuffer,
+        cellLimit * 20 * sizeof(AnchorInstance), // Maximum possible anchor instances
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
+    
+    // Create instance VBO for rendering
+    glCreateBuffers(1, &anchorGizmoVBO);
+    glNamedBufferData(anchorGizmoVBO,
+        cellLimit * 20 * sizeof(AnchorInstance),
+        nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
+    
+    // Set up the sphere mesh for instanced rendering (use the same mesh as cells)
+    // The VAO will be set up when we render using the sphere mesh's setupInstanceBuffer
+    
+    // Create anchor count buffer
+    glCreateBuffers(1, &anchorCountBuffer);
+    glNamedBufferData(anchorCountBuffer,
+        sizeof(uint32_t),
+        nullptr, GL_DYNAMIC_COPY);
+}
+
 void CellManager::updateRingGizmoData()
 {
     if (totalCellCount == 0) return;
@@ -196,6 +224,7 @@ void CellManager::updateRingGizmoData()
     flushBarriers();
     
     // Copy data from compute buffer to VBO for rendering
+    // Each cell has: 2 rings (384 vertices)
     glCopyNamedBufferSubData(ringGizmoBuffer, ringGizmoVBO, 0, 0, totalCellCount * 384 * sizeof(glm::vec4) * 2);
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -237,17 +266,12 @@ void CellManager::renderRingGizmos(glm::vec2 resolution, const Camera& camera, c
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Render ring gizmo triangles (each cell has 2 rings, each ring has 32 segments * 6 vertices)
+    // Render ring gizmo triangles
     glBindVertexArray(ringGizmoVAO);
     
-    // Render each ring as triangles - both rings with proper depth testing
-    // Blue ring will be visible from one side, red ring from the other side
-    for (int i = 0; i < totalCellCount; i++) {
-        // Blue ring (positioned forward along split direction)
-        glDrawArrays(GL_TRIANGLES, i * 384, 192);
-        // Red ring (positioned backward along split direction)
-        glDrawArrays(GL_TRIANGLES, i * 384 + 192, 192);
-    }
+    // Render all vertices in one call - the shader generates the correct number of vertices per cell
+    // Each cell has: 2 rings (384 vertices)
+    glDrawArrays(GL_TRIANGLES, 0, totalCellCount * 384);
     
     glBindVertexArray(0);
     
@@ -273,5 +297,136 @@ void CellManager::cleanupRingGizmos()
     {
         glDeleteVertexArrays(1, &ringGizmoVAO);
         ringGizmoVAO = 0;
+    }
+}
+
+// ============================================================================
+// ANCHOR GIZMO SYSTEM
+// ============================================================================
+
+void CellManager::updateAnchorGizmoData()
+{
+    if (totalCellCount == 0) return;
+    
+    TimerGPU timer("Anchor Gizmo Data Update");
+    
+    // Reset anchor count
+    uint32_t zero = 0;
+    glNamedBufferSubData(anchorCountBuffer, 0, sizeof(uint32_t), &zero);
+    
+    anchorGizmoExtractShader->use();
+    
+    // Bind cell data as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    // Bind mode data as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
+    // Bind adhesion connection data as input
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer);
+    // Bind anchor instance buffer as output
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, anchorGizmoBuffer);
+    // Bind anchor count buffer as output
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, anchorCountBuffer);
+    // Bind cell count buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, gpuCellCountBuffer);
+    
+    // Dispatch compute shader
+    GLuint numGroups = (totalCellCount + 63) / 64;
+    anchorGizmoExtractShader->dispatch(numGroups, 1, 1);
+    
+    // Use targeted barrier for buffer copy
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    flushBarriers();
+    
+    // Get the total anchor count
+    glGetNamedBufferSubData(anchorCountBuffer, 0, sizeof(uint32_t), &totalAnchorCount);
+    
+    // Debug output
+    static uint32_t lastPrintedCount = 0;
+    if (totalAnchorCount != lastPrintedCount) {
+        std::cout << "Anchor gizmos: Found " << totalAnchorCount << " active adhesion anchors" << std::endl;
+        lastPrintedCount = totalAnchorCount;
+    }
+    
+    // Copy data from compute buffer to VBO for rendering
+    if (totalAnchorCount > 0) {
+        glCopyNamedBufferSubData(anchorGizmoBuffer, anchorGizmoVBO, 0, 0, totalAnchorCount * sizeof(AnchorInstance));
+    }
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void CellManager::renderAnchorGizmos(glm::vec2 resolution, const Camera& camera, const UIManager& uiManager)
+{
+    // Update anchor gizmo data first to get current count
+    updateAnchorGizmoData();
+    
+    if (!uiManager.showOrientationGizmos) {
+        return; // UI toggle is off
+    }
+    
+    if (totalAnchorCount == 0) {
+        return; // No anchors to render
+    }
+    
+    // Debug output for rendering
+    static bool printedRenderInfo = false;
+    if (!printedRenderInfo && totalAnchorCount > 0) {
+        std::cout << "Rendering " << totalAnchorCount << " anchor spheres with " << (totalAnchorCount * 72) << " vertices" << std::endl;
+        printedRenderInfo = true;
+    }
+    
+    TimerGPU timer("Anchor Gizmo Rendering");
+    
+    anchorGizmoShader->use();
+    
+    // Set up camera matrices
+    glm::mat4 view = camera.getViewMatrix();
+    float aspectRatio = resolution.x / resolution.y;
+    if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio))
+    {
+        aspectRatio = 16.0f / 9.0f;
+    }
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 1000.0f);
+    
+    anchorGizmoShader->setMat4("uProjection", projection);
+    anchorGizmoShader->setMat4("uView", view);
+    anchorGizmoShader->setVec3("uCameraPos", camera.getPosition());
+    
+    // Enable depth testing but disable depth writing to avoid z-fighting with spheres
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    
+    // Enable blending for better visibility
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Set up sphere mesh for instanced rendering
+    sphereMesh.setupInstanceBuffer(anchorGizmoVBO);
+    
+    // Render anchor gizmos using instanced sphere mesh
+    sphereMesh.render(totalAnchorCount);
+    
+    // Restore OpenGL state
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+}
+
+void CellManager::cleanupAnchorGizmos()
+{
+    if (anchorGizmoBuffer != 0)
+    {
+        glDeleteBuffers(1, &anchorGizmoBuffer);
+        anchorGizmoBuffer = 0;
+    }
+    if (anchorGizmoVBO != 0)
+    {
+        glDeleteBuffers(1, &anchorGizmoVBO);
+        anchorGizmoVBO = 0;
+    }
+    // Note: anchorGizmoVAO is not created since we use the sphere mesh's VAO
+    if (anchorCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &anchorCountBuffer);
+        anchorCountBuffer = 0;
     }
 }

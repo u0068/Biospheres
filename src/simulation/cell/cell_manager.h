@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include <cstddef> // for offsetof
+#include <cstdint> // for uint32_t
 
 #include "../../rendering/core/shader_class.h"
 #include "../../input/input.h"
@@ -176,6 +177,14 @@ struct CellManager
     Shader* ringGizmoExtractShader = nullptr; // Compute shader for generating ring gizmo data
     Shader* ringGizmoShader = nullptr;        // Vertex/fragment shaders for rendering ring gizmos
     
+    // Anchor gizmo visualization
+    GLuint anchorGizmoBuffer{};           // Buffer for anchor gizmo instances
+    GLuint anchorGizmoVBO{};              // VBO for anchor gizmo instances
+    GLuint anchorCountBuffer{};           // Buffer for anchor count
+    uint32_t totalAnchorCount{};              // Total number of anchor instances
+    Shader* anchorGizmoExtractShader = nullptr; // Compute shader for generating anchor gizmo data
+    Shader* anchorGizmoShader = nullptr;        // Vertex/fragment shaders for rendering anchor gizmos
+    
     // Adhesion line visualization
     GLuint adhesionLineBuffer{};        // Buffer for adhesionSettings line vertices  
     GLuint adhesionLineVAO{};           // VAO for adhesionSettings line rendering
@@ -194,9 +203,15 @@ struct CellManager
     
     // Ring gizmo methods
     void renderRingGizmos(glm::vec2 resolution, const class Camera &camera, const class UIManager &uiManager);
+    void renderAnchorGizmos(glm::vec2 resolution, const class Camera &camera, const class UIManager &uiManager);
     void initializeRingGizmoBuffers();
     void updateRingGizmoData();
     void cleanupRingGizmos();
+    
+    // Anchor gizmo methods
+    void initializeAnchorGizmoBuffers();
+    void updateAnchorGizmoData();
+    void cleanupAnchorGizmos();
     
     // Adhesion line methods
     void renderAdhesionLines(glm::vec2 resolution, const class Camera &camera, bool showAdhesionLines);

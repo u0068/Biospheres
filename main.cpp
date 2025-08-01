@@ -197,8 +197,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			checkGLError("renderGizmos");
 			
 			// Render ring gizmos if enabled
-			activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-			checkGLError("renderRingGizmos");
+			        activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+        checkGLError("renderRingGizmos");
+        activeCellManager->renderAnchorGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+        checkGLError("renderAnchorGizmos");
 			
 			// Render adhesionSettings lines if enabled
 			activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
