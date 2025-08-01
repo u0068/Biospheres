@@ -162,6 +162,10 @@ void CellManager::runAdhesionPhysics(float deltaTime)
     // Set uniforms
     adhesionPhysicsShader->setFloat("u_deltaTime", deltaTime);
     
+    // Pass dragged cell index to adhesion physics shader
+    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+    adhesionPhysicsShader->setInt("u_draggedCellIndex", draggedIndex);
+    
     // Bind buffers
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Cell data
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer); // Mode data

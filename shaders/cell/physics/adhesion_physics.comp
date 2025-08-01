@@ -85,6 +85,7 @@ layout(std430, binding = 4) restrict buffer WriteCellBuffer {
 
 // Uniforms
 uniform float u_deltaTime;
+uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 
 float getRadius(ComputeCell cell) {
     float mass = cell.positionAndMass.w; // mass is stored in w component 
@@ -200,14 +201,40 @@ void computeAdhesionForces(
         torqueB -= springTorqueB + dampingTorqueB;
     }
 
-    // Apply torques directly - no lever force conversion needed
-    // The torques will naturally affect the orientation and position through the physics integration
+    // Convert forces to torques based on lever arms (force application points)
+    // Forces are applied at the adhesion anchors, but physics integration happens at center of mass
+    float radiusA = getRadius(A);
+    float radiusB = getRadius(B);
+    
+    // Lever arms: from center of mass to force application points
+    vec3 leverArmA = anchorA * radiusA;
+    vec3 leverArmB = anchorB * radiusB;
+    
+    // Convert forces to torques: τ = r × F
+    vec3 totalForce = springForce + dampingForce;
+    vec3 forceTorqueA = cross(leverArmA, totalForce);
+    vec3 forceTorqueB = cross(leverArmB, -totalForce);
+    
+    // For momentum conservation: total torque on system should be zero
+    // Cell A gets: orientation torque A + force torque A - force torque B
+    // Cell B gets: orientation torque B + force torque B - force torque A
+    torqueA += forceTorqueA - forceTorqueB;
+    torqueB += forceTorqueB - forceTorqueA;
 }
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
     
     if (index >= totalCellCount) {
+        return;
+    }
+
+    // Skip adhesion physics for dragged cell - it will be positioned directly
+    if (int(index) == u_draggedCellIndex) {
+        // Copy input to output but clear acceleration for dragged cell
+        outputCells[index] = inputCells[index];
+        outputCells[index].acceleration = vec4(0.0);
+        outputCells[index].angularAcceleration = vec4(0.0);
         return;
     }
 
@@ -237,10 +264,16 @@ void main() {
 
         if (isCellA) {
             thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
-            thisCell.angularAcceleration.xyz += tA;
+            // Torque needs to be divided by moment of inertia (for sphere: 2/5 * m * r^2)
+            float radius = getRadius(thisCell);
+            float momentOfInertia = 0.4 * thisCell.positionAndMass.w * radius * radius;
+            thisCell.angularAcceleration.xyz += tA / momentOfInertia;
         } else {
             thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
-            thisCell.angularAcceleration.xyz += tB;
+            // Torque needs to be divided by moment of inertia (for sphere: 2/5 * m * r^2)
+            float radius = getRadius(thisCell);
+            float momentOfInertia = 0.4 * thisCell.positionAndMass.w * radius * radius;
+            thisCell.angularAcceleration.xyz += tB / momentOfInertia;
         }
     }
 
