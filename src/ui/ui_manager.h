@@ -114,6 +114,7 @@ private:    // Helper to get window flags based on lock state
     void drawChildSettings(const char *label, ChildSettings &child);
     void drawAdhesionSettings(AdhesionSettings &adhesion);
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
+    void drawSliderWithInput(const char* label, int* value, int min, int max, int step = 1);
     void drawColorPicker(const char *label, glm::vec3 *color);
     glm::vec3 normalizeColor(const glm::vec3& color); // Helper to normalize color values
     void validateGenomeColors(); // Validate and fix color values in genome

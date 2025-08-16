@@ -551,6 +551,9 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         genomeChanged = true;
     }
     addTooltip("Whether the parent cell creates adhesive connections with its children");
+
+    drawSliderWithInput("Max Adhesions", &mode.maxAdhesions, 0, config::MAX_ADHESIONS_PER_CELL);
+    addTooltip("Maximum adhesion connections. Prevents cell from splitting if the maximum would be exceeded.");
 }
 
 void UIManager::drawChildSettings(const char *label, ChildSettings &child)
@@ -606,10 +609,14 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
     addTooltip("How strongly the adhesionSettings resists stretching or compression");
     
-    drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 5.0f);
+    drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 1.0f);
     addTooltip("Damping factor that reduces oscillations in the adhesive connection");
-    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 20.0f);
+
+    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 30.0f);
     addTooltip("How strongly the adhesionSettings resists rotational changes between connected cells");
+
+    drawSliderWithInput("Angular Spring Damping", &adhesion.orientationSpringDamping, 0.0f, 1.0f);
+    addTooltip("Damping factor that reduces oscillations in the adhesive connection");
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
     addTooltip("Maximum angle between connected cells (0° = strict orientation locking, >0° = flexible with max deviation)");

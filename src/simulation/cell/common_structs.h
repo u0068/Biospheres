@@ -93,6 +93,7 @@ struct ModeSettings
     float splitMass = 1.0f;
     float splitInterval = 5.0f;
     glm::vec2 parentSplitDirection = { 0.0f, 0.0f}; // pitch, yaw in degrees
+    int maxAdhesions{ config::MAX_ADHESIONS_PER_CELL }; // Maximum number of adhesions for this mode
 
     // Child Settings
     ChildSettings childA;

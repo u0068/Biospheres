@@ -503,6 +503,7 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         gmode.parentMakeAdhesion = mode.parentMakeAdhesion;
         gmode.childAKeepAdhesion = mode.childA.keepAdhesion;
         gmode.childBKeepAdhesion = mode.childB.keepAdhesion;
+        gmode.maxAdhesions = mode.maxAdhesions;
 
         // Store adhesionSettings settings
         gmode.adhesionSettings = mode.adhesionSettings;

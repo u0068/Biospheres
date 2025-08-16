@@ -202,6 +202,7 @@ void computeAdhesionForces(
     forceA += cross(-deltaPos, torqueB);
     forceB += cross(deltaPos, torqueA);
 
+    // This transfers torque more rigidly, may be unwanted so i commented it out
     //torqueA -= torqueB;
     //torqueB -= torqueA;
 }

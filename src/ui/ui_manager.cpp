@@ -252,6 +252,62 @@ void UIManager::drawSliderWithInput(const char *label, float *value, float min, 
     ImGui::PopID();
 }
 
+void UIManager::drawSliderWithInput(const char* label, int* value, int min, int max, int step)
+{
+    ImGui::PushID(label);     // Calculate layout with proper spacing
+    float inputWidth = 80.0f; // Increased input field width
+    float availableWidth = ImGui::GetContentRegionAvail().x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+    // Calculate slider width: slider + input field
+    float sliderWidth = availableWidth - inputWidth - spacing;
+
+    // Label on its own line
+    ImGui::Text("%s", label); // Slider with calculated width and step support
+    ImGui::PushItemWidth(sliderWidth);
+    bool changed = false;
+    if (step > 0)
+    {
+        // For stepped sliders, use int slider but with restricted stepping
+        if (ImGui::SliderInt("##slider", value, min, max))
+        {
+            // Round to nearest step
+            *value = min + step * round((*value - min) / step);
+            changed = true;
+        }
+    }
+    ImGui::PopItemWidth();
+    ImGui::SameLine();
+
+    // Input field with proper width
+    ImGui::PushItemWidth(inputWidth);
+    if (step > 0)
+    {
+        float stepValue = step;
+        if (ImGui::InputInt("##input", value, stepValue, stepValue))
+        {
+            // Round to nearest step
+            *value = min + step * round((*value - min) / step);
+            changed = true;
+        }
+    }
+    ImGui::PopItemWidth();
+
+    // Clamp value to range
+    if (*value < min)
+        *value = min;
+    if (*value > max)
+        *value = max;
+
+    // Trigger genome change if any control was modified
+    if (changed)
+    {
+        genomeChanged = true;
+    }
+
+    ImGui::PopID();
+}
+
 void UIManager::drawColorPicker(const char *label, glm::vec3 *color)
 {
     // Ensure colors are in the correct 0.0-1.0 range
