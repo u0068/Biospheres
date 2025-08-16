@@ -142,7 +142,7 @@ void main() {
         
         // Create anchor instance (using the same structure as cell rendering)
         anchorInstances[anchorIndex].positionAndRadius = vec4(anchorPos, anchorRadius);
-        anchorInstances[anchorIndex].color = vec4(1.0, 0.0, 0.0, 1.0); // Red color
+        anchorInstances[anchorIndex].color = isCellA ? vec4(0.0, 0.5, 1.0, 1.0) : vec4(1.0, 0.5, 0.0, 1.0); // Blue or Orange color
         anchorInstances[anchorIndex].orientation = vec4(0.0, 0.0, 0.0, 1.0); // Identity quaternion
     }
 } 

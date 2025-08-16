@@ -44,19 +44,10 @@ layout(std430, binding = 2) buffer CellCountBuffer {
     uint freeAdhesionTop;
 };
 
-// Convert quaternion to rotation matrix
-mat3 quatToMat3(vec4 quat) {
-    float x = quat.x, y = quat.y, z = quat.z, w = quat.w;
-    float x2 = x + x, y2 = y + y, z2 = z + z;
-    float xx = x * x2, xy = x * y2, xz = x * z2;
-    float yy = y * y2, yz = y * z2, zz = z * z2;
-    float wx = w * x2, wy = w * y2, wz = w * z2;
-
-    return mat3(
-        1.0 - (yy + zz), xy + wz, xz - wy,
-        xy - wz, 1.0 - (xx + zz), yz + wx,
-        xz + wy, yz - wx, 1.0 - (xx + yy)
-    );
+vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
+    vec3 u = q.xyz;
+    float s = q.w;
+    return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
 }
 
 void main() {
@@ -68,9 +59,6 @@ void main() {
     vec3 cellPos = cell.positionAndMass.xyz;
     float cellRadius = pow(cell.positionAndMass.w, 1.0/3.0);
     
-    // Convert quaternion to rotation matrix
-    mat3 rotMatrix = quatToMat3(cell.orientation);
-    
     // Calculate gizmo length based on cell size
     float gizmoLength = cellRadius * 1.8; // 1.8x the cell radius
     
@@ -80,10 +68,10 @@ void main() {
     vec3 up = vec3(0.0, 0.0, 1.0);       // Local Z-axis (blue)
     
     // Transform local vectors to world space
-    vec3 worldForward = rotMatrix * forward;
-    vec3 worldRight = rotMatrix * right;
-    vec3 worldUp = rotMatrix * up;
-    
+    vec3 worldForward = rotateVectorByQuaternion(forward, cell.orientation);
+    vec3 worldRight = rotateVectorByQuaternion(right, cell.orientation);
+    vec3 worldUp = rotateVectorByQuaternion(up, cell.orientation);
+
     // Each cell generates 6 vertices (3 lines, 2 vertices each)
     uint baseIndex = cellIndex * 6;
     

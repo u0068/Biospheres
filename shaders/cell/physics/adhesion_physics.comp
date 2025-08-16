@@ -37,8 +37,8 @@ struct ComputeCell {
     vec4 velocity;        // Fixed to match CPU layout
     vec4 acceleration;    // Fixed to match CPU layout
     vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
-    vec4 angularVelocity;
-    vec4 angularAcceleration;
+    vec4 angularVelocity; // in pseudo-vector form
+    vec4 angularAcceleration; // in pseudo-vector form
     // Internal:
     vec4 signallingSubstances; // 4 substances for now
     int modeIndex;  // absolute index of the cell's mode
@@ -149,64 +149,30 @@ void computeAdhesionForces(
     forceB = vec3(0.0); torqueB = vec3(0.0);
     
     AdhesionSettings settings = adhesionMode.adhesionSettings;
-
+    
+    // Connection vector from A to B
     vec3 deltaPos = B.positionAndMass.xyz - A.positionAndMass.xyz;
     float dist = length(deltaPos);
     if (dist < 0.0001) return;
     
-    vec3 dir = deltaPos / dist;
+    vec3 adhesionDir = deltaPos / dist;
     float restLength = settings.restLength + getRadius(A) + getRadius(B);
     
     // Linear spring
     float forceMag = settings.linearSpringStiffness * (dist - restLength);
-    vec3 springForce = dir * forceMag;
+    vec3 springForce = adhesionDir * forceMag;
 
     // Damping - oppose relative motion
     vec3 relVel = B.velocity.xyz - A.velocity.xyz;
-    float dampMag = settings.linearSpringDamping * dot(relVel, dir);
-    vec3 dampingForce = -dir * dampMag; // Negative to oppose motion
+    float dampMag = settings.linearSpringDamping * dot(relVel, adhesionDir);
+    vec3 dampingForce = -adhesionDir * dampMag; // Negative to oppose motion
 
     forceA += springForce + dampingForce;
     forceB -= springForce + dampingForce;
-
-    // Calculate tangential correction forces to align anchor points
-    // This ensures cells move to correct positions, not just rotate
-    float radiusA = getRadius(A);
-    float radiusB = getRadius(B);
     
-    // Calculate actual anchor directions in local space
-    vec3 anchorA = rotateVectorByQuaternion(adhesionMode.splitDirection.xyz, A.orientation);
-    vec3 anchorB = rotateVectorByQuaternion(-adhesionMode.splitDirection.xyz, B.orientation);
-    
-    // Connection direction from A to B
-    vec3 connectionDir = normalize(deltaPos);
-    
-    // Calculate tangential forces to align anchor positions with cell connection
-    // Get actual anchor positions in world space
-    vec3 anchorPosA = A.positionAndMass.xyz + anchorA * radiusA;
-    vec3 anchorPosB = B.positionAndMass.xyz + anchorB * radiusB;
-    
-    // Calculate the vector between anchor positions
-    vec3 anchorConnection = anchorPosB - anchorPosA;
-    
-    // Calculate how much the anchor connection deviates from the cell connection
-    vec3 connectionError = anchorConnection - deltaPos;
-    
-    // Remove the radial component (only keep tangential misalignment)
-    connectionError -= dot(connectionError, connectionDir) * connectionDir;
-    
-    // Apply equal and opposite tangential forces to correct the misalignment
-    // Force should oppose the error to reduce it
-    float amplification = 50.0; // Significantly amplify the tangential correction
-    vec3 tangentialForce = -connectionError * settings.orientationSpringStiffness * amplification;
-    
-    forceA += tangentialForce;
-    forceB -= tangentialForce;
-
-    // Orientation spring: try to align anchor with adhesion vector
-    // Now that tangential forces are working correctly, add back rotational correction
-    // These work together - tangential forces move cells into position, rotational forces align orientation
-    vec3 adhesionDir = normalize(deltaPos);
+    // Calculate actual anchor directions in global space
+    vec3 anchorA = rotateVectorByQuaternion(-adhesionMode.splitDirection.xyz, A.orientation);
+    vec3 anchorB = rotateVectorByQuaternion(adhesionMode.splitDirection.xyz, B.orientation);
 
     vec3 axisA = cross(anchorA, adhesionDir);
     float sinA = length(axisA);
@@ -216,8 +182,8 @@ void computeAdhesionForces(
         axisA = normalize(axisA);
         // Orientation spring and damping
         vec3 springTorqueA = axisA * angleA * settings.orientationSpringStiffness;
-        vec3 dampingTorqueA = axisA * dot(A.angularVelocity.xyz, axisA) * settings.orientationSpringDamping;
-        torqueA -= springTorqueA + dampingTorqueA;
+        vec3 dampingTorqueA = -axisA * dot(A.angularVelocity.xyz, axisA) * settings.orientationSpringDamping;
+        torqueA += springTorqueA + dampingTorqueA;
     }
 
     vec3 axisB = cross(anchorB, -adhesionDir);
@@ -228,29 +194,16 @@ void computeAdhesionForces(
         axisB = normalize(axisB);
         // Orientation spring and damping
         vec3 springTorqueB = axisB * angleB * settings.orientationSpringStiffness;
-        vec3 dampingTorqueB = axisB * dot(B.angularVelocity.xyz, axisB) * settings.orientationSpringDamping;
-        torqueB -= springTorqueB + dampingTorqueB;
+        vec3 dampingTorqueB = -axisB * dot(B.angularVelocity.xyz, axisB) * settings.orientationSpringDamping;
+        torqueB += springTorqueB + dampingTorqueB;
     }
 
-    // Convert forces to torques based on lever arms (force application points)
-    // Forces are applied at the adhesion anchors, but physics integration happens at center of mass
-    // (radiusA and radiusB already calculated above)
-    
-    // Lever arms: from center of mass to force application points
-    vec3 leverArmA = anchorA * radiusA;
-    vec3 leverArmB = anchorB * radiusB;
-    
-    // Convert forces to torques: τ = r × F
-    vec3 totalForceA = springForce + dampingForce + tangentialForce;
-    vec3 totalForceB = -(springForce + dampingForce) - tangentialForce;
-    vec3 forceTorqueA = cross(leverArmA, totalForceA);
-    vec3 forceTorqueB = cross(leverArmB, totalForceB);
-    
-    // For momentum conservation: total torque on system should be zero
-    // Cell A gets: orientation torque A + force torque A - force torque B
-    // Cell B gets: orientation torque B + force torque B - force torque A
-    torqueA += forceTorqueA - forceTorqueB;
-    torqueB += forceTorqueB - forceTorqueA;
+    // Apply a tangential force from the torque
+    forceA += cross(-deltaPos, torqueB);
+    forceB += cross(deltaPos, torqueA);
+
+    //torqueA -= torqueB;
+    //torqueB -= torqueA;
 }
 
 void main() {
@@ -262,18 +215,15 @@ void main() {
 
     ComputeCell thisCell = inputCells[index];
     
-    // For dragged cells, we still want to calculate adhesion forces for connected cells,
-    // but we'll skip applying forces TO the dragged cell itself
     bool isDraggedCell = (int(index) == u_draggedCellIndex);
     
     if (isDraggedCell) {
         // Copy input to output but clear acceleration for dragged cell
-        outputCells[index] = inputCells[index];
-        outputCells[index].acceleration = vec4(0.0);
-        outputCells[index].angularAcceleration = vec4(0.0);
-        // Don't return here - we still need to process adhesions that involve this cell
+        thisCell.acceleration = vec4(0.0);
+        thisCell.angularAcceleration = vec4(0.0);
+        outputCells[index] = thisCell;
+        return;
     }
-    
 
     // Apply forces for each adhesion connection
     for (int i = 0; i < 20; ++i) {
@@ -295,30 +245,20 @@ void main() {
 
         vec3 fA, tA, fB, tB;
         computeAdhesionForces(cellA, cellB, adhesionMode, fA, tA, fB, tB);
+        
+        // Torque needs to be divided by moment of inertia (for sphere: 2/5 * m * r^2)
+        float radius = getRadius(thisCell);
+        float momentOfInertia = 0.4 * thisCell.positionAndMass.w * radius * radius;
 
-        // Only apply forces to this cell if it's not being dragged
-        if (!isDraggedCell) {
-            if (isCellA) {
-                thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
-                // Torque needs to be divided by moment of inertia (for sphere: 2/5 * m * r^2)
-                float radius = getRadius(thisCell);
-                float momentOfInertia = 0.4 * thisCell.positionAndMass.w * radius * radius;
-                thisCell.angularAcceleration.xyz += tA / momentOfInertia;
-            } else {
-                thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
-                // Torque needs to be divided by moment of inertia (for sphere: 2/5 * m * r^2)
-                float radius = getRadius(thisCell);
-                float momentOfInertia = 0.4 * thisCell.positionAndMass.w * radius * radius;
-                thisCell.angularAcceleration.xyz += tB / momentOfInertia;
-            }
+        if (isCellA) {
+            thisCell.acceleration.xyz += fA / thisCell.positionAndMass.w;
+            thisCell.angularAcceleration.xyz += tA / momentOfInertia;
+        } else {
+            thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
+            thisCell.angularAcceleration.xyz += tB / momentOfInertia;
         }
     }
 
     // Write the updated cell back to output buffer
-    // If this is a dragged cell, thisCell acceleration is already cleared above
-    // If not dragged, thisCell has been updated with adhesion forces
-    if (!isDraggedCell) {
-        outputCells[index] = thisCell;
-    }
-    // Note: dragged cell output was already written above with cleared accelerations
+    outputCells[index] = thisCell;
 } 

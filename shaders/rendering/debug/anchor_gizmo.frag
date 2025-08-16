@@ -13,8 +13,7 @@ out vec4 fragColor;
 uniform vec3 uLightDir = vec3(1.0, 1.0, 1.0);
 
 void main() {
-    // DEBUG: Just output solid red color to ensure rendering works
-    fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    fragColor = vec4(vBaseColor, 1.);
     
     // TODO: Add proper lighting back once basic rendering is confirmed
     /*

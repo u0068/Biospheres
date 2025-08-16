@@ -237,6 +237,9 @@
     <None Include="shaders\rendering\culling\frustum_cull.comp" />
     <None Include="shaders\rendering\culling\frustum_cull_lod.comp" />
     <None Include="shaders\rendering\culling\unified_cull.comp" />
+    <None Include="shaders\rendering\debug\anchor_gizmo.frag" />
+    <None Include="shaders\rendering\debug\anchor_gizmo.vert" />
+    <None Include="shaders\rendering\debug\anchor_gizmo_extract.comp" />
     <None Include="shaders\rendering\debug\gizmo.frag" />
     <None Include="shaders\rendering\debug\gizmo.vert" />
     <None Include="shaders\rendering\debug\gizmo_extract.comp" />

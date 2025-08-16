@@ -97,7 +97,7 @@ void main() {
         vec4 rotationQuat = vec4(rotationAxis * sin(halfAngle), cos(halfAngle));
         
         // Apply rotation to current orientation
-        cell.orientation = quatMultiply(cell.orientation, rotationQuat);
+        cell.orientation = quatMultiply(rotationQuat, cell.orientation);
         cell.orientation = normalize(cell.orientation);
     }
     
