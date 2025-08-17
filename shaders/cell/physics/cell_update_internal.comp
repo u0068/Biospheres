@@ -54,6 +54,10 @@ struct AdhesionConnection {
     uint cellBIndex;      // Index of second cell in the connection
     uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -192,12 +196,28 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         return false;
     }
 
+    // Calculate initial anchor directions in local cell space
+    vec3 posA = inputCells[cellAIndex].positionAndMass.xyz;
+    vec3 posB = inputCells[cellBIndex].positionAndMass.xyz;
+    
+    // Calculate direction vectors from each cell to the other
+    vec3 directionAtoB = normalize(posB - posA);
+    vec3 directionBtoA = normalize(posA - posB);
+    
+    // Store the directions in local cell space (they will be transformed to world space when used)
+    vec3 anchorDirectionA = directionAtoB;
+    vec3 anchorDirectionB = directionBtoA;
+
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
         cellBIndex,
         modeIndex,
-        1
+        1,
+        anchorDirectionA,
+        0.0, // paddingA
+        anchorDirectionB,
+        0.0  // paddingB
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);

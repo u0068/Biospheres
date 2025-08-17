@@ -54,6 +54,10 @@ struct AdhesionConnection {
     uint cellBIndex;      // Index of second cell in the connection
     uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
 };
 
 // Input Cell data
@@ -142,6 +146,7 @@ vec4 axisAngleToQuat(vec4 axisAngle) {
 void computeAdhesionForces(
     ComputeCell A, ComputeCell B,
     GPUMode adhesionMode,
+    AdhesionConnection connection,
     out vec3 forceA, out vec3 torqueA,
     out vec3 forceB, out vec3 torqueB
 ) {
@@ -170,10 +175,19 @@ void computeAdhesionForces(
     forceA += springForce + dampingForce;
     forceB -= springForce + dampingForce;
     
-    // Calculate actual anchor directions in global space
-    vec3 anchorA = rotateVectorByQuaternion(-adhesionMode.splitDirection.xyz, A.orientation);
-    vec3 anchorB = rotateVectorByQuaternion(adhesionMode.splitDirection.xyz, B.orientation);
-
+    // Use the fixed anchor directions from the connection, transformed to world space
+    vec3 anchorA, anchorB;
+    if (length(connection.anchorDirectionA) < 0.001 && length(connection.anchorDirectionB) < 0.001) {
+        // Fallback: calculate anchor directions dynamically
+        anchorA = normalize(B.positionAndMass.xyz - A.positionAndMass.xyz);
+        anchorB = normalize(A.positionAndMass.xyz - B.positionAndMass.xyz);
+    } else {
+        // Transform the stored local anchor directions to world space using cell orientations
+        anchorA = rotateVectorByQuaternion(connection.anchorDirectionA, A.orientation);
+        anchorB = rotateVectorByQuaternion(connection.anchorDirectionB, B.orientation);
+    }
+    
+    // Apply orientation spring and damping using the fixed anchor directions
     vec3 axisA = cross(anchorA, adhesionDir);
     float sinA = length(axisA);
     float cosA = dot(anchorA, adhesionDir);
@@ -245,7 +259,7 @@ void main() {
         GPUMode adhesionMode = modes[connection.modeIndex];
 
         vec3 fA, tA, fB, tB;
-        computeAdhesionForces(cellA, cellB, adhesionMode, fA, tA, fB, tB);
+        computeAdhesionForces(cellA, cellB, adhesionMode, connection, fA, tA, fB, tB);
         
         // Torque needs to be divided by moment of inertia (for sphere: 2/5 * m * r^2)
         float radius = getRadius(thisCell);

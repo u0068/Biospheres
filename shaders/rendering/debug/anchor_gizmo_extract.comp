@@ -26,6 +26,10 @@ struct AdhesionConnection {
     uint cellBIndex;      // Index of second cell in the connection
     uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
 };
 
 struct AdhesionSettings
@@ -120,19 +124,29 @@ void main() {
         AdhesionConnection connection = connections[adhesionIndex];
         if (connection.isActive == 0) continue; // Inactive connection
         
-        // Get the adhesion mode to find the original split direction
-        GPUMode adhesionMode = modes[connection.modeIndex];
-        
-        // Calculate anchor point for this cell
-        // The anchor should point TOWARDS the other cell in the connection
-        // When cells split, cell A goes in +splitDirection, cell B goes in -splitDirection
-        // So the anchors should point back towards each other:
-        // Cell A's anchor should point in -splitDirection (towards where B went)
-        // Cell B's anchor should point in +splitDirection (towards where A went)
+        // Determine which cell this is in the connection and get the appropriate anchor direction
         bool isCellA = (connection.cellAIndex == cellIndex);
-        vec3 anchorDirection = isCellA ? -adhesionMode.splitDirection.xyz : adhesionMode.splitDirection.xyz;
-        vec3 anchor = rotateVectorByQuaternion(anchorDirection, cell.orientation);
-        vec3 anchorPos = cellPos + anchor * cellRadius;
+        
+        // Safety check: if anchor directions are not properly initialized (all zeros), calculate them dynamically
+        vec3 anchorPos;
+        if (length(connection.anchorDirectionA) < 0.001 && length(connection.anchorDirectionB) < 0.001) {
+            // Fallback: calculate anchor position dynamically
+            uint otherCellIndex = isCellA ? connection.cellBIndex : connection.cellAIndex;
+            if (otherCellIndex < totalCellCount) {
+                ComputeCell otherCell = cells[otherCellIndex];
+                vec3 otherCellPos = otherCell.positionAndMass.xyz;
+                vec3 directionToOther = normalize(otherCellPos - cellPos);
+                anchorPos = cellPos + directionToOther * cellRadius;
+            } else {
+                // Fallback to cell center if other cell is invalid
+                anchorPos = cellPos;
+            }
+        } else {
+            // Use the stored local anchor direction, transformed to world space
+            vec3 localAnchorDirection = isCellA ? connection.anchorDirectionA : connection.anchorDirectionB;
+            vec3 worldAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, cell.orientation);
+            anchorPos = cellPos + worldAnchorDirection * cellRadius;
+        }
         
         // Calculate anchor sphere radius
         float anchorRadius = cellRadius * 0.15; // 15% of cell radius

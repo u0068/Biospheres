@@ -65,7 +65,13 @@ struct AdhesionConnection
     uint32_t cellBIndex; // Index of the second cell in the connection
     uint32_t modeIndex;  // Mode index for the connection (to look up adhesion settings)
     uint32_t isActive;   // Whether the connection is currently active (1 = active, 0 = inactive)
+    glm::vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA; // Padding to ensure 16-byte alignment
+    glm::vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB; // Padding to ensure 16-byte alignment
 };
+static_assert(sizeof(AdhesionConnection) == 48, "AdhesionConnection must be exactly 48 bytes (4 uints + 2 vec3s + 2 floats padding)");
+static_assert(sizeof(AdhesionConnection) % 16 == 0, "AdhesionConnection must be 16-byte aligned for GPU usage");
 
 // Anchor instance data for gizmo rendering (matches GPU AnchorInstance structure)
 // Must be 16-byte aligned and total 48 bytes to match shader

@@ -19,6 +19,8 @@
 
 void CellManager::initializeAdhesionLineBuffers()
 {
+    std::cout << "Initializing adhesion line buffers with capacity for " << getAdhesionLimit() << " connections\n";
+    
     // Create buffer for adhesionSettings line vertices (each line has 2 vertices)
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &adhesionLineBuffer);
@@ -47,13 +49,25 @@ void CellManager::initializeAdhesionLineBuffers()
     glEnableVertexArrayAttrib(adhesionLineVAO, 1);
     glVertexArrayAttribFormat(adhesionLineVAO, 1, 4, GL_FLOAT, GL_FALSE, sizeof(glm::vec4));
     glVertexArrayAttribBinding(adhesionLineVAO, 1, 0);
+    
+    std::cout << "Adhesion line buffers initialized successfully\n";
+    std::cout << "  - adhesionLineBuffer: " << adhesionLineBuffer << "\n";
+    std::cout << "  - adhesionLineVAO: " << adhesionLineVAO << "\n";
+    std::cout << "  - adhesionLineVBO: " << adhesionLineVBO << "\n";
 }
 
 void CellManager::updateAdhesionLineData()
 {
     if (totalAdhesionCount == 0) {
+        std::cout << "updateAdhesionLineData: No adhesion connections to process\n";
         return;
     }
+
+    std::cout << "updateAdhesionLineData: Processing " << totalAdhesionCount << " adhesion connections\n";
+    std::cout << "  - totalCellCount: " << totalCellCount << "\n";
+    std::cout << "  - liveCellCount: " << liveCellCount << "\n";
+    std::cout << "  - totalAdhesionCount: " << totalAdhesionCount << "\n";
+    std::cout << "  - liveAdhesionCount: " << liveAdhesionCount << "\n";
 
     TimerGPU timer("Adhesion Data Update");
 
@@ -70,6 +84,7 @@ void CellManager::updateAdhesionLineData()
 
     // Dispatch compute shader
     GLuint numGroups = (totalAdhesionCount + 63) / 64;
+    std::cout << "updateAdhesionLineData: Dispatching " << numGroups << " compute shader groups\n";
     adhesionLineExtractShader->dispatch(numGroups, 1, 1);
 
     // Use targeted barrier for buffer copy
@@ -81,11 +96,23 @@ void CellManager::updateAdhesionLineData()
     glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, totalAdhesionCount * sizeof(AdhesionLineVertex) * 2);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    std::cout << "updateAdhesionLineData: Completed successfully\n";
 }
 
 void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
 {
-    if (!showAdhesionLines || totalAdhesionCount == 0) return;
+    if (!showAdhesionLines) {
+        std::cout << "Adhesion lines disabled by UI toggle\n";
+        return;
+    }
+    
+    if (totalAdhesionCount == 0) {
+        std::cout << "No adhesion connections to render (totalAdhesionCount = 0)\n";
+        return;
+    }
+
+    std::cout << "Rendering " << totalAdhesionCount << " adhesion connections\n";
 
     updateAdhesionLineData();
 
@@ -117,6 +144,8 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
     glDrawArrays(GL_LINES, 0, totalAdhesionCount * 2); // 2 vertices per adhesion - only render actual connections
     glBindVertexArray(0);
     glLineWidth(1.0f);
+    
+    std::cout << "Adhesion lines rendered successfully\n";
 }
 
 void CellManager::cleanupAdhesionLines()
@@ -143,14 +172,22 @@ void CellManager::cleanupAdhesionLines()
 // ============================================================================
 void CellManager::initializeAdhesionConnectionSystem()
 {
-    // Create buffer for adhesionSettings connections
-    // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive (4 uints = 16 bytes)
+    std::cout << "Initializing adhesion connection system with capacity for " << getAdhesionLimit() << " connections\n";
+    
+    // Create buffer for adhesion connections
+    // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive, anchorDirectionA, paddingA, anchorDirectionB, paddingB
+    // Total size: 4 uints + 2 vec3s + 2 floats = 4*4 + 2*12 + 2*4 = 16 + 24 + 8 = 48 bytes
     glCreateBuffers(1, &adhesionConnectionBuffer);
     glNamedBufferData(adhesionConnectionBuffer,
         getAdhesionLimit() * sizeof(AdhesionConnection),
         nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for connection count
     
-    std::cout << "Initialized adhesionSettings connection system with capacity for " << getAdhesionLimit() << " connections\n";
+    std::cout << "Adhesion connection system initialized successfully\n";
+    std::cout << "  - adhesionConnectionBuffer: " << adhesionConnectionBuffer << "\n";
+    std::cout << "  - Buffer size: " << (getAdhesionLimit() * sizeof(AdhesionConnection)) << " bytes\n";
+    std::cout << "  - Current totalAdhesionCount: " << totalAdhesionCount << "\n";
+    std::cout << "  - Current totalCellCount: " << totalCellCount << "\n";
+    std::cout << "  - Current liveCellCount: " << liveCellCount << "\n";
 }
 
 void CellManager::runAdhesionPhysics(float deltaTime)
