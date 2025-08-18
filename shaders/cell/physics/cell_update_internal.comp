@@ -117,6 +117,14 @@ vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
          + 2.0 * s * cross(u, v);
 }
 
+vec4 quatInverse(vec4 q) {
+    float norm = dot(q, q);
+    if (norm > 0.0) {
+        return vec4(-q.xyz, q.w) / norm;
+    }
+    return vec4(0.0, 0.0, 0.0, 1.0);
+}
+
 // Hash function to generate a pseudo-random float in [0,1] from a uint seed
 float hash11(uint n) {
     n = (n ^ 61u) ^ (n >> 16u);
@@ -200,13 +208,17 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     vec3 posA = inputCells[cellAIndex].positionAndMass.xyz;
     vec3 posB = inputCells[cellBIndex].positionAndMass.xyz;
     
-    // Calculate direction vectors from each cell to the other
+    // Calculate direction vectors from each cell to the other in world space
     vec3 directionAtoB = normalize(posB - posA);
     vec3 directionBtoA = normalize(posA - posB);
     
-    // Store the directions in local cell space (they will be transformed to world space when used)
-    vec3 anchorDirectionA = directionAtoB;
-    vec3 anchorDirectionB = directionBtoA;
+    // Transform world space directions to local cell space using inverse cell orientations
+    // This ensures anchors are stored relative to the cell's local coordinate system
+    vec4 invOrientationA = quatInverse(inputCells[cellAIndex].orientation);
+    vec4 invOrientationB = quatInverse(inputCells[cellBIndex].orientation);
+    
+    vec3 anchorDirectionA = rotateVectorByQuaternion(directionAtoB, invOrientationA);
+    vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, invOrientationB);
 
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
