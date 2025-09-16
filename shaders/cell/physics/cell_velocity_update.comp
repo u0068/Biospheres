@@ -59,6 +59,8 @@ void main() {
     if (int(index) == u_draggedCellIndex) return;
 
     ComputeCell cell = inputCells[index];
+    
+    cell.age += u_deltaTime;
 
     vec3 vel = cell.velocity.xyz;
     vec3 acc_old = cell.prevAcceleration.xyz;

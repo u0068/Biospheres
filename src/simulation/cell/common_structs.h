@@ -16,9 +16,9 @@ struct ComputeCell {
     glm::vec4 acceleration{};                           // x, y, z, padding
     glm::vec4 prevAcceleration{};                       // x, y, z, padding
     glm::quat orientation{ 1., 0., 0., 0. };   // Quaternion to prevent gimbal lock
-    glm::vec4 angularVelocity{ 0., 0., 0., 0. };        // yz, zx, xy, padding
-    glm::vec4 angularAcceleration{ 0., 0., 0., 0. };    // yz, zx, xy, padding
-    glm::vec4 prevAngularAcceleration{ 0., 0., 0., 0. };// yz, zx, xy, padding
+    glm::vec4 angularVelocity{};                        // yz, zx, xy, padding
+    glm::vec4 angularAcceleration{};                    // yz, zx, xy, padding
+    glm::vec4 prevAngularAcceleration{};                // yz, zx, xy, padding
 
     // Internal:
     glm::vec4 signallingSubstances{};   // 4 substances for now
