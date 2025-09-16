@@ -56,7 +56,7 @@ vec4 quatMultiply(vec4 q1, vec4 q2) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
-    if (index == u_draggedCellIndex) return;
+    if (int(index) == u_draggedCellIndex) return;
 
     ComputeCell cell = inputCells[index];
 
