@@ -54,14 +54,14 @@ vec4 quatMultiply(vec4 q1, vec4 q2) {
 
 // Rotate quaternion by pseudovector
 vec4 quatRotate(vec4 q, vec3 v) {
-    float s = length(v);
+    float mag = length(v);
     
-    if (s > 0.001) {
+    if (mag > 0.001) {
         // Normalize angular velocity to get rotation axis
-        vec3 rotationAxis = v / s;
+        vec3 rotationAxis = v / mag;
         
         // Create quaternion for this rotation
-        float halfAngle = s * u_deltaTime * 0.5;
+        float halfAngle = mag * 0.5;
         vec4 rotationQuat = vec4(rotationAxis * sin(halfAngle), cos(halfAngle));
         
         // Apply rotation to current orientation
@@ -97,7 +97,7 @@ void main() {
     vec3 w = cell.angularVelocity.xyz;
     vec3 alpha = cell.angularAcceleration.xyz;
 
-    // Predict change in orientation from angular velocity and acceleration
+    // Predict angular velocity
     vec3 delta_orientation = w * u_deltaTime + 0.5 * alpha * u_deltaTime * u_deltaTime;
 
     q = quatRotate(q, delta_orientation);
