@@ -98,7 +98,7 @@ void main() {
     vec3 alpha = cell.angularAcceleration.xyz;
 
     // Predict angular velocity
-    vec3 delta_orientation = w * u_deltaTime + 0.5 * alpha * u_deltaTime * u_deltaTime;
+    vec3 delta_orientation = w * u_deltaTime;// + 0.5 * alpha * u_deltaTime * u_deltaTime;
 
     q = quatRotate(q, delta_orientation);
 

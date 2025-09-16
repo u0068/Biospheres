@@ -158,7 +158,8 @@ void main() {
                         // Collision detected - apply repulsion force
                         vec3 direction = normalize(delta);
                         float overlap = minDistance - distance;
-                        totalForce += direction * overlap * 100.0; // Force strength
+                        float hardness = 10.0;
+                        totalForce += direction * overlap * hardness; // Force strength
                     }
                 }
             }
