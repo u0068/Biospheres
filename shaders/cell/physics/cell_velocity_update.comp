@@ -53,26 +53,35 @@ vec4 quatMultiply(vec4 q1, vec4 q2) {
     );
 }
 
+// Velocity + angular velocity update
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
     if (int(index) == u_draggedCellIndex) return;
 
     ComputeCell cell = inputCells[index];
-    
-    cell.age += u_deltaTime;
+    cell.age += u_deltaTime * 0.5;
 
+    // --- Linear verlet velocity ---
     vec3 vel = cell.velocity.xyz;
     vec3 acc_old = cell.prevAcceleration.xyz;
-    vec3 acc_new = cell.acceleration.xyz;        // recomputed in between passes
+    vec3 acc_new = cell.acceleration.xyz;
 
-    // Update velocity
     vel += 0.5 * (acc_old + acc_new) * u_deltaTime;
-
-    // Apply damping
     vel *= pow(u_damping, u_deltaTime * 100.0);
 
     cell.velocity.xyz = vel;
 
+    // --- Angular verlet velocity ---
+    vec3 w = cell.angularVelocity.xyz;
+    vec3 alpha_old = cell.prevAngularAcceleration.xyz;
+    vec3 alpha_new = cell.angularAcceleration.xyz;
+
+    w += 0.5 * (alpha_old + alpha_new) * u_deltaTime;
+    w *= pow(u_damping, u_deltaTime * 100.0);
+
+    cell.angularVelocity.xyz = w;
+
     outputCells[index] = cell;
 }
+

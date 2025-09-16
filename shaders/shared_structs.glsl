@@ -10,9 +10,9 @@ struct ComputeCell {
     vec4 angularAcceleration;       // Pseudo-vector for easy math
     vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
     // Internal:
-    vec4 signallingSubstances; // 4 substances for now
-    int modeIndex;  // absolute index of the cell's mode
-    float age; // also used for split timer
+    vec4 signallingSubstances;  // 4 substances for now
+    int modeIndex;              // absolute index of the cell's mode
+    float age;                  // also used for split timer
     float toxins;
     float nitrates;
     int adhesionIndices[20];

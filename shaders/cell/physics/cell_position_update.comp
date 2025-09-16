@@ -52,14 +52,36 @@ vec4 quatMultiply(vec4 q1, vec4 q2) {
     );
 }
 
+// Rotate quaternion by pseudovector
+vec4 quatRotate(vec4 q, vec3 v) {
+    float s = length(v);
+    
+    if (s > 0.001) {
+        // Normalize angular velocity to get rotation axis
+        vec3 rotationAxis = v / s;
+        
+        // Create quaternion for this rotation
+        float halfAngle = s * u_deltaTime * 0.5;
+        vec4 rotationQuat = vec4(rotationAxis * sin(halfAngle), cos(halfAngle));
+        
+        // Apply rotation to current orientation
+        q = quatMultiply(rotationQuat, q);
+        q = normalize(q);
+    }
+
+    return q;
+}
+
+// Position + orientation update
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
     if (int(index) == u_draggedCellIndex) return;
 
     ComputeCell cell = inputCells[index];
+    cell.age += u_deltaTime * 0.5;
 
-    // Predict new position
+    // --- Linear verlet position ---
     vec3 pos = cell.positionAndMass.xyz;
     vec3 vel = cell.velocity.xyz;
     vec3 acc = cell.acceleration.xyz;
@@ -67,12 +89,22 @@ void main() {
     pos += vel * u_deltaTime + 0.5 * acc * (u_deltaTime * u_deltaTime);
 
     cell.positionAndMass.xyz = pos;
-
-    // Reset forces for next pass (they’ll be recomputed)
+    cell.prevAcceleration = vec4(acc, 0.0);
     cell.acceleration = vec4(0.0);
 
-    // Store old acceleration
-    cell.prevAcceleration = vec4(acc, 0.0);
+    // --- Angular verlet orientation ---
+    vec4 q = cell.orientation; // quaternion
+    vec3 w = cell.angularVelocity.xyz;
+    vec3 alpha = cell.angularAcceleration.xyz;
+
+    // Predict change in orientation from angular velocity and acceleration
+    vec3 delta_orientation = w * u_deltaTime + 0.5 * alpha * u_deltaTime * u_deltaTime;
+
+    q = quatRotate(q, delta_orientation);
+
+    cell.orientation = q;
+    cell.prevAngularAcceleration = vec4(alpha, 0.0);
+    cell.angularAcceleration = vec4(0.0);
 
     outputCells[index] = cell;
 }
