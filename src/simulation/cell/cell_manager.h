@@ -115,7 +115,8 @@ struct CellManager
 
     // Compute shaders
     Shader* physicsShader = nullptr;
-    Shader* updateShader = nullptr;
+    Shader* positionUpdateShader = nullptr;
+    Shader* velocityUpdateShader = nullptr;
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
     Shader* cellAdditionShader = nullptr;
@@ -416,8 +417,11 @@ struct CellManager
     void restoreAdhesionConnections(const std::vector<AdhesionConnection> &connections, int count); // Restore adhesion connections
 
 private:
-    void runPhysicsCompute(float deltaTime);
-    void runUpdateCompute(float deltaTime);
+    void applyForces(float deltaTime);
+    void verletIntegration(float deltaTime);
+    void runCollisionCompute();
+    void runPositionUpdateCompute(float deltaTime);
+    void runVelocityUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
     void runAdhesionPhysics(float deltaTime);
     void applyCellAdditions();

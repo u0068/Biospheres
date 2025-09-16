@@ -63,11 +63,11 @@ void CellManager::updateAdhesionLineData()
         return;
     }
 
-    std::cout << "updateAdhesionLineData: Processing " << totalAdhesionCount << " adhesion connections\n";
-    std::cout << "  - totalCellCount: " << totalCellCount << "\n";
-    std::cout << "  - liveCellCount: " << liveCellCount << "\n";
-    std::cout << "  - totalAdhesionCount: " << totalAdhesionCount << "\n";
-    std::cout << "  - liveAdhesionCount: " << liveAdhesionCount << "\n";
+    //std::cout << "updateAdhesionLineData: Processing " << totalAdhesionCount << " adhesion connections\n";
+    //std::cout << "  - totalCellCount: " << totalCellCount << "\n";
+    //std::cout << "  - liveCellCount: " << liveCellCount << "\n";
+    //std::cout << "  - totalAdhesionCount: " << totalAdhesionCount << "\n";
+    //std::cout << "  - liveAdhesionCount: " << liveAdhesionCount << "\n";
 
     TimerGPU timer("Adhesion Data Update");
 
@@ -84,7 +84,7 @@ void CellManager::updateAdhesionLineData()
 
     // Dispatch compute shader
     GLuint numGroups = (totalAdhesionCount + 63) / 64;
-    std::cout << "updateAdhesionLineData: Dispatching " << numGroups << " compute shader groups\n";
+    //std::cout << "updateAdhesionLineData: Dispatching " << numGroups << " compute shader groups\n";
     adhesionLineExtractShader->dispatch(numGroups, 1, 1);
 
     // Use targeted barrier for buffer copy
@@ -97,22 +97,22 @@ void CellManager::updateAdhesionLineData()
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
-    std::cout << "updateAdhesionLineData: Completed successfully\n";
+    //std::cout << "updateAdhesionLineData: Completed successfully\n";
 }
 
 void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines)
 {
     if (!showAdhesionLines) {
-        std::cout << "Adhesion lines disabled by UI toggle\n";
+        //std::cout << "Adhesion lines disabled by UI toggle\n";
         return;
     }
     
     if (totalAdhesionCount == 0) {
-        std::cout << "No adhesion connections to render (totalAdhesionCount = 0)\n";
+        //std::cout << "No adhesion connections to render (totalAdhesionCount = 0)\n";
         return;
     }
 
-    std::cout << "Rendering " << totalAdhesionCount << " adhesion connections\n";
+    //std::cout << "Rendering " << totalAdhesionCount << " adhesion connections\n";
 
     updateAdhesionLineData();
 
@@ -145,7 +145,7 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
     glBindVertexArray(0);
     glLineWidth(1.0f);
     
-    std::cout << "Adhesion lines rendered successfully\n";
+    //std::cout << "Adhesion lines rendered successfully\n";
 }
 
 void CellManager::cleanupAdhesionLines()

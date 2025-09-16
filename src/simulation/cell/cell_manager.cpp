@@ -32,7 +32,8 @@ CellManager::CellManager()
 
     // Initialize compute shaders
     physicsShader = new Shader("shaders/cell/physics/cell_physics_spatial.comp"); // Use spatial partitioning version
-    updateShader = new Shader("shaders/cell/physics/cell_update.comp");
+    positionUpdateShader = new Shader("shaders/cell/physics/cell_position_update.comp");
+    velocityUpdateShader = new Shader("shaders/cell/physics/cell_velocity_update.comp");
     internalUpdateShader = new Shader("shaders/cell/physics/cell_update_internal.comp");
     extractShader = new Shader("shaders/cell/management/extract_instances.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
@@ -156,11 +157,11 @@ void CellManager::cleanup()
         delete physicsShader;
         physicsShader = nullptr;
     }
-    if (updateShader)
+    if (positionUpdateShader)
     {
-        updateShader->destroy();
-        delete updateShader;
-        updateShader = nullptr;
+        positionUpdateShader->destroy();
+        delete positionUpdateShader;
+        positionUpdateShader = nullptr;
     }
 
     // Cleanup spatial grid shaders
@@ -560,6 +561,43 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
 // CELL UPDATE & SIMULATION
 // ============================================================================
 
+void CellManager::applyForces(float deltaTime)
+{
+    // Run physics computation on GPU
+    runCollisionCompute();
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    runAdhesionPhysics(deltaTime);
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::verletIntegration(float deltaTime)
+{
+    // Update spatial grid before physics
+    updateSpatialGrid(); // This handles its own barriers internally
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    applyForces(deltaTime);
+
+    runPositionUpdateCompute(deltaTime);
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Update spatial grid because cells have moved
+    updateSpatialGrid(); // This handles its own barriers internally
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+	applyForces(deltaTime);
+
+    runVelocityUpdateCompute(deltaTime);
+
+    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
 void CellManager::updateCells(float deltaTime)
 {
     // Clear any pending barriers from previous frame
@@ -599,33 +637,13 @@ void CellManager::updateCells(float deltaTime)
         // Flush barriers before starting compute pipeline
         flushBarriers();
 
-        // Update spatial grid before physics
-        updateSpatialGrid(); // This handles its own barriers internally
-
-        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        // Run physics computation on GPU
-        runPhysicsCompute(deltaTime);
-
-        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        runAdhesionPhysics(deltaTime);
-
-    	addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        // Run position/velocity update on GPU
-        runUpdateCompute(deltaTime);
-
-        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        verletIntegration(deltaTime);
 
         // Run cells' internal calculations (this creates new pending cells from mitosis)
         runInternalUpdateCompute(deltaTime);
         
         // CRITICAL FIX: Add memory barrier after splitting to ensure new cells are synchronized
         addBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
-        
-        // Single barrier after all simulation compute operations
-        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
 }
 
@@ -761,9 +779,9 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
     }
 }
 
-void CellManager::runPhysicsCompute(float deltaTime)
+void CellManager::runCollisionCompute()
 {
-    TimerGPU timer("Cell Physics Compute");
+    TimerGPU timer("Cell Collision Compute");
 
     physicsShader->use();
 
@@ -796,19 +814,18 @@ void CellManager::runPhysicsCompute(float deltaTime)
     rotateBuffers();
 }
 
-void CellManager::runUpdateCompute(float deltaTime)
+void CellManager::runPositionUpdateCompute(float deltaTime)
 {
-    TimerGPU timer("Cell Update Compute");
+    TimerGPU timer("Cell Position Update Compute");
 
-	updateShader->use();
+	positionUpdateShader->use();
 
     // Set uniforms
-    updateShader->setFloat("u_deltaTime", deltaTime);
-    updateShader->setFloat("u_damping", 0.98f);
+    positionUpdateShader->setFloat("u_deltaTime", deltaTime);
 
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
-    updateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
+    positionUpdateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer());
@@ -816,7 +833,35 @@ void CellManager::runUpdateCompute(float deltaTime)
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
-    updateShader->dispatch(numGroups, 1, 1);
+    positionUpdateShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Swap buffers for next frame
+    rotateBuffers();
+}
+
+void CellManager::runVelocityUpdateCompute(float deltaTime)
+{
+    TimerGPU timer("Cell Velocity Update Compute");
+
+    velocityUpdateShader->use();
+
+    // Set uniforms
+    velocityUpdateShader->setFloat("u_deltaTime", deltaTime);
+    velocityUpdateShader->setFloat("u_damping", 0.98f);
+
+    // Pass dragged cell index to skip its position updates
+    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+    velocityUpdateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Bind GPU cell count buffer
+
+    // Dispatch compute shader - OPTIMIZED for 256 work group size
+    GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
+    velocityUpdateShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 

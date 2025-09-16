@@ -304,5 +304,11 @@
     <None Include="shaders\rendering\debug\anchor_gizmo.frag" />
     <None Include="shaders\rendering\debug\anchor_gizmo.vert" />
     <None Include="shaders\rendering\debug\anchor_gizmo_extract.comp" />
+    <None Include="shaders\cell\physics\cell_velocity_update.comp" />
+    <None Include="shaders\cell\physics\cell_position_update.comp" />
+    <None Include="shaders\shared_structs.glsl" />
+    <None Include="tools\sync_structs.ps1">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

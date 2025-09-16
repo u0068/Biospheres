@@ -11,12 +11,14 @@
 // GPU compute cell structure matching the compute shader
 struct ComputeCell {
     // Physics:
-    glm::vec4 positionAndMass{ 0, 0, 0, 1 };       // x, y, z, mass
-    glm::vec4 velocity{};
-    glm::vec4 acceleration{};
-    glm::quat orientation{ 1., 0., 0., 0. };  // angular stuff in quaternions to prevent gimbal lock
-    glm::quat angularVelocity{ 1., 0., 0., 0. };
-    glm::quat angularAcceleration{ 1., 0., 0., 0. };
+    glm::vec4 positionAndMass{ 0, 0, 0, 1 };   // x, y, z, mass
+    glm::vec4 velocity{};                               // x, y, z, padding
+    glm::vec4 acceleration{};                           // x, y, z, padding
+    glm::vec4 prevAcceleration{};                       // x, y, z, padding
+    glm::quat orientation{ 1., 0., 0., 0. };   // Quaternion to prevent gimbal lock
+    glm::vec4 angularVelocity{ 0., 0., 0., 0. };        // yz, zx, xy, padding
+    glm::vec4 angularAcceleration{ 0., 0., 0., 0. };    // yz, zx, xy, padding
+    glm::vec4 prevAngularAcceleration{ 0., 0., 0., 0. };// yz, zx, xy, padding
 
     // Internal:
     glm::vec4 signallingSubstances{};   // 4 substances for now

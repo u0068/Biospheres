@@ -1,4 +1,4 @@
-#version 430
+﻿#version 430
 
 // Optimized work group size for better memory coalescing  
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -6,12 +6,14 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 // Cell data structure for compute shader
 struct ComputeCell {
     // Physics:
-    vec4 positionAndMass; // x, y, z, mass
-    vec4 velocity;        // Fixed to match CPU layout
-    vec4 acceleration;    // Fixed to match CPU layout
-    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
-    vec4 angularVelocity;
-    vec4 angularAcceleration;
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
     // Internal:
     vec4 signallingSubstances; // 4 substances for now
     int modeIndex;  // absolute index of the cell's mode
@@ -94,3 +96,4 @@ void main() {
         gridCells[gridBufferIndex] = cellIndex;
     }
 }
+

@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -13,14 +13,14 @@ struct AdhesionSettings
     float linearSpringDamping;
     float orientationSpringStiffness;
     float orientationSpringDamping;
-    float maxAngularDeviation;      // Does nothing yet
+    float maxAngularDeviation; // degrees - 0 = strict orientation locking, >0 = flexible with max deviation
 };
 
 // GPU Mode structure
 struct GPUMode {
     vec4 color;           // R, G, B, padding
-    vec4 orientationA;    // Quaternion
-    vec4 orientationB;    // Quaternion
+    vec4 orientationA;    // quaternion
+    vec4 orientationB;    // quaternion
     vec4 splitDirection;  // x, y, z, padding
     ivec2 childModes;     // mode indices for children
     float splitInterval;
@@ -29,20 +29,18 @@ struct GPUMode {
     int parentMakeAdhesion; // Boolean flag for adhesion creation
     int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
     int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
-    int maxAdhesions;       // Max number of adhesions
+    int padding[1];         // Padding to maintain alignment
 };
 
 // Cell data structure for compute shader
 struct ComputeCell {
     // Physics:
-    vec4 positionAndMass;   // x, y, z, mass
-    vec4 velocity;          // x, y, z, padding
-    vec4 acceleration;      // x, y, z, padding
-    vec4 prevAcceleration;  // x, y, z, padding
-    vec4 orientation;       // Quaternion to (prevent gimbal lock)
-    vec4 angularVelocity;   // Pseudo-vector for easy math
-    vec4 angularAcceleration;       // Pseudo-vector for easy math
-    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    vec4 positionAndMass; // x, y, z, mass
+    vec4 velocity;        // Fixed to match CPU layout
+    vec4 acceleration;    // Fixed to match CPU layout
+    vec4 orientation;     // angular stuff in quaternion to prevent gimbal lock
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
     // Internal:
     vec4 signallingSubstances; // 4 substances for now
     int modeIndex;  // absolute index of the cell's mode
@@ -89,4 +87,3 @@ void main() {
     instanceData[index].color = modes[cellData[index].modeIndex].color;
     instanceData[index].orientation = cellData[index].orientation;
 }
-

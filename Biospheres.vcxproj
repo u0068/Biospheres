@@ -228,9 +228,12 @@
     <ClInclude Include="src\rendering\core\mesh\sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\shared_structs.glsl" />
+    <None Include="shaders\cell\physics\cell_position_update.comp" />
     <None Include="shaders\cell\physics\adhesion_physics.comp" />
     <None Include="shaders\cell\management\apply_additions.comp" />
     <None Include="shaders\cell\physics\cell_physics_spatial.comp" />
+    <None Include="shaders\cell\physics\cell_velocity_update.comp" />
     <None Include="shaders\cell\physics\cell_update.comp" />
     <None Include="shaders\cell\physics\cell_update_internal.comp" />
     <None Include="shaders\cell\management\extract_instances.comp" />
@@ -260,6 +263,7 @@
     <None Include="shaders\rendering\sphere\sphere_lod.frag" />
     <None Include="shaders\rendering\sphere\sphere_lod.vert" />
     <None Include="shaders\rendering\sphere\sphere_lod.comp" />
+    <None Include="tools\sync_structs.ps1" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
