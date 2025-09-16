@@ -171,7 +171,7 @@ void computeAdhesionForces(
 
     // Damping - oppose relative motion
     vec3 relVel = B.velocity.xyz - A.velocity.xyz;
-    float dampMag = settings.linearSpringDamping * dot(relVel, adhesionDir);
+    float dampMag = 1. - settings.linearSpringDamping * dot(relVel, adhesionDir);
     vec3 dampingForce = -adhesionDir * dampMag; // Negative to oppose motion
 
     forceA += springForce + dampingForce;
