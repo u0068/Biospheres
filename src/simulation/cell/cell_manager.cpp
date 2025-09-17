@@ -576,11 +576,11 @@ void CellManager::applyForces(float deltaTime)
 void CellManager::verletIntegration(float deltaTime)
 {
     // Update spatial grid before physics
-    updateSpatialGrid(); // This handles its own barriers internally
+    //updateSpatialGrid(); // This handles its own barriers internally
 
-    addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    //addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    applyForces(deltaTime);
+    //applyForces(deltaTime);
 
     runPositionUpdateCompute(deltaTime);
 

@@ -71,7 +71,7 @@ void main() {
     vel *= pow(u_damping, u_deltaTime * 100.0);
 
     cell.velocity.xyz = vel;
-    cell.acceleration = vec4(0.0);
+    //cell.acceleration = vec4(0.0);
 
     // --- Angular verlet velocity ---
     vec3 w = cell.angularVelocity.xyz;
@@ -82,7 +82,7 @@ void main() {
     w *= pow(u_damping, u_deltaTime * 100.0);
 
     cell.angularVelocity.xyz = w;
-    cell.angularAcceleration = vec4(0.0);
+    //cell.angularAcceleration = vec4(0.0);
 
     outputCells[index] = cell;
 }

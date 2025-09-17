@@ -603,16 +603,16 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     drawSliderWithInput("Adhesion Break Force", &adhesion.breakForce, 0.1f, 100.0f);
     addTooltip("The force threshold required to break an adhesive connection");
     
-    drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, 0.1f, 10.0f);
+    drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, 0.5f, 5.0f);
     addTooltip("The natural resting distance of the adhesive connection");
     
-    drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 50.0f);
+    drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 500.0f);
     addTooltip("How strongly the adhesionSettings resists stretching or compression");
     
     drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 1.0f);
     addTooltip("Damping factor that reduces oscillations in the adhesive connection");
 
-    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 30.0f);
+    drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 100.0f);
     addTooltip("How strongly the adhesionSettings resists rotational changes between connected cells");
 
     drawSliderWithInput("Angular Spring Damping", &adhesion.orientationSpringDamping, 0.0f, 1.0f);
