@@ -1,5 +1,5 @@
 #pragma once
-#include "miniaudio.h"
+#include "../../third_party/include/miniaudio.h"
 #include "synthesizer.h"
 #include <iostream>
 

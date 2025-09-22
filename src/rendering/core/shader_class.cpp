@@ -7,23 +7,30 @@
 // Reads a text file and outputs a string with everything in the text file
 std::string get_file_contents(const char* filename)
 {
-	std::ifstream file(filename, std::ios::binary);
-	if (file)
-	{
-		// Get the size of the file and read its contents into a string
-		std::string contents;
-		file.seekg(0, std::ios::end);
-		contents.resize(file.tellg());
-		file.seekg(0, std::ios::beg);
-		file.read(&contents[0], contents.size());
-		file.close();
-		return contents;
-	}
-	
-	// If this point is reached, then the file could not be opened
-	std::cout << "ERROR::SHADER::FILE_NOT_FOUND: " << filename << "\n";
-	std::cout << "Make sure that the file path is correct!\n";
-	throw(errno);
+    // Try a set of common base path prefixes to be resilient to working directory
+    // differences (e.g., running from x64/Release vs project root)
+    const char* prefixes[] = { "", "../", "../../", "../../../" };
+
+    for (const char* prefix : prefixes)
+    {
+        std::string candidatePath = std::string(prefix) + filename;
+        std::ifstream file(candidatePath.c_str(), std::ios::binary);
+        if (file)
+        {
+            std::string contents;
+            file.seekg(0, std::ios::end);
+            contents.resize(static_cast<size_t>(file.tellg()));
+            file.seekg(0, std::ios::beg);
+            file.read(&contents[0], contents.size());
+            file.close();
+            return contents;
+        }
+    }
+
+    // If this point is reached, then the file could not be opened
+    std::cout << "ERROR::SHADER::FILE_NOT_FOUND: " << filename << "\n";
+    std::cout << "Make sure that the file path is correct!\n";
+    throw(errno);
 }
 
 // Constructor that build the Shader Program from a vertex and fragment shader
