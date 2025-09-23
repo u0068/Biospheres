@@ -214,13 +214,15 @@ void computeAdhesionForces(
         torqueB += springTorqueB + dampingTorqueB;
     }
 
-    // Apply a tangential force from the torque
-    forceA += cross(-deltaPos, torqueB);
-    forceB += cross(deltaPos, torqueA);
+    // Apply tangential forces derived from torques in a zero-sum fashion for conservation
+    vec3 tangentialForce = 0.5 * (cross(-deltaPos, torqueB) - cross(deltaPos, torqueA));
+    forceA += tangentialForce;
+    forceB -= tangentialForce;
 
-    // This conserves angular momentum but makes cells look less natural, maybe better to comment it out
-    torqueA -= torqueB;
-    torqueB -= torqueA;
+    // Symmetrize torques to be equal-and-opposite (conserve angular momentum across the pair)
+    vec3 pairTorque = 0.5 * (torqueA - torqueB);
+    torqueA = pairTorque;
+    torqueB = -pairTorque;
 }
 
 void main() {
