@@ -12,6 +12,14 @@ struct AdhesionSettings
     float orientationSpringStiffness;
     float orientationSpringDamping;
     float maxAngularDeviation;      // Does nothing yet
+    
+    // Twist constraint parameters
+    float twistConstraintStiffness; // Stiffness of twist constraint around adhesion axis
+    float twistConstraintDamping;   // Damping of twist constraint
+    bool enableTwistConstraint;     // Whether to apply twist constraints
+    
+    // Padding to ensure proper alignment - GLSL handles this automatically but we keep it for consistency
+    // Note: In GLSL, the compiler will add padding as needed for std430 layout
 };
 
 // GPU Mode structure
@@ -60,6 +68,8 @@ struct AdhesionConnection {
     float paddingA;       // Padding to ensure 16-byte alignment
     vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
     float paddingB;       // Padding to ensure 16-byte alignment
+    vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
 };
 
 // Input Cell data
@@ -92,7 +102,6 @@ layout(std430, binding = 4) restrict buffer WriteCellBuffer {
 // Uniforms
 uniform float u_deltaTime;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
-uniform float u_accelerationDamping; // Damping factor for small accelerations
 
 float getRadius(ComputeCell cell) {
     float mass = cell.positionAndMass.w; // mass is stored in w component 
@@ -144,6 +153,36 @@ vec4 axisAngleToQuat(vec4 axisAngle) {
     float halfAngle = axisAngle.w * 0.5;
     float s = sin(halfAngle);
     return vec4(axisAngle.xyz * s, cos(halfAngle));
+}
+
+// Create quaternion that rotates from vector a to vector b
+vec4 quatFromTwoVectors(vec3 a, vec3 b) {
+    vec3 normA = normalize(a);
+    vec3 normB = normalize(b);
+    
+    float dot_product = dot(normA, normB);
+    
+    // If vectors are nearly identical, return identity quaternion
+    if (dot_product > 0.9999) {
+        return vec4(0.0, 0.0, 0.0, 1.0);
+    }
+    
+    // If vectors are nearly opposite, find a perpendicular axis
+    if (dot_product < -0.9999) {
+        vec3 axis = cross(vec3(1.0, 0.0, 0.0), normA);
+        if (length(axis) < 0.01) {
+            axis = cross(vec3(0.0, 1.0, 0.0), normA);
+        }
+        axis = normalize(axis);
+        return vec4(axis, 0.0); // 180 degree rotation
+    }
+    
+    // General case
+    vec3 axis = cross(normA, normB);
+    float w = sqrt((1.0 + dot_product) * 2.0);
+    float inv_w = 1.0 / w;
+    
+    return normalize(vec4(axis * inv_w, w * 0.5));
 }
 
 void computeAdhesionForces(
@@ -215,6 +254,65 @@ void computeAdhesionForces(
         torqueB += springTorqueB + dampingTorqueB;
     }
 
+    // Apply twist constraints if enabled
+    if (settings.enableTwistConstraint && 
+        length(connection.twistReferenceA) > 0.001 && 
+        length(connection.twistReferenceB) > 0.001) {
+        
+        // Calculate adhesion axis (from A to B)
+        vec3 adhesionAxis = normalize(deltaPos);
+        
+        // Calculate target orientations that maintain the original twist relationship
+        // but allow the anchor alignment to work properly
+        
+        // Get the current anchor directions in world space
+        vec3 currentAnchorA = rotateVectorByQuaternion(connection.anchorDirectionA, A.orientation);
+        vec3 currentAnchorB = rotateVectorByQuaternion(connection.anchorDirectionB, B.orientation);
+        
+        // Calculate what the orientations should be if anchors were perfectly aligned
+        vec3 targetAnchorA = adhesionAxis;
+        vec3 targetAnchorB = -adhesionAxis;
+        
+        // Find the rotation needed to align current anchor to target anchor
+        vec4 alignmentRotA = quatFromTwoVectors(currentAnchorA, targetAnchorA);
+        vec4 alignmentRotB = quatFromTwoVectors(currentAnchorB, targetAnchorB);
+        
+        // Apply the alignment rotation to the reference orientations to get target orientations
+        vec4 targetOrientationA = quatMultiply(alignmentRotA, connection.twistReferenceA);
+        vec4 targetOrientationB = quatMultiply(alignmentRotB, connection.twistReferenceB);
+        
+        // Calculate the rotation needed to reach target orientations
+        vec4 correctionRotA = quatMultiply(targetOrientationA, quatConjugate(A.orientation));
+        vec4 correctionRotB = quatMultiply(targetOrientationB, quatConjugate(B.orientation));
+        
+        // Convert to axis-angle and apply as torque (but only around adhesion axis)
+        vec4 axisAngleA = quatToAxisAngle(correctionRotA);
+        vec4 axisAngleB = quatToAxisAngle(correctionRotB);
+        
+        // Project correction onto adhesion axis to get twist component only
+        float twistCorrectionA = axisAngleA.w * dot(axisAngleA.xyz, adhesionAxis);
+        float twistCorrectionB = axisAngleB.w * dot(axisAngleB.xyz, adhesionAxis);
+        
+        // Apply twist correction with higher strength for snake body alignment
+        // Normalize the correction angles to prevent excessive torques
+        twistCorrectionA = clamp(twistCorrectionA, -1.57, 1.57); // Limit to ±90 degrees
+        twistCorrectionB = clamp(twistCorrectionB, -1.57, 1.57);
+        
+        vec3 twistTorqueA = adhesionAxis * twistCorrectionA * settings.twistConstraintStiffness * 0.3;
+        vec3 twistTorqueB = adhesionAxis * twistCorrectionB * settings.twistConstraintStiffness * 0.3;
+        
+        // Add strong damping to prevent oscillation and maintain stable snake body
+        float angularVelA = dot(A.angularVelocity.xyz, adhesionAxis);
+        float angularVelB = dot(B.angularVelocity.xyz, adhesionAxis);
+        float relativeAngularVel = angularVelA - angularVelB;
+        
+        vec3 twistDampingA = -adhesionAxis * relativeAngularVel * settings.twistConstraintDamping * 0.4;
+        vec3 twistDampingB = adhesionAxis * relativeAngularVel * settings.twistConstraintDamping * 0.4;
+        
+        torqueA += twistTorqueA + twistDampingA;
+        torqueB += twistTorqueB + twistDampingB;
+    }
+
     // Apply a tangential force from the torque
     forceA += cross(-deltaPos, torqueB);
     forceB += cross(deltaPos, torqueA);
@@ -275,17 +373,37 @@ void main() {
             thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
             thisCell.angularAcceleration.xyz += tB / momentOfInertia;
         }
+        
+        // ANTI-DRIFT: Apply immediate momentum correction for this connection
+        // This ensures each adhesion connection doesn't contribute to net system momentum
+        float connectionDamping = 0.1;
+        thisCell.acceleration.xyz -= thisCell.velocity.xyz * connectionDamping;
     }
 
-    // Apply acceleration damping to small forces to prevent drift
-    float accMagnitude = length(thisCell.acceleration.xyz);
-    if (accMagnitude < 0.1) { // Threshold for "small" forces that cause drift
-        thisCell.acceleration.xyz *= u_accelerationDamping;
+    // ANTI-DRIFT CORRECTION: Apply center-of-mass stabilization
+    // This prevents the entire connected system from drifting by applying
+    // forces that counteract any net momentum accumulation
+    bool hasConnections = false;
+    for (int i = 0; i < 20; ++i) {
+        if (thisCell.adhesionIndices[i] >= 0) {
+            hasConnections = true;
+            break;
+        }
     }
     
-    float angAccMagnitude = length(thisCell.angularAcceleration.xyz);
-    if (angAccMagnitude < 0.1) { // Threshold for "small" angular forces
-        thisCell.angularAcceleration.xyz *= u_accelerationDamping;
+    if (hasConnections) {
+        // Apply strong velocity damping to prevent drift accumulation
+        float driftDamping = 0.5; // Much stronger damping for connected systems
+        vec3 driftCorrectionForce = -thisCell.velocity.xyz * driftDamping;
+        
+        // Apply the correction force
+        thisCell.acceleration.xyz += driftCorrectionForce;
+        
+        // Additional position-based correction to prevent center-of-mass drift
+        // This applies a restoring force toward the origin for connected systems
+        float comRestoreStrength = 0.1;
+        vec3 comRestoreForce = -thisCell.positionAndMass.xyz * comRestoreStrength;
+        thisCell.acceleration.xyz += comRestoreForce;
     }
 
     // Write the updated cell back to output buffer

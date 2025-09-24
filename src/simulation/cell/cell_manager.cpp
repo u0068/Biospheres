@@ -786,7 +786,7 @@ void CellManager::runCollisionCompute()
     physicsShader->use();
 
     // Set uniforms
-    physicsShader->setFloat("u_accelerationDamping", 0.95f);
+    physicsShader->setFloat("u_accelerationDamping", 0.8f); // More aggressive damping
 
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -808,6 +808,36 @@ void CellManager::runCollisionCompute()
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     physicsShader->dispatch(numGroups, 1, 1);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Swap buffers for next frame
+    rotateBuffers();
+}
+
+void CellManager::runAdhesionPhysics(float deltaTime)
+{
+    TimerGPU timer("Adhesion Physics Compute");
+
+    adhesionPhysicsShader->use();
+
+    // Set uniforms
+    adhesionPhysicsShader->setFloat("u_deltaTime", deltaTime);
+
+    // Pass dragged cell index to skip its physics
+    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
+    adhesionPhysicsShader->setInt("u_draggedCellIndex", draggedIndex);
+
+    // Bind buffers for adhesion physics
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());  // Read cell data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);           // Mode data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer); // Adhesion connections
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);   // Cell count buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, getCellWriteBuffer()); // Write cell data
+
+    // Dispatch compute shader
+    GLuint numGroups = (totalCellCount + 255) / 256;
+    adhesionPhysicsShader->dispatch(numGroups, 1, 1);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 

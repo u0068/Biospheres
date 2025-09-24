@@ -12,6 +12,14 @@ struct AdhesionSettings
     float orientationSpringStiffness;
     float orientationSpringDamping;
     float maxAngularDeviation;      // Does nothing yet
+    
+    // Twist constraint parameters
+    float twistConstraintStiffness; // Stiffness of twist constraint around adhesion axis
+    float twistConstraintDamping;   // Damping of twist constraint
+    bool enableTwistConstraint;     // Whether to apply twist constraints
+    
+    // Padding to ensure proper alignment - GLSL handles this automatically but we keep it for consistency
+    // Note: In GLSL, the compiler will add padding as needed for std430 layout
 };
 
 // GPU Mode structure
@@ -60,6 +68,8 @@ struct AdhesionConnection {
     float paddingA;       // Padding to ensure 16-byte alignment
     vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
     float paddingB;       // Padding to ensure 16-byte alignment
+    vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
 };
 
 layout(std430, binding = 0) restrict buffer modeBuffer {
@@ -222,6 +232,10 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     vec3 anchorDirectionA = rotateVectorByQuaternion(directionAtoB, invOrientationA);
     vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, invOrientationB);
 
+    // Store current orientations as twist reference for constraint
+    vec4 twistReferenceA = inputCells[cellAIndex].orientation;
+    vec4 twistReferenceB = inputCells[cellBIndex].orientation;
+
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
@@ -231,7 +245,9 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
-        0.0  // paddingB
+        0.0, // paddingB
+        twistReferenceA,
+        twistReferenceB
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);

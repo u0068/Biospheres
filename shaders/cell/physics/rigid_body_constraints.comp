@@ -1,0 +1,169 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+};
+
+// Adhesion connection structure - stores permanent connections between sibling cells
+struct AdhesionConnection {
+    uint cellAIndex;      // Index of first cell in the connection
+    uint cellBIndex;      // Index of second cell in the connection
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
+    uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
+    vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
+};
+
+// Input Cell data
+layout(std430, binding = 0) restrict buffer ReadCellBuffer {
+    ComputeCell inputCells[];
+};
+
+// Input: Adhesion connections
+layout(std430, binding = 1) buffer AdhesionConnectionBuffer {
+    AdhesionConnection connections[];
+};
+
+// Cell count
+layout(std430, binding = 2) buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
+};
+
+// Output Cell data
+layout(std430, binding = 3) restrict buffer WriteCellBuffer {
+    ComputeCell outputCells[];
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+uniform float u_constraintStrength; // Strength of rigid body constraints (0.0 to 1.0)
+
+// Function to check if two cells are connected through any adhesion
+bool areCellsConnected(uint cellA, uint cellB) {
+    ComputeCell cell = inputCells[cellA];
+    for (int i = 0; i < 20; ++i) {
+        int adhesionIndex = cell.adhesionIndices[i];
+        if (adhesionIndex < 0) continue;
+        AdhesionConnection connection = connections[adhesionIndex];
+        if (connection.isActive == 0) continue;
+        if ((connection.cellAIndex == cellA && connection.cellBIndex == cellB) ||
+            (connection.cellAIndex == cellB && connection.cellBIndex == cellA)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Function to find all connected cells using a simple flood fill
+void findConnectedCells(uint startCell, out uint connectedCells[64], out uint connectedCount) {
+    connectedCount = 0;
+    bool visited[64];
+    for (int i = 0; i < 64; ++i) {
+        visited[i] = false;
+        connectedCells[i] = 0;
+    }
+    
+    // Simple stack-based flood fill
+    uint stack[64];
+    uint stackSize = 1;
+    stack[0] = startCell;
+    visited[startCell] = true;
+    
+    while (stackSize > 0 && connectedCount < 64) {
+        uint currentCell = stack[--stackSize];
+        connectedCells[connectedCount++] = currentCell;
+        
+        // Check all cells for connections
+        for (uint otherCell = 0; otherCell < totalCellCount && stackSize < 64; ++otherCell) {
+            if (!visited[otherCell] && areCellsConnected(currentCell, otherCell)) {
+                visited[otherCell] = true;
+                stack[stackSize++] = otherCell;
+            }
+        }
+    }
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index >= totalCellCount) {
+        return;
+    }
+
+    // Skip dragged cell
+    if (int(index) == u_draggedCellIndex) {
+        outputCells[index] = inputCells[index];
+        return;
+    }
+
+    ComputeCell thisCell = inputCells[index];
+    
+    // Find all cells connected to this cell
+    uint connectedCells[64];
+    uint connectedCount;
+    findConnectedCells(index, connectedCells, connectedCount);
+    
+    // Only apply rigid body constraints if we have a connected group
+    if (connectedCount > 1) {
+        // Calculate center of mass and total momentum for the connected group
+        vec3 com = vec3(0.0);
+        vec3 totalMomentum = vec3(0.0);
+        float totalMass = 0.0;
+        
+        for (uint i = 0; i < connectedCount; ++i) {
+            uint cellIndex = connectedCells[i];
+            ComputeCell cell = inputCells[cellIndex];
+            float mass = cell.positionAndMass.w;
+            com += cell.positionAndMass.xyz * mass;
+            totalMomentum += cell.velocity.xyz * mass;
+            totalMass += mass;
+        }
+        
+        if (totalMass > 0.0) {
+            com /= totalMass;
+            
+            // RIGID BODY CONSTRAINT: Enforce zero net momentum
+            // Calculate the momentum that needs to be removed from each cell
+            vec3 momentumPerMass = totalMomentum / totalMass;
+            vec3 momentumCorrection = -momentumPerMass * u_constraintStrength;
+            
+            // Apply momentum correction to this cell
+            thisCell.acceleration.xyz += momentumCorrection;
+            
+            // RIGID BODY CONSTRAINT: Enforce center of mass stability
+            // Apply a restoring force to keep the center of mass stable
+            vec3 comOffset = thisCell.positionAndMass.xyz - com;
+            vec3 comRestoreForce = -comOffset * u_constraintStrength * 0.1;
+            thisCell.acceleration.xyz += comRestoreForce;
+        }
+    }
+
+    // Write the updated cell back to output buffer
+    outputCells[index] = thisCell;
+}

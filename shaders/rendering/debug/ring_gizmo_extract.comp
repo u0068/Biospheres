@@ -32,6 +32,14 @@ struct AdhesionSettings
     float orientationSpringStiffness;
     float orientationSpringDamping;
     float maxAngularDeviation;      // Does nothing yet
+    
+    // Twist constraint parameters
+    float twistConstraintStiffness; // Stiffness of twist constraint around adhesion axis
+    float twistConstraintDamping;   // Damping of twist constraint
+    bool enableTwistConstraint;     // Whether to apply twist constraints
+    
+    // Padding to ensure proper alignment - GLSL handles this automatically but we keep it for consistency
+    // Note: In GLSL, the compiler will add padding as needed for std430 layout
 };
 
 // GPU Mode structure

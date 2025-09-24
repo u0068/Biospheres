@@ -1,0 +1,134 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+};
+
+// Adhesion connection structure - stores permanent connections between sibling cells
+struct AdhesionConnection {
+    uint cellAIndex;      // Index of first cell in the connection
+    uint cellBIndex;      // Index of second cell in the connection
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
+    uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
+    vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
+};
+
+// Input Cell data
+layout(std430, binding = 0) restrict buffer ReadCellBuffer {
+    ComputeCell inputCells[];
+};
+
+// Input: Adhesion connections
+layout(std430, binding = 1) buffer AdhesionConnectionBuffer {
+    AdhesionConnection connections[];
+};
+
+// Cell count
+layout(std430, binding = 2) buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
+};
+
+// Output Cell data
+layout(std430, binding = 3) restrict buffer WriteCellBuffer {
+    ComputeCell outputCells[];
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+uniform float u_momentumCorrectionStrength; // Strength of momentum correction (0.0 to 1.0)
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    if (index >= totalCellCount) {
+        return;
+    }
+
+    // Skip dragged cell
+    if (int(index) == u_draggedCellIndex) {
+        outputCells[index] = inputCells[index];
+        return;
+    }
+
+    ComputeCell thisCell = inputCells[index];
+    
+    // Check if this cell has connections
+    bool hasConnections = false;
+    for (int i = 0; i < 20; ++i) {
+        if (thisCell.adhesionIndices[i] >= 0) {
+            hasConnections = true;
+            break;
+        }
+    }
+    
+    if (hasConnections) {
+        // Calculate system-wide momentum by reading from all cells
+        vec3 totalMomentum = vec3(0.0);
+        float totalMass = 0.0;
+        uint connectedCellCount = 0;
+        
+        // Iterate through all cells to calculate total momentum
+        for (uint i = 0; i < totalCellCount; ++i) {
+            ComputeCell otherCell = inputCells[i];
+            
+            // Check if other cell has connections
+            bool otherHasConnections = false;
+            for (int j = 0; j < 20; ++j) {
+                if (otherCell.adhesionIndices[j] >= 0) {
+                    otherHasConnections = true;
+                    break;
+                }
+            }
+            
+            if (otherHasConnections) {
+                float mass = otherCell.positionAndMass.w;
+                totalMomentum += otherCell.velocity.xyz * mass;
+                totalMass += mass;
+                connectedCellCount++;
+            }
+        }
+        
+        // Apply momentum correction if we have connected cells
+        if (connectedCellCount > 0 && totalMass > 0.0) {
+            // Calculate average momentum per unit mass
+            vec3 avgMomentumPerMass = totalMomentum / totalMass;
+            
+            // Apply correction force proportional to the average momentum
+            // This helps counteract system-wide drift
+            vec3 correctionForce = -avgMomentumPerMass * u_momentumCorrectionStrength;
+            
+            // Apply the correction force to this cell
+            thisCell.acceleration.xyz += correctionForce;
+        }
+    }
+
+    // Write the updated cell back to output buffer
+    outputCells[index] = thisCell;
+}

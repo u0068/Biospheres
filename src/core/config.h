@@ -19,7 +19,7 @@ namespace config
 	constexpr bool VSYNC{ false };
 
 	// ========== Cell Simulation Configuration ==========
-	constexpr int MAX_CELLS{8};
+	constexpr int MAX_CELLS{64};
 	constexpr int DEFAULT_CELL_COUNT{100000};
 	constexpr int MAX_ADHESIONS_PER_CELL{ 20 }; // Maximum number of adhesions per cell
 	constexpr int MAX_ADHESIONS{ MAX_CELLS * MAX_ADHESIONS_PER_CELL / 2};

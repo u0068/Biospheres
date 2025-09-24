@@ -620,4 +620,19 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
     addTooltip("Maximum angle between connected cells (0° = strict orientation locking, >0° = flexible with max deviation)");
+    
+    // Add divider before twist constraint settings
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    
+    // Twist constraint settings
+    ImGui::Checkbox("Enable Twist Constraint", &adhesion.enableTwistConstraint);
+    addTooltip("Prevents cells from rotating around adhesion axis - essential for snake bodies to maintain belly alignment");
+    
+    drawSliderWithInput("Twist Constraint Stiffness", &adhesion.twistConstraintStiffness, 0.0f, 2.0f, "%.3f");
+    addTooltip("How strongly cells resist twisting around connections (higher = more rigid snake body, lower = more flexible)");
+    
+    drawSliderWithInput("Twist Constraint Damping", &adhesion.twistConstraintDamping, 0.0f, 1.0f, "%.3f");
+    addTooltip("Damping prevents oscillation and maintains stable alignment (higher = more stable snake body)");
 }

@@ -175,51 +175,27 @@ void CellManager::initializeAdhesionConnectionSystem()
     std::cout << "Initializing adhesion connection system with capacity for " << getAdhesionLimit() << " connections\n";
     
     // Create buffer for adhesion connections
-    // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive, anchorDirectionA, paddingA, anchorDirectionB, paddingB
-    // Total size: 4 uints + 2 vec3s + 2 floats = 4*4 + 2*12 + 2*4 = 16 + 24 + 8 = 48 bytes
+    // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive, anchorDirectionA, paddingA, anchorDirectionB, paddingB, twistReferenceA, twistReferenceB
+    // Total size: 4 uints + 2 vec3s + 2 floats + 2 quats = 4*4 + 2*12 + 2*4 + 2*16 = 16 + 24 + 8 + 32 = 80 bytes
     glCreateBuffers(1, &adhesionConnectionBuffer);
     glNamedBufferData(adhesionConnectionBuffer,
         getAdhesionLimit() * sizeof(AdhesionConnection),
         nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for connection count
     
+    // Clear all existing adhesion connections to ensure clean state with new structure format
+    // This prevents issues with old 48-byte data being interpreted as new 80-byte data
+    totalAdhesionCount = 0;
+    liveAdhesionCount = 0;
+    
     std::cout << "Adhesion connection system initialized successfully\n";
     std::cout << "  - adhesionConnectionBuffer: " << adhesionConnectionBuffer << "\n";
     std::cout << "  - Buffer size: " << (getAdhesionLimit() * sizeof(AdhesionConnection)) << " bytes\n";
-    std::cout << "  - Current totalAdhesionCount: " << totalAdhesionCount << "\n";
+    std::cout << "  - Structure size: " << sizeof(AdhesionConnection) << " bytes (was 48, now 80)\n";
+    std::cout << "  - Current totalAdhesionCount: " << totalAdhesionCount << " (reset to 0)\n";
     std::cout << "  - Current totalCellCount: " << totalCellCount << "\n";
     std::cout << "  - Current liveCellCount: " << liveCellCount << "\n";
 }
 
-void CellManager::runAdhesionPhysics(float deltaTime)
-{
-    TimerGPU timer("Adhesion Physics");
-    
-    adhesionPhysicsShader->use();
-    
-    // Set uniforms
-    adhesionPhysicsShader->setFloat("u_deltaTime", deltaTime);
-    adhesionPhysicsShader->setFloat("u_accelerationDamping", 0.95f);
-    
-    // Pass dragged cell index to adhesion physics shader
-    int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
-    adhesionPhysicsShader->setInt("u_draggedCellIndex", draggedIndex);
-    
-    // Bind buffers
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Cell data
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer); // Mode data
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer); // Input connections
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer); // Cell count
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, getCellWriteBuffer()); // Output Cell data
-    
-    // Dispatch compute shader
-    GLuint numGroups = (totalCellCount + 255) / 256;
-    adhesionPhysicsShader->dispatch(numGroups, 1, 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    // Swap buffers for next frame
-    rotateBuffers();
-}
 
 void CellManager::cleanupAdhesionConnectionSystem()
 {

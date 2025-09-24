@@ -171,8 +171,15 @@ void main() {
     vec3 acceleration = totalForce / myMass;
     float accMagnitude = length(acceleration);
     
-    // Apply acceleration damping to small forces to prevent drift
-    if (accMagnitude < 0.1) { // Threshold for "small" forces that cause drift
+    // Multi-tier acceleration damping to prevent drift
+    if (accMagnitude < 0.001) {
+        // Eliminate extremely tiny forces entirely
+        acceleration = vec3(0.0);
+    } else if (accMagnitude < 0.01) {
+        // Very aggressive damping for very small forces
+        acceleration *= 0.1;
+    } else if (accMagnitude < 0.05) {
+        // Strong damping for small forces
         acceleration *= u_accelerationDamping;
     }
     

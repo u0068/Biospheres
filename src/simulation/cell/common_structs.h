@@ -34,7 +34,7 @@ struct ComputeCell {
     }
 };
 
-struct AdhesionSettings
+struct alignas(4) AdhesionSettings
 {
     bool canBreak = true;
     float breakForce = 10.0f;
@@ -44,9 +44,17 @@ struct AdhesionSettings
     float orientationSpringStiffness = 2.0f;
     float orientationSpringDamping = 0.5f;
     float maxAngularDeviation = 0.0f; // degrees - 0 = strict orientation locking, >0 = flexible with max deviation
+    
+    // Twist constraint parameters
+    float twistConstraintStiffness = 0.5f; // Stiffness of twist constraint around adhesion axis (increased for snake body alignment)
+    float twistConstraintDamping = 0.8f;   // Damping of twist constraint (high for stable snake body)
+    bool enableTwistConstraint = true;     // Whether to apply twist constraints
+    
+    // Padding to ensure proper alignment - compiler will add as needed
+    char padding[1] = {0}; // Reduced padding, let compiler handle the rest
 };
 
-struct GPUMode {
+struct alignas(16) GPUMode {
     glm::vec4 color{ 1.};  // R, G, B padding
     glm::quat orientationA{1., 0., 0., 0.};  // quaternion
     glm::quat orientationB{1., 0., 0., 0.};  // quaternion
@@ -71,8 +79,10 @@ struct AdhesionConnection
     float paddingA; // Padding to ensure 16-byte alignment
     glm::vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
     float paddingB; // Padding to ensure 16-byte alignment
+    glm::quat twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    glm::quat twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
 };
-static_assert(sizeof(AdhesionConnection) == 48, "AdhesionConnection must be exactly 48 bytes (4 uints + 2 vec3s + 2 floats padding)");
+static_assert(sizeof(AdhesionConnection) == 80, "AdhesionConnection must be exactly 80 bytes (4 uints + 2 vec3s + 2 floats + 2 quats)");
 static_assert(sizeof(AdhesionConnection) % 16 == 0, "AdhesionConnection must be 16-byte aligned for GPU usage");
 
 // Anchor instance data for gizmo rendering (matches GPU AnchorInstance structure)
