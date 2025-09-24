@@ -786,6 +786,7 @@ void CellManager::runCollisionCompute()
     physicsShader->use();
 
     // Set uniforms
+    physicsShader->setFloat("u_accelerationDamping", 0.95f);
 
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;

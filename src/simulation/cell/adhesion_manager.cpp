@@ -198,6 +198,7 @@ void CellManager::runAdhesionPhysics(float deltaTime)
     
     // Set uniforms
     adhesionPhysicsShader->setFloat("u_deltaTime", deltaTime);
+    adhesionPhysicsShader->setFloat("u_accelerationDamping", 0.95f);
     
     // Pass dragged cell index to adhesion physics shader
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;

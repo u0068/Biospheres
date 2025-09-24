@@ -49,6 +49,7 @@ layout(std430, binding = 4) coherent buffer CellCountBuffer {
 
 // Uniforms
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+uniform float u_accelerationDamping; // Damping factor for small accelerations
 uniform int u_gridResolution;
 uniform float u_gridCellSize;
 uniform float u_worldSize;
@@ -166,7 +167,16 @@ void main() {
         }
     }
     
-    // Store acceleration (F = ma, so a = F/m) in output buffer
-    outputCells[index].acceleration.xyz = totalForce / myMass;
+    // Calculate acceleration (F = ma, so a = F/m)
+    vec3 acceleration = totalForce / myMass;
+    float accMagnitude = length(acceleration);
+    
+    // Apply acceleration damping to small forces to prevent drift
+    if (accMagnitude < 0.1) { // Threshold for "small" forces that cause drift
+        acceleration *= u_accelerationDamping;
+    }
+    
+    // Store acceleration in output buffer
+    outputCells[index].acceleration.xyz = acceleration;
 }
 
