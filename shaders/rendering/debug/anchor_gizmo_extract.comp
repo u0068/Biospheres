@@ -141,20 +141,12 @@ void main() {
         // Determine which cell this is in the connection and get the appropriate anchor direction
         bool isCellA = (connection.cellAIndex == cellIndex);
         
-        // Safety check: if anchor directions are not properly initialized (all zeros), calculate them dynamically
+        // Safety check: if anchor directions are not properly initialized (all zeros), use cell center
         vec3 anchorPos;
         if (length(connection.anchorDirectionA) < 0.001 && length(connection.anchorDirectionB) < 0.001) {
-            // Fallback: calculate anchor position dynamically
-            uint otherCellIndex = isCellA ? connection.cellBIndex : connection.cellAIndex;
-            if (otherCellIndex < totalCellCount) {
-                ComputeCell otherCell = cells[otherCellIndex];
-                vec3 otherCellPos = otherCell.positionAndMass.xyz;
-                vec3 directionToOther = normalize(otherCellPos - cellPos);
-                anchorPos = cellPos + directionToOther * cellRadius;
-            } else {
-                // Fallback to cell center if other cell is invalid
-                anchorPos = cellPos;
-            }
+            // Fallback: use cell center (this should not happen in genome-based system)
+            // Avoid spatial dependencies by using cell center
+            anchorPos = cellPos;
         } else {
             // Use the stored local anchor direction, transformed to world space
             vec3 localAnchorDirection = isCellA ? connection.anchorDirectionA : connection.anchorDirectionB;

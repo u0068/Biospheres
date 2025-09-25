@@ -183,6 +183,66 @@ uint getNewAdhesionIndex() {
     return newAdhesionIndex;
 }
 
+// Add adhesion with preserved anchor directions (for inheritance)
+bool addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB) {
+    uint newAdhesionIndex = getNewAdhesionIndex();
+    if (newAdhesionIndex == uint(-1)) {
+        // Failed to reserve an adhesion index
+        return false;
+    }
+
+    // Check for available slot in cell A
+    int slotA = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
+            slotA = j;
+            break;
+        }
+    }
+
+    // Check for available slot in cell B
+    int slotB = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
+            slotB = j;
+            break;
+        }
+    }
+
+    if (slotA == -1 || slotB == -1) {
+        // Roll back the reservation if any cell has no free slot
+        int reservation = atomicAdd(freeAdhesionTop, 1);
+        int topIndex = reservation;
+        freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
+        return false;
+    }
+
+    // Use the preserved anchor directions directly (already in local space)
+    vec3 anchorDirectionA = preservedAnchorA;
+    vec3 anchorDirectionB = preservedAnchorB;
+
+    // Store current orientations as twist reference for constraint
+    vec4 twistReferenceA = inputCells[cellAIndex].orientation;
+    vec4 twistReferenceB = inputCells[cellBIndex].orientation;
+
+    // Write connection and assign indices
+    connections[newAdhesionIndex] = AdhesionConnection(
+        cellAIndex,
+        cellBIndex,
+        modeIndex,
+        1,
+        anchorDirectionA,
+        0.0, // paddingA
+        anchorDirectionB,
+        0.0, // paddingB
+        twistReferenceA,
+        twistReferenceB
+    );
+    outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
+    outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
+    return true;
+}
+
 bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     uint newAdhesionIndex = getNewAdhesionIndex();
     if (newAdhesionIndex == uint(-1)) {
@@ -217,6 +277,7 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     }
 
     // Calculate initial anchor directions in local cell space
+    // Use spatial calculation since this is called immediately after split when positions are correct
     vec3 posA = inputCells[cellAIndex].positionAndMass.xyz;
     vec3 posB = inputCells[cellBIndex].positionAndMass.xyz;
     
@@ -438,19 +499,42 @@ void main() {
         // Remove the old connection
         removeAdhesion(oldAdhesionIndex);
 
-        vec3 direction = normalize(inputCells[neighborIndex].positionAndMass.xyz - cell.positionAndMass.xyz);
+        // Use stored anchor direction instead of spatial calculation
+        // Determine which anchor direction to use based on parent's role in the connection
+        bool isParentCellA = (oldConnection.cellAIndex == childAIndex); // childAIndex is same as parent index
+        vec3 localAnchorDirection = isParentCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
+        
+        // Transform anchor direction from local to world space
+        vec3 direction = rotateVectorByQuaternion(localAnchorDirection, cell.orientation);
         vec3 splitDirWorld = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation);
         float adhesionZone = dot(direction, splitDirWorld);
         float equatorWidth = 0.05; // Width of the shared adhesion zone
 
         // Child A keeps adhesion
         if (mode.childAKeepAdhesion == 1 && adhesionZone > -equatorWidth) {
-            if (!addAdhesion(childAIndex, neighborIndex, oldConnection.modeIndex)) return;
+            // Preserve the original anchor directions for inheritance
+            // The child inherits the same local anchor direction as the parent had
+            vec3 childAnchorDirection = localAnchorDirection;
+            
+            // For the neighbor, we need to determine which anchor direction to use
+            // The neighbor's anchor direction should point back to the child
+            bool neighborWasCellA = (oldConnection.cellAIndex == neighborIndex);
+            vec3 neighborAnchorDirection = neighborWasCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
+            
+            if (!addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection)) return;
         }
 
         // Child B keeps adhesion
         if (mode.childBKeepAdhesion == 1 && adhesionZone < equatorWidth) {
-            if (!addAdhesion(childBIndex, neighborIndex, oldConnection.modeIndex)) return;
+            // Preserve the original anchor directions for inheritance
+            // The child inherits the same local anchor direction as the parent had
+            vec3 childAnchorDirection = localAnchorDirection;
+            
+            // For the neighbor, we need to determine which anchor direction to use
+            bool neighborWasCellA = (oldConnection.cellAIndex == neighborIndex);
+            vec3 neighborAnchorDirection = neighborWasCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
+            
+            if (!addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection)) return;
         }
     }
     

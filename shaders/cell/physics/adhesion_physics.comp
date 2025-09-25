@@ -220,9 +220,10 @@ void computeAdhesionForces(
     // Use the fixed anchor directions from the connection, transformed to world space
     vec3 anchorA, anchorB;
     if (length(connection.anchorDirectionA) < 0.001 && length(connection.anchorDirectionB) < 0.001) {
-        // Fallback: calculate anchor directions dynamically
-        anchorA = normalize(B.positionAndMass.xyz - A.positionAndMass.xyz);
-        anchorB = normalize(A.positionAndMass.xyz - B.positionAndMass.xyz);
+        // Fallback: use default directions (this should not happen in genome-based system)
+        // Use a default direction to avoid spatial dependencies
+        anchorA = vec3(1.0, 0.0, 0.0);
+        anchorB = vec3(-1.0, 0.0, 0.0);
     } else {
         // Transform the stored local anchor directions to world space using cell orientations
         anchorA = rotateVectorByQuaternion(connection.anchorDirectionA, A.orientation);

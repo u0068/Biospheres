@@ -94,20 +94,16 @@ void main() {
     ComputeCell cellA = cells[currentAdhesion.cellAIndex];
     ComputeCell cellB = cells[currentAdhesion.cellBIndex];
     
-    // Safety check: if anchor directions are not properly initialized (all zeros), calculate them dynamically
+    // Safety check: if anchor directions are not properly initialized (all zeros), use defaults
     vec3 anchorA, anchorB;
     if (length(currentAdhesion.anchorDirectionA) < 0.001 && length(currentAdhesion.anchorDirectionB) < 0.001) {
-        // Fallback: calculate anchor positions dynamically
+        // Fallback: use default anchor positions (this should not happen in genome-based system)
+        // Use cell centers to avoid spatial dependencies
         vec3 posA = cellA.positionAndMass.xyz;
         vec3 posB = cellB.positionAndMass.xyz;
-        float radiusA = pow(cellA.positionAndMass.w, 1.0/3.0);
-        float radiusB = pow(cellB.positionAndMass.w, 1.0/3.0);
         
-        vec3 directionAtoB = normalize(posB - posA);
-        vec3 directionBtoA = normalize(posA - posB);
-        
-        anchorA = posA + directionAtoB * radiusA;
-        anchorB = posB + directionBtoA * radiusB;
+        anchorA = posA;
+        anchorB = posB;
     } else {
         // Use the stored local anchor directions, transformed to world space
         vec3 posA = cellA.positionAndMass.xyz;
