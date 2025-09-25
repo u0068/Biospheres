@@ -260,8 +260,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
             bool wasPaused = sceneManager.isPaused();
             sceneManager.setPaused(true);
             
-            // Use a coarser time step for scrubbing to make it more responsive
-            float scrubTimeStep = config::scrubTimeStep;
+            // Use the same time step as live simulation for consistent physics
+            float scrubTimeStep = config::physicsTimeStep;
             float timeRemaining = currentTime;
             int maxSteps = (int)(currentTime / scrubTimeStep) + 1;
             

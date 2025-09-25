@@ -41,7 +41,7 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
         
         // Simulate from previous keyframe to current keyframe
         float timeToSimulate = targetTime - currentSimTime;
-        float scrubTimeStep = config::scrubTimeStep;
+        float scrubTimeStep = config::physicsTimeStep;
         
         while (timeToSimulate > 0.0f)
         {

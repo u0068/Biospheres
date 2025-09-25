@@ -54,6 +54,24 @@ struct alignas(4) AdhesionSettings
     char padding[1] = {0}; // Reduced padding, let compiler handle the rest
 };
 
+// GPU-side mirror of AdhesionSettings with std430-compatible packing (no bools)
+struct alignas(16) GPUModeAdhesionSettings
+{
+    int canBreak = 1;                 // bool -> int
+    float breakForce = 10.0f;
+    float restLength = 2.0f;
+    float linearSpringStiffness = 5.0f;
+    float linearSpringDamping = 0.5f;
+    float orientationSpringStiffness = 2.0f;
+    float orientationSpringDamping = 0.5f;
+    float maxAngularDeviation = 0.0f;
+    float twistConstraintStiffness = 0.5f;
+    float twistConstraintDamping = 0.8f;
+    int enableTwistConstraint = 1;    // bool -> int
+    int _padding = 0;                 // pad to 48 bytes
+};
+static_assert(sizeof(GPUModeAdhesionSettings) % 16 == 0, "GPUModeAdhesionSettings must be 16-byte aligned for GPU usage");
+
 struct alignas(16) GPUMode {
     glm::vec4 color{ 1.};  // R, G, B padding
     glm::quat orientationA{1., 0., 0., 0.};  // quaternion
@@ -62,7 +80,7 @@ struct alignas(16) GPUMode {
     glm::ivec2 childModes{ 0 };
     float splitInterval{ 5. };
     int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
-	AdhesionSettings adhesionSettings{}; // Adhesion settings for the parent cell
+	GPUModeAdhesionSettings adhesionSettings{}; // Packed GPU adhesion settings
     int parentMakeAdhesion{ 0 };  // Boolean flag for adhesionSettings creation (0 = false, 1 = true) + padding
     int childAKeepAdhesion{ 1 };
 	int childBKeepAdhesion{ 1 };

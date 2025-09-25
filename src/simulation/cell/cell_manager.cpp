@@ -485,7 +485,12 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         const ModeSettings& mode = genomeData.modes[i];
 
         GPUMode gmode{};
-        gmode.color = glm::vec4(mode.color, 0.0);
+        gmode.color = glm::vec4(mode.color, 1.0); // Set alpha to 1.0 instead of 0.0
+        
+        // Debug output to verify color values
+        if (i == 0) { // Only print for first mode to avoid spam
+            std::cout << "Mode " << i << " color: (" << mode.color.r << ", " << mode.color.g << ", " << mode.color.b << ")\n";
+        }
         gmode.splitInterval = mode.splitInterval;
         gmode.genomeOffset = genomeBaseOffset;
 
@@ -493,8 +498,22 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         gmode.splitDirection = glm::vec4(pitchYawToVec3(
             glm::radians(mode.parentSplitDirection.x), glm::radians(mode.parentSplitDirection.y)), 0.);
 
-        // Store child mode indices
-        gmode.childModes = glm::ivec2(mode.childA.modeNumber, mode.childB.modeNumber);
+        // Store child mode indices with bounds checking to prevent invalid mode references
+        {
+            int clampedChildA = mode.childA.modeNumber;
+            int clampedChildB = mode.childB.modeNumber;
+            if (clampedChildA < 0 || clampedChildA >= modeCount) {
+                std::cout << "WARNING: Child A mode index out of range (" << clampedChildA
+                          << ") clamping to [0," << (modeCount - 1) << "]\n";
+                clampedChildA = std::max(0, std::min(clampedChildA, modeCount - 1));
+            }
+            if (clampedChildB < 0 || clampedChildB >= modeCount) {
+                std::cout << "WARNING: Child B mode index out of range (" << clampedChildB
+                          << ") clamping to [0," << (modeCount - 1) << "]\n";
+                clampedChildB = std::max(0, std::min(clampedChildB, modeCount - 1));
+            }
+            gmode.childModes = glm::ivec2(clampedChildA, clampedChildB);
+        }
 
         // Directly store quaternions (no conversion)
         gmode.orientationA = mode.childA.orientation;  // now a quat already
@@ -506,8 +525,18 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         gmode.childBKeepAdhesion = mode.childB.keepAdhesion;
         gmode.maxAdhesions = mode.maxAdhesions;
 
-        // Store adhesionSettings settings
-        gmode.adhesionSettings = mode.adhesionSettings;
+        // Store adhesion settings (convert bools to ints and pack for GPU)
+        gmode.adhesionSettings.canBreak = mode.adhesionSettings.canBreak ? 1 : 0;
+        gmode.adhesionSettings.breakForce = mode.adhesionSettings.breakForce;
+        gmode.adhesionSettings.restLength = mode.adhesionSettings.restLength;
+        gmode.adhesionSettings.linearSpringStiffness = mode.adhesionSettings.linearSpringStiffness;
+        gmode.adhesionSettings.linearSpringDamping = mode.adhesionSettings.linearSpringDamping;
+        gmode.adhesionSettings.orientationSpringStiffness = mode.adhesionSettings.orientationSpringStiffness;
+        gmode.adhesionSettings.orientationSpringDamping = mode.adhesionSettings.orientationSpringDamping;
+        gmode.adhesionSettings.maxAngularDeviation = mode.adhesionSettings.maxAngularDeviation;
+        gmode.adhesionSettings.twistConstraintStiffness = mode.adhesionSettings.twistConstraintStiffness;
+        gmode.adhesionSettings.twistConstraintDamping = mode.adhesionSettings.twistConstraintDamping;
+        gmode.adhesionSettings.enableTwistConstraint = mode.adhesionSettings.enableTwistConstraint ? 1 : 0;
 
         gpuModes.push_back(gmode);
     }
@@ -518,6 +547,10 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         modeCount * sizeof(GPUMode),
         gpuModes.data()
     );
+    
+    // CRITICAL FIX: Add memory barrier to ensure GPU sees updated mode buffer data
+    // This prevents cells from appearing black when colors are changed
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 }
 
 // ============================================================================
