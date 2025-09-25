@@ -18,24 +18,20 @@ struct ComputeCell {
     int adhesionIndices[20];
 };
 
-struct AdhesionSettings
+struct GPUModeAdhesionSettings
 {
-    bool canBreak;
+    int canBreak;                 // bool -> int (4 bytes)
     float breakForce;
     float restLength;
     float linearSpringStiffness;
     float linearSpringDamping;
     float orientationSpringStiffness;
     float orientationSpringDamping;
-    float maxAngularDeviation;      // Does nothing yet
-    
-    // Twist constraint parameters
-    float twistConstraintStiffness; // Stiffness of twist constraint around adhesion axis
-    float twistConstraintDamping;   // Damping of twist constraint
-    bool enableTwistConstraint;     // Whether to apply twist constraints
-    
-    // Padding to ensure proper alignment - GLSL handles this automatically but we keep it for consistency
-    // Note: In GLSL, the compiler will add padding as needed for std430 layout
+    float maxAngularDeviation;
+    float twistConstraintStiffness;
+    float twistConstraintDamping;
+    int enableTwistConstraint;    // bool -> int (4 bytes)
+    int _padding;                 // pad to 48 bytes
 };
 
 // GPU Mode structure
@@ -47,7 +43,7 @@ struct GPUMode {
     ivec2 childModes;     // mode indices for children
     float splitInterval;
     int genomeOffset;
-    AdhesionSettings adhesionSettings;
+    GPUModeAdhesionSettings adhesionSettings;
     int parentMakeAdhesion; // Boolean flag for adhesion creation
     int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
     int childBKeepAdhesion; // Boolean flag for child B to keep adhesion

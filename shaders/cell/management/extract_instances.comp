@@ -4,16 +4,20 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 // Input: Full cell data from physics simulation
 
-struct AdhesionSettings
+struct GPUModeAdhesionSettings
 {
-    bool canBreak;
+    int canBreak;                 // bool -> int (4 bytes)
     float breakForce;
     float restLength;
     float linearSpringStiffness;
     float linearSpringDamping;
     float orientationSpringStiffness;
     float orientationSpringDamping;
-    float maxAngularDeviation;      // Does nothing yet
+    float maxAngularDeviation;
+    float twistConstraintStiffness;
+    float twistConstraintDamping;
+    int enableTwistConstraint;    // bool -> int (4 bytes)
+    int _padding;                 // pad to 48 bytes
 };
 
 // GPU Mode structure
@@ -25,7 +29,7 @@ struct GPUMode {
     ivec2 childModes;     // mode indices for children
     float splitInterval;
     int genomeOffset;
-    AdhesionSettings adhesionSettings;
+    GPUModeAdhesionSettings adhesionSettings;
     int parentMakeAdhesion; // Boolean flag for adhesion creation
     int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
     int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
@@ -86,6 +90,7 @@ void main() {
     
     float myRadius = pow(cellData[index].positionAndMass.w, 1./3.);
     instanceData[index].positionAndRadius = vec4(cellData[index].positionAndMass.xyz, myRadius);
+    
     instanceData[index].color = modes[cellData[index].modeIndex].color;
     instanceData[index].orientation = cellData[index].orientation;
 }

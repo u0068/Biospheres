@@ -487,8 +487,8 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         GPUMode gmode{};
         gmode.color = glm::vec4(mode.color, 1.0); // Set alpha to 1.0 instead of 0.0
         
-        // Debug output to verify color values
-        if (i == 0) { // Only print for first mode to avoid spam
+        // Debug output to verify color values (only for first mode to avoid spam)
+        if (i == 0) {
             std::cout << "Mode " << i << " color: (" << mode.color.r << ", " << mode.color.g << ", " << mode.color.b << ")\n";
         }
         gmode.splitInterval = mode.splitInterval;
@@ -943,8 +943,8 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
     internalUpdateShader->setInt("u_maxCells", cellLimit);
     internalUpdateShader->setInt("u_maxAdhesions", getAdhesionLimit());
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, modeBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionConnectionBuffer);
@@ -1036,6 +1036,11 @@ void CellManager::resetSimulation()
 
     if (instanceBuffer != 0) {
         glClearNamedBufferData(instanceBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+
+    // Clear mode buffer to prevent stale mode data
+    if (modeBuffer != 0) {
+        glClearNamedBufferData(modeBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
 
     // Clear free slot buffers
