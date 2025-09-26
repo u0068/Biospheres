@@ -121,6 +121,8 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
             ImGui::Text("Drag Distance: %.2f", selectedCell.dragDistance);
             ImGui::Text("(Use scroll wheel to adjust distance)");
         }
+
+        ImGui::Separator();
     }
     else
     {

@@ -197,6 +197,66 @@ struct CellManager
     GLuint adhesionConnectionBuffer{};  // Buffer storing permanent adhesionSettings connections
     Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
 
+    // ============================================================================
+    // ADHESION DIAGNOSTICS (NEW)
+    // ============================================================================
+    
+    // Adhesion Reason Codes:
+    // 0  = Inherited        - Child inherits parent's connection during split
+    // 1  = Direct           - Normal new connection between cells
+    // 2  = Broken           - Connection broken due to force/distance
+    // 3  = Split_Event      - Original connection removed due to parent split
+    // 4  = Cell_Death       - Connection removed due to cell death
+    // 5  = Force_Break      - Connection broken by excessive force
+    // 6  = Distance_Break   - Connection broken by excessive distance
+    // 7  = Mode_Change      - Connection removed due to mode change
+    // 8  = Capacity_Full    - Connection failed due to cell adhesion capacity
+    // 9  = Invalid_Cells    - Connection failed due to invalid cell indices
+    // 10 = Duplicate        - Connection failed due to duplicate connection
+    // 11 = Self_Connection  - Connection failed due to self-connection attempt
+    // 12 = Out_Of_Bounds    - Connection failed due to out of bounds
+    // 13 = Adhesion_Limit   - Connection failed due to global adhesion limit
+    // 14 = Restore          - Connection restored from keyframe/save
+    // 15 = Manual_Remove    - Connection manually removed by user
+    // 16 = Collision_Break  - Connection broken due to collision
+    // 17 = Age_Break        - Connection broken due to cell age
+    // 18 = Toxin_Break      - Connection broken due to high toxins
+    // 19 = Signaling_Break  - Connection broken due to signaling
+    // 20 = Unknown_Error    - Connection failed for unknown reason
+
+    struct AdhesionDiagnosticEntry {
+        uint32_t connectionIndex;
+        uint32_t cellA;
+        uint32_t cellB;
+        uint32_t modeIndex;
+        uint32_t reasonCode; // See reason code definitions below
+        glm::vec3 anchorDirA;
+        float _pad0; // padding to 16 bytes alignment
+        glm::vec3 anchorDirB;
+        float _pad1;
+        uint32_t frameIndex;
+        uint32_t splitEventID; // Groups related adhesion changes from same split
+        uint32_t parentCellID; // Original parent cell that split (for inherited connections)
+        uint32_t inheritanceType; // 0=none, 1=childA_keeps, 2=childB_keeps, 3=both_keep, 4=neither_keep
+        uint32_t originalConnectionIndex; // Index of the original connection being inherited from
+        float adhesionZone; // Dot product with split direction (inheritance decision factor)
+        float _pad2; // padding to 16-byte alignment
+        float _pad3; // padding to 16-byte alignment
+        float _pad4; // padding to 16-byte alignment
+        float _pad5; // additional padding for 16-byte alignment
+        float _pad6; // additional padding for 16-byte alignment
+    };
+    static_assert(sizeof(AdhesionDiagnosticEntry) % 16 == 0, "AdhesionDiagnosticEntry must be 16-byte aligned");
+
+    GLuint adhesionDiagnosticBuffer{};    // SSBO for diagnostic entries
+    GLuint diagnosticCountBuffer{};       // SSBO single uint counter (at offset 0)
+    bool   adhesionDiagnosticsRunning{false};
+
+    // Diagnostic control methods
+    void initializeAdhesionDiagnostics();
+    void toggleAdhesionDiagnostics();
+    void writeAdhesionDiagnosticLog();
+    
     void initializeGizmoBuffers();
     void updateGizmoData();
     void cleanupGizmos();

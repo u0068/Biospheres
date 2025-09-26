@@ -74,6 +74,14 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     ImGui::Checkbox("Distance Culling & Fading", &enableDistanceCulling);
     addTooltip("Enable distance-based culling and fading for cells far from camera");
     
+    ImGui::Separator();
+    ImGui::Text("Diagnostics:");
+    if (ImGui::Button(cellManager.adhesionDiagnosticsRunning ? "Stop Adhesion Diagnostics" : "Run Adhesion Diagnostics"))
+    {
+        cellManager.toggleAdhesionDiagnostics();
+    }
+    addTooltip("Starts recording adhesion decisions, including inherited connections. Press again to stop and write a log file to the Logs folder.");
+    
     // Sync settings with cell manager
             cellManager.useFrustumCulling = enableFrustumCulling;
         cellManager.useDistanceCulling = enableDistanceCulling;

@@ -7,6 +7,12 @@
 #include <cfloat>
 #include <cmath>
 #include <vector>
+#include <map>
+#include <filesystem>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <fstream>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -78,6 +84,9 @@ CellManager::CellManager()
     
     // Initialize barrier optimization system
     barrierBatch.setStats(&barrierStats);
+
+    // Initialize adhesion diagnostic buffers
+    initializeAdhesionDiagnostics();
 }
 
 CellManager::~CellManager()
@@ -951,6 +960,18 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, freeCellSlotBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, freeAdhesionSlotBuffer);
 
+    // Bind diagnostic buffers if recording is active
+    if (adhesionDiagnosticsRunning)
+    {
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, adhesionDiagnosticBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, diagnosticCountBuffer);
+        internalUpdateShader->setInt("u_enableAdhesionDiagnostics", 1);
+    }
+    else
+    {
+        internalUpdateShader->setInt("u_enableAdhesionDiagnostics", 0);
+    }
+
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     internalUpdateShader->dispatch(numGroups, 1, 1);
@@ -1189,4 +1210,210 @@ void CellManager::updateCounts()
         };
         glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
     }
+}
+
+// ============================================================================
+// ADHESION DIAGNOSTIC SYSTEM (NEW)
+// ============================================================================
+
+void CellManager::initializeAdhesionDiagnostics()
+{
+    // Allocate buffer large enough for every adhesion connection per frame for up to 600 frames
+    const size_t maxEntries = static_cast<size_t>(getAdhesionLimit()) * 600ULL;
+    glCreateBuffers(1, &adhesionDiagnosticBuffer);
+    glNamedBufferData(adhesionDiagnosticBuffer, maxEntries * sizeof(AdhesionDiagnosticEntry), nullptr, GL_DYNAMIC_COPY);
+
+    // Counter buffer: single uint32 storing current count
+    glCreateBuffers(1, &diagnosticCountBuffer);
+    uint32_t zero = 0;
+    glNamedBufferData(diagnosticCountBuffer, sizeof(uint32_t), &zero, GL_DYNAMIC_COPY);
+}
+
+void CellManager::toggleAdhesionDiagnostics()
+{
+    adhesionDiagnosticsRunning = !adhesionDiagnosticsRunning;
+    if (adhesionDiagnosticsRunning)
+    {
+        // Reset counter to zero
+        uint32_t zero = 0;
+        glNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &zero);
+        std::cout << "[Diagnostics] Adhesion diagnostics started.\n";
+    }
+    else
+    {
+        std::cout << "[Diagnostics] Adhesion diagnostics stopped. Writing log...\n";
+        writeAdhesionDiagnosticLog();
+    }
+}
+
+void CellManager::writeAdhesionDiagnosticLog()
+{
+    // Read counter
+    uint32_t count = 0;
+    glGetNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &count);
+    if (count == 0)
+    {
+        std::cout << "[Diagnostics] No adhesion diagnostic entries recorded.\n";
+        return;
+    }
+
+    // Map diagnostic buffer
+    std::vector<AdhesionDiagnosticEntry> entries(count);
+    glGetNamedBufferSubData(adhesionDiagnosticBuffer, 0, count * sizeof(AdhesionDiagnosticEntry), entries.data());
+
+    // Prepare log path
+    namespace fs = std::filesystem;
+    fs::path logDir = fs::path("Logs");
+    if (!fs::exists(logDir)) fs::create_directories(logDir);
+
+    // Timestamp
+    auto tp = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(tp);
+    std::tm tm;
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+    fs::path logPath = logDir / ("adhesion_diagnostic_" + oss.str() + ".log");
+
+    std::ofstream ofs(logPath);
+    
+    // Write comprehensive header with legend
+    ofs << "# ============================================================================\n";
+    ofs << "# BIOSPHERES ADHESION DIAGNOSTIC LOG\n";
+    ofs << "# ============================================================================\n";
+    ofs << "# Timestamp: " << oss.str() << "\n";
+    ofs << "# Total Entries: " << count << "\n";
+    ofs << "# \n";
+    ofs << "# REASON CODE LEGEND:\n";
+    ofs << "# 0  = Inherited        - Child inherits parent's connection during split\n";
+    ofs << "# 1  = Direct           - Normal new connection between cells\n";
+    ofs << "# 2  = Broken           - Connection broken due to force/distance\n";
+    ofs << "# 3  = Split_Event      - Original connection removed due to parent split\n";
+    ofs << "# 4  = Cell_Death       - Connection removed due to cell death\n";
+    ofs << "# 5  = Force_Break      - Connection broken by excessive force\n";
+    ofs << "# 6  = Distance_Break   - Connection broken by excessive distance\n";
+    ofs << "# 7  = Mode_Change      - Connection removed due to mode change\n";
+    ofs << "# 8  = Capacity_Full    - Connection failed due to cell adhesion capacity\n";
+    ofs << "# 9  = Invalid_Cells    - Connection failed due to invalid cell indices\n";
+    ofs << "# 10 = Duplicate        - Connection failed due to duplicate connection\n";
+    ofs << "# 11 = Self_Connection  - Connection failed due to self-connection attempt\n";
+    ofs << "# 12 = Out_Of_Bounds    - Connection failed due to out of bounds\n";
+    ofs << "# 13 = Adhesion_Limit   - Connection failed due to global adhesion limit\n";
+    ofs << "# 14 = Restore          - Connection restored from keyframe/save\n";
+    ofs << "# 15 = Manual_Remove    - Connection manually removed by user\n";
+    ofs << "# 16 = Collision_Break  - Connection broken due to collision\n";
+    ofs << "# 17 = Age_Break        - Connection broken due to cell age\n";
+    ofs << "# 18 = Toxin_Break      - Connection broken due to high toxins\n";
+    ofs << "# 19 = Signaling_Break  - Connection broken due to signaling\n";
+    ofs << "# 20 = Unknown_Error    - Connection failed for unknown reason\n";
+    ofs << "# \n";
+    ofs << "# COLUMN DESCRIPTIONS:\n";
+    ofs << "# ConnectionIndex - Unique ID of the adhesion connection\n";
+    ofs << "# CellA, CellB   - Indices of the connected cells\n";
+    ofs << "# Mode           - Mode index for adhesion settings\n";
+    ofs << "# Reason         - Human-readable reason for the event\n";
+    ofs << "# AnchorA, B     - Local anchor directions [x y z] for each cell\n";
+    ofs << "# Frame          - Frame number when event occurred\n";
+    ofs << "# SplitEventID   - Groups related events from same cell split (0 = no split)\n";
+    ofs << "# ParentCellID   - Original parent cell that split (for inherited connections)\n";
+    ofs << "# InheritanceType- 0=none, 1=childA_keeps, 2=childB_keeps, 3=both_keep, 4=neither_keep\n";
+    ofs << "# OriginalConn   - Index of original connection being inherited from\n";
+    ofs << "# AdhesionZone   - Dot product with split direction (inheritance decision factor)\n";
+    ofs << "# ============================================================================\n\n";
+    
+    ofs << "ConnectionIndex,CellA,CellB,Mode,Reason,AnchorA,AnchorB,Frame,SplitEventID,ParentCellID,InheritanceType,OriginalConn,AdhesionZone\n";
+    
+    // Group entries by split event for better analysis
+    std::map<uint32_t, std::vector<AdhesionDiagnosticEntry>> splitEvents;
+    for (const auto &e : entries)
+    {
+        splitEvents[e.splitEventID].push_back(e);
+    }
+    
+    // Write entries grouped by split event
+    for (const auto &splitPair : splitEvents)
+    {
+        uint32_t splitID = splitPair.first;
+        const auto &splitEntries = splitPair.second;
+        
+        if (splitID == 0) {
+            // Non-split related entries (direct connections)
+            for (const auto &e : splitEntries)
+            {
+                const char* reason = "Unknown";
+                switch (e.reasonCode)
+                {
+                    case 0:  reason = "Inherited"; break;
+                    case 1:  reason = "Direct"; break;
+                    case 2:  reason = "Broken"; break;
+                    case 3:  reason = "Split_Event"; break;
+                    case 4:  reason = "Cell_Death"; break;
+                    case 5:  reason = "Force_Break"; break;
+                    case 6:  reason = "Distance_Break"; break;
+                    case 7:  reason = "Mode_Change"; break;
+                    case 8:  reason = "Capacity_Full"; break;
+                    case 9:  reason = "Invalid_Cells"; break;
+                    case 10: reason = "Duplicate"; break;
+                    case 11: reason = "Self_Connection"; break;
+                    case 12: reason = "Out_Of_Bounds"; break;
+                    case 13: reason = "Adhesion_Limit"; break;
+                    case 14: reason = "Restore"; break;
+                    case 15: reason = "Manual_Remove"; break;
+                    case 16: reason = "Collision_Break"; break;
+                    case 17: reason = "Age_Break"; break;
+                    case 18: reason = "Toxin_Break"; break;
+                    case 19: reason = "Signaling_Break"; break;
+                    case 20: reason = "Unknown_Error"; break;
+                }
+                ofs << e.connectionIndex << ',' << e.cellA << ',' << e.cellB << ',' << e.modeIndex << ',' << reason << ','
+                    << '[' << e.anchorDirA.x << ' ' << e.anchorDirA.y << ' ' << e.anchorDirA.z << "],"
+                    << '[' << e.anchorDirB.x << ' ' << e.anchorDirB.y << ' ' << e.anchorDirB.z << "],"
+                    << e.frameIndex << ',' << e.splitEventID << ',' << e.parentCellID << ',' << e.inheritanceType 
+                    << ',' << e.originalConnectionIndex << ',' << e.adhesionZone << '\n';
+            }
+        } else {
+            // Split event - write header and all related entries
+            ofs << "\n# ===== SPLIT EVENT " << splitID << " =====\n";
+            for (const auto &e : splitEntries)
+            {
+                const char* reason = "Unknown";
+                switch (e.reasonCode)
+                {
+                    case 0:  reason = "Inherited"; break;
+                    case 1:  reason = "Direct"; break;
+                    case 2:  reason = "Broken"; break;
+                    case 3:  reason = "Split_Event"; break;
+                    case 4:  reason = "Cell_Death"; break;
+                    case 5:  reason = "Force_Break"; break;
+                    case 6:  reason = "Distance_Break"; break;
+                    case 7:  reason = "Mode_Change"; break;
+                    case 8:  reason = "Capacity_Full"; break;
+                    case 9:  reason = "Invalid_Cells"; break;
+                    case 10: reason = "Duplicate"; break;
+                    case 11: reason = "Self_Connection"; break;
+                    case 12: reason = "Out_Of_Bounds"; break;
+                    case 13: reason = "Adhesion_Limit"; break;
+                    case 14: reason = "Restore"; break;
+                    case 15: reason = "Manual_Remove"; break;
+                    case 16: reason = "Collision_Break"; break;
+                    case 17: reason = "Age_Break"; break;
+                    case 18: reason = "Toxin_Break"; break;
+                    case 19: reason = "Signaling_Break"; break;
+                    case 20: reason = "Unknown_Error"; break;
+                }
+                ofs << e.connectionIndex << ',' << e.cellA << ',' << e.cellB << ',' << e.modeIndex << ',' << reason << ','
+                    << '[' << e.anchorDirA.x << ' ' << e.anchorDirA.y << ' ' << e.anchorDirA.z << "],"
+                    << '[' << e.anchorDirB.x << ' ' << e.anchorDirB.y << ' ' << e.anchorDirB.z << "],"
+                    << e.frameIndex << ',' << e.splitEventID << ',' << e.parentCellID << ',' << e.inheritanceType 
+                    << ',' << e.originalConnectionIndex << ',' << e.adhesionZone << '\n';
+            }
+        }
+    }
+    ofs.close();
+
+    std::cout << "[Diagnostics] Adhesion diagnostic log written to " << logPath.string() << " (" << count << " entries)\n";
 }
