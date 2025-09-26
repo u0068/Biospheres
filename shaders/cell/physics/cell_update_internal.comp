@@ -2,6 +2,26 @@
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    // Internal:
+    vec4 signallingSubstances;  // 4 substances for now
+    int modeIndex;              // absolute index of the cell's mode
+    float age;                  // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+};
+
 struct GPUModeAdhesionSettings
 {
     int canBreak;                 // bool -> int (4 bytes)
@@ -34,26 +54,6 @@ struct GPUMode {
     int maxAdhesions;       // Max number of adhesions
 };
 
-// Cell data structure for compute shader
-struct ComputeCell {
-    // Physics:
-    vec4 positionAndMass;   // x, y, z, mass
-    vec4 velocity;          // x, y, z, padding
-    vec4 acceleration;      // x, y, z, padding
-    vec4 prevAcceleration;  // x, y, z, padding
-    vec4 orientation;       // Quaternion to (prevent gimbal lock)
-    vec4 angularVelocity;   // Pseudo-vector for easy math
-    vec4 angularAcceleration;       // Pseudo-vector for easy math
-    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
-    // Internal:
-    vec4 signallingSubstances; // 4 substances for now
-    int modeIndex;  // absolute index of the cell's mode
-    float age; // also used for split timer
-    float toxins;
-    float nitrates;
-    int adhesionIndices[20];
-};
-
 // Adhesion connection structure - stores permanent connections between sibling cells
 struct AdhesionConnection {
     uint cellAIndex;      // Index of first cell in the connection
@@ -66,6 +66,32 @@ struct AdhesionConnection {
     float paddingB;       // Padding to ensure 16-byte alignment
     vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
     vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
+};
+
+// Adhesion diagnostic entry structure - matches C++ AdhesionDiagnosticEntry
+struct AdhesionDiagnosticEntry {
+    uint connectionIndex;     // 4 bytes
+    uint cellA;               // 4 bytes
+    uint cellB;               // 4 bytes
+    uint modeIndex;           // 4 bytes
+    uint reasonCode;          // 4 bytes
+    float _pad0;              // 4 bytes padding to 16-byte alignment
+    float anchorDirA[3];      // 12 bytes (replacing vec3)
+    float _pad1;              // 4 bytes padding to 16-byte alignment
+    float anchorDirB[3];      // 12 bytes (replacing vec3)
+    float _pad2;              // 4 bytes padding to 16-byte alignment
+    uint frameIndex;          // 4 bytes
+    uint splitEventID;        // 4 bytes
+    uint parentCellID;        // 4 bytes
+    uint inheritanceType;     // 4 bytes
+    uint originalConnectionIndex; // 4 bytes
+    float adhesionZone;       // 4 bytes
+    float _pad3;              // 4 bytes padding to 16-byte alignment
+    float _pad4;              // 4 bytes padding to 16-byte alignment
+    float _pad5;              // 4 bytes padding to 16-byte alignment
+    float _pad6;              // 4 bytes padding to 16-byte alignment
+    float _pad7;              // 4 bytes padding to 16-byte alignment
+    float _pad8;              // 4 bytes padding to 16-byte alignment
 };
 
 layout(std430, binding = 0) restrict buffer ReadCellBuffer {
@@ -99,11 +125,20 @@ layout(std430, binding = 6) coherent buffer freeAdhesionSlotBuffer {
     uint freeAdhesionSlotIndices[];
 };
 
+layout(std430, binding = 7) coherent buffer AdhesionDiagnosticBuffer {
+    AdhesionDiagnosticEntry diagnosticEntries[];
+};
+
+layout(std430, binding = 8) coherent buffer DiagnosticCountBuffer {
+    uint diagnosticCount;
+};
+
 uniform float u_deltaTime;
 uniform int u_maxCells;
 uniform int u_maxAdhesions;
+uniform int u_enableAdhesionDiagnostics;
 //uniform uint u_frameNumber;
-int u_frameNumber = 1; // Placeholder for frame number
+uint u_frameNumber = 1u; // Placeholder for frame number
 
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -155,6 +190,52 @@ vec4 smallRandomQuat(float angle, uint seed) {
     return normalize(vec4(axis * s, cos(halfAngle)));
 }
 
+// Function to log diagnostic entries
+void logAdhesionDiagnostic(uint connectionIndex, uint cellA, uint cellB, uint modeIndex, 
+                          uint reasonCode, vec3 anchorDirA, vec3 anchorDirB, 
+                          uint frameIndex, uint splitEventID, uint parentCellID, 
+                          uint inheritanceType, uint originalConnectionIndex, float adhesionZone) {
+    if (u_enableAdhesionDiagnostics == 0) return;
+    
+    // Atomically increment the counter and get the index
+    uint index = atomicAdd(diagnosticCount, 1u);
+    
+    // Check if we have space in the buffer
+    if (index >= diagnosticEntries.length()) return;
+    
+    // Create the diagnostic entry
+    AdhesionDiagnosticEntry entry;
+    entry.connectionIndex = connectionIndex;
+    entry.cellA = cellA;
+    entry.cellB = cellB;
+    entry.modeIndex = modeIndex;
+    entry.reasonCode = reasonCode;
+    entry._pad0 = 0.0f;
+    entry.anchorDirA[0] = anchorDirA.x;
+    entry.anchorDirA[1] = anchorDirA.y;
+    entry.anchorDirA[2] = anchorDirA.z;
+    entry._pad1 = 0.0f;
+    entry.anchorDirB[0] = anchorDirB.x;
+    entry.anchorDirB[1] = anchorDirB.y;
+    entry.anchorDirB[2] = anchorDirB.z;
+    entry._pad2 = 0.0f;
+    entry.frameIndex = frameIndex;
+    entry.splitEventID = splitEventID;
+    entry.parentCellID = parentCellID;
+    entry.inheritanceType = inheritanceType;
+    entry.originalConnectionIndex = originalConnectionIndex;
+    entry.adhesionZone = adhesionZone;
+    entry._pad3 = 0.0f;
+    entry._pad4 = 0.0f;
+    entry._pad5 = 0.0f;
+    entry._pad6 = 0.0f;
+    entry._pad7 = 0.0f;
+    entry._pad8 = 0.0f;
+    
+    // Write the entry to the buffer
+    diagnosticEntries[index] = entry;
+}
+
 uint getNewAdhesionIndex() {
     // Try to reserve a free adhesion slot
     // Snapshot free top value without modifying it first
@@ -180,11 +261,12 @@ uint getNewAdhesionIndex() {
 }
 
 // Add adhesion with preserved anchor directions (for inheritance)
-bool addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB) {
+// Returns the connection index on success, -1 on failure
+int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB) {
     uint newAdhesionIndex = getNewAdhesionIndex();
     if (newAdhesionIndex == uint(-1)) {
         // Failed to reserve an adhesion index
-        return false;
+        return -1;
     }
 
     // Check for available slot in cell A
@@ -210,7 +292,7 @@ bool addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex,
         int reservation = atomicAdd(freeAdhesionTop, 1);
         int topIndex = reservation;
         freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
-        return false;
+        return -1;
     }
 
     // Use the preserved anchor directions directly (already in local space)
@@ -236,7 +318,8 @@ bool addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex,
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
-    return true;
+    
+    return int(newAdhesionIndex);
 }
 
 bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
@@ -308,10 +391,32 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
+    
+    // Log diagnostic entry for direct adhesion creation
+    logAdhesionDiagnostic(
+        newAdhesionIndex, cellAIndex, cellBIndex, modeIndex,
+        1, // reasonCode: Direct
+        anchorDirectionA, anchorDirectionB,
+        u_frameNumber, 0u, // frameIndex, splitEventID (0 for direct)
+        0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
+    );
+    
     return true;
 }
 
 void removeAdhesion(int adhesionIndex){
+    // Log diagnostic entry for adhesion removal
+    if (adhesionIndex >= 0 && adhesionIndex < connections.length()) {
+        AdhesionConnection conn = connections[adhesionIndex];
+        logAdhesionDiagnostic(
+            uint(adhesionIndex), conn.cellAIndex, conn.cellBIndex, conn.modeIndex,
+            2, // reasonCode: Broken
+            conn.anchorDirectionA, conn.anchorDirectionB,
+            u_frameNumber, 0u, // frameIndex, splitEventID (0 for general removal)
+            0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
+        );
+    }
+    
     // Mark as inactive
     
     // Remove from cellA
@@ -527,14 +632,34 @@ void main() {
             vec4 invDeltaA = quatInverse(mode.orientationA);
             vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaA);
             
-            if (!addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection)) return;
+            int newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
+            if (newConnectionIndex < 0) return;
+            
+            // Log diagnostic entry for inherited connection (Child A)
+            logAdhesionDiagnostic(
+                uint(newConnectionIndex), childAIndex, neighborIndex, oldConnection.modeIndex,
+                0, // reasonCode: Inherited
+                childAnchorDirection, neighborAnchorDirection,
+                u_frameNumber, 1u, // frameIndex, splitEventID (1 for split event)
+                childAIndex, 1u, uint(oldAdhesionIndex), adhesionZone // parentCellID, inheritanceType (1=childA_keeps), originalConnectionIndex, adhesionZone
+            );
         }
         else if (mode.childBKeepAdhesion == 1 && childBInherits) {
             // Genome-only transform: rotate parent's local anchor into child B's local space via inverse of delta quat
             vec4 invDeltaB = quatInverse(mode.orientationB);
             vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaB);
             
-            if (!addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection)) return;
+            int newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
+            if (newConnectionIndex < 0) return;
+            
+            // Log diagnostic entry for inherited connection (Child B)
+            logAdhesionDiagnostic(
+                uint(newConnectionIndex), childBIndex, neighborIndex, oldConnection.modeIndex,
+                0, // reasonCode: Inherited
+                childAnchorDirection, neighborAnchorDirection,
+                u_frameNumber, 1u, // frameIndex, splitEventID (1 for split event)
+                childAIndex, 2u, uint(oldAdhesionIndex), adhesionZone // parentCellID, inheritanceType (2=childB_keeps), originalConnectionIndex, adhesionZone
+            );
         }
     }
     

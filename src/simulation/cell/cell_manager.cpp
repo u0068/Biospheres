@@ -258,6 +258,18 @@ void CellManager::cleanup()
     cleanupAdhesionLines();
     cleanupLODSystem();
     sphereMesh.cleanup();
+    
+    // Clean up diagnostic buffers
+    if (adhesionDiagnosticBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionDiagnosticBuffer);
+        adhesionDiagnosticBuffer = 0;
+    }
+    if (diagnosticCountBuffer != 0)
+    {
+        glDeleteBuffers(1, &diagnosticCountBuffer);
+        diagnosticCountBuffer = 0;
+    }
 }
 
 // ============================================================================
@@ -1370,8 +1382,8 @@ void CellManager::writeAdhesionDiagnosticLog()
                     case 20: reason = "Unknown_Error"; break;
                 }
                 ofs << e.connectionIndex << ',' << e.cellA << ',' << e.cellB << ',' << e.modeIndex << ',' << reason << ','
-                    << '[' << e.anchorDirA.x << ' ' << e.anchorDirA.y << ' ' << e.anchorDirA.z << "],"
-                    << '[' << e.anchorDirB.x << ' ' << e.anchorDirB.y << ' ' << e.anchorDirB.z << "],"
+                    << '[' << e.anchorDirA[0] << ' ' << e.anchorDirA[1] << ' ' << e.anchorDirA[2] << "],"
+                    << '[' << e.anchorDirB[0] << ' ' << e.anchorDirB[1] << ' ' << e.anchorDirB[2] << "],"
                     << e.frameIndex << ',' << e.splitEventID << ',' << e.parentCellID << ',' << e.inheritanceType 
                     << ',' << e.originalConnectionIndex << ',' << e.adhesionZone << '\n';
             }
@@ -1406,8 +1418,8 @@ void CellManager::writeAdhesionDiagnosticLog()
                     case 20: reason = "Unknown_Error"; break;
                 }
                 ofs << e.connectionIndex << ',' << e.cellA << ',' << e.cellB << ',' << e.modeIndex << ',' << reason << ','
-                    << '[' << e.anchorDirA.x << ' ' << e.anchorDirA.y << ' ' << e.anchorDirA.z << "],"
-                    << '[' << e.anchorDirB.x << ' ' << e.anchorDirB.y << ' ' << e.anchorDirB.z << "],"
+                    << '[' << e.anchorDirA[0] << ' ' << e.anchorDirA[1] << ' ' << e.anchorDirA[2] << "],"
+                    << '[' << e.anchorDirB[0] << ' ' << e.anchorDirB[1] << ' ' << e.anchorDirB[2] << "],"
                     << e.frameIndex << ',' << e.splitEventID << ',' << e.parentCellID << ',' << e.inheritanceType 
                     << ',' << e.originalConnectionIndex << ',' << e.adhesionZone << '\n';
             }
