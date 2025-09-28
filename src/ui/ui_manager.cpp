@@ -54,6 +54,13 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
         //ImGui::Text("Radius: %.2f", radius);
         ImGui::Text("Absolute Mode Index: %i", modeIndex);
         ImGui::Text("Age: %.2f", age);
+        
+        // Lineage information
+        std::string lineageStr = cellManager.getCellLineageString(selectedCell.cellIndex);
+        ImGui::Text("Lineage: %s", lineageStr.c_str());
+        ImGui::Text("Parent ID: %u", selectedCell.cellData.parentLineageId);
+        ImGui::Text("Unique ID: %u", selectedCell.cellData.uniqueId);
+        ImGui::Text("Child Number: %u", selectedCell.cellData.childNumber);
 
         ImGui::Separator();
         ImGui::Text("Adhesion Indices:");
@@ -356,7 +363,6 @@ void UIManager::validateGenomeColors()
     
     if (colorsFixed) {
         genomeChanged = true;
-        std::cout << "Fixed color values in genome - converted from 0-255 to 0.0-1.0 range\n";
     }
 }
 

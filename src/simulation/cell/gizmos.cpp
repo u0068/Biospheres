@@ -340,12 +340,6 @@ void CellManager::updateAnchorGizmoData()
     // Get the total anchor count
     glGetNamedBufferSubData(anchorCountBuffer, 0, sizeof(uint32_t), &totalAnchorCount);
     
-    // Debug output
-    static uint32_t lastPrintedCount = 0;
-    if (totalAnchorCount != lastPrintedCount) {
-        std::cout << "Anchor gizmos: Found " << totalAnchorCount << " active adhesion anchors" << std::endl;
-        lastPrintedCount = totalAnchorCount;
-    }
     
     // Copy data from compute buffer to VBO for rendering
     if (totalAnchorCount > 0) {
@@ -368,12 +362,6 @@ void CellManager::renderAnchorGizmos(glm::vec2 resolution, const Camera& camera,
         return; // No anchors to render
     }
     
-    // Debug output for rendering
-    static bool printedRenderInfo = false;
-    if (!printedRenderInfo && totalAnchorCount > 0) {
-        std::cout << "Rendering " << totalAnchorCount << " anchor spheres with " << (totalAnchorCount * 72) << " vertices" << std::endl;
-        printedRenderInfo = true;
-    }
     
     TimerGPU timer("Anchor Gizmo Rendering");
     

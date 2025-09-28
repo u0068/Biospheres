@@ -286,8 +286,6 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         
         // Clear the flag
         genomeChanged = false;
-        
-        std::cout << "Genome changed - triggered instant resimulation to time " << currentTime << "s\n";
     }
 
     }

@@ -70,8 +70,9 @@ selectedCell.dragOffset = cellPosition - mouseWorldPos;
 
 isDraggingCell = true;
 
-// Debug output
-std::cout << "Selected cell " << selectedIndex << " at distance " << selectedCell.dragDistance << "\n";
+    // Debug output with lineage information
+    std::string lineageStr = getCellLineageString(selectedIndex);
+    std::cout << "Selected cell " << selectedIndex << " (lineage: " << lineageStr << ") at distance " << selectedCell.dragDistance << "\n";
 }
 else
 {
@@ -111,11 +112,12 @@ glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndMass);
 float cellRadius = cpuCells[i].getRadius();
 
 float intersectionDistance;
-if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance))
-{
-intersectionCount++;
-std::cout << "Cell " << i << " at (" << cellPosition.x << ", " << cellPosition.y << ", " << cellPosition.z
-<< ") radius " << cellRadius << " intersected at distance " << intersectionDistance << std::endl;
+    if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance))
+    {
+        intersectionCount++;
+        std::string lineageStr = getCellLineageString(i);
+        std::cout << "Cell " << i << " (lineage: " << lineageStr << ") at (" << cellPosition.x << ", " << cellPosition.y << ", " << cellPosition.z
+        << ") radius " << cellRadius << " intersected at distance " << intersectionDistance << std::endl;
 
 if (intersectionDistance < closestDistance && intersectionDistance > 0)
 {

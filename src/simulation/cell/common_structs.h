@@ -28,9 +28,27 @@ struct ComputeCell {
     float nitrates{ 1 };
     int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1 };
 
+    // Lineage tracking (AA.BB.C format)
+    uint32_t parentLineageId{ 0 };      // AA: Parent's unique ID (0 for root cells)
+    uint32_t uniqueId{ 0 };             // BB: This cell's unique ID
+    uint32_t childNumber{ 0 };          // C: Child number (1 or 2, 0 for root cells)
+    uint32_t _lineagePadding{ 0 };      // Padding to maintain 16-byte alignment
+
     float getRadius() const
     {
         return pow(positionAndMass.w, 1.0f / 3.0f);
+    }
+    
+    // Generate lineage string in AA.BB.C format
+    std::string getLineageString() const
+    {
+        if (parentLineageId == 0) {
+            // Root cell - just show unique ID
+            return std::to_string(uniqueId);
+        }
+        return std::to_string(parentLineageId) + "." + 
+               std::to_string(uniqueId) + "." + 
+               std::to_string(childNumber);
     }
 };
 

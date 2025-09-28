@@ -52,6 +52,7 @@ struct CellManager
     GLuint gpuCellCountBuffer{};     // GPU-accessible cell count buffer
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
+    GLuint uniqueIdBuffer{};         // GPU-accessible unique ID counter buffer
 
 	GLuint freeCellSlotBuffer{}; // Buffer for tracking free slots in the cell buffer
     GLuint freeAdhesionSlotBuffer{}; // Buffer for tracking free slots in the adhesion buffer
@@ -148,6 +149,9 @@ struct CellManager
 	int totalAdhesionCount{ 0 };     // Total number of adhesion connections
     int liveAdhesionCount{ 0 };     // Number of live adhesion connections
     int pendingCellCount{ 0 };  // Number of cells pending addition by CPU
+    
+    // Lineage tracking
+    uint32_t nextUniqueId{ 1 }; // Next unique ID to assign (starts at 1, 0 reserved for root)
     void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
     void syncCounterBuffers()
@@ -463,6 +467,10 @@ struct CellManager
     uint32_t getCurrentCellCount() const { return static_cast<uint32_t>(totalCellCount); }
     const GenomeData& getGenomeData() const { return currentGenome; }
     void updateCellData(int index, const ComputeCell &newData); // Needs refactoring
+    
+    // Lineage tracking helpers
+    std::string getCellLineageString(int index) const;
+    uint32_t getNextUniqueId() const { return nextUniqueId; }
 
     // Memory barrier optimization system
     // Forward declaration and performance monitoring

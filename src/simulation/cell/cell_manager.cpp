@@ -149,6 +149,11 @@ void CellManager::cleanup()
         glDeleteBuffers(1, &freeAdhesionSlotBuffer);
         freeAdhesionSlotBuffer = 0;
     }
+    if (uniqueIdBuffer != 0)
+    {
+        glDeleteBuffers(1, &uniqueIdBuffer);
+        uniqueIdBuffer = 0;
+    }
 
     cleanupSpatialGrid();
     cleanupLODSystem();
@@ -353,6 +358,18 @@ void CellManager::initializeGPUBuffers()
     mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
 
+    // Create unique ID counter buffer
+    glCreateBuffers(1, &uniqueIdBuffer);
+    glNamedBufferStorage(
+        uniqueIdBuffer,
+        sizeof(GLuint),
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+    // Initialize with 1 (0 reserved for root cells)
+    GLuint initialId = 1;
+    glNamedBufferSubData(uniqueIdBuffer, 0, sizeof(GLuint), &initialId);
+
     // Cell addition queue buffer - FIXED: Increased size for 100k cells
     glCreateBuffers(1, &cellAdditionBuffer);
     glNamedBufferData(cellAdditionBuffer,
@@ -508,10 +525,6 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         GPUMode gmode{};
         gmode.color = glm::vec4(mode.color, 1.0); // Set alpha to 1.0 instead of 0.0
         
-        // Debug output to verify color values (only for first mode to avoid spam)
-        if (i == 0) {
-            std::cout << "Mode " << i << " color: (" << mode.color.r << ", " << mode.color.g << ", " << mode.color.b << ")\n";
-        }
         gmode.splitInterval = mode.splitInterval;
         gmode.genomeOffset = genomeBaseOffset;
 
@@ -609,6 +622,15 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
                                  &cpuCells[index]);
         }
     }
+}
+
+std::string CellManager::getCellLineageString(int index) const
+{
+    if (index >= 0 && index < totalCellCount && index < static_cast<int>(cpuCells.size()))
+    {
+        return cpuCells[index].getLineageString();
+    }
+    return "Invalid";
 }
 
 // ============================================================================
@@ -982,6 +1004,7 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionConnectionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, freeCellSlotBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, freeAdhesionSlotBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, uniqueIdBuffer);
 
     // Bind enhanced diagnostic buffers if recording is active
     if (diagnosticsRunning || adhesionDiagnosticsRunning)
@@ -1041,6 +1064,7 @@ void CellManager::applyCellAdditions()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, uniqueIdBuffer);
 
     // Dispatch compute shader
     GLuint numGroups = (pendingCellCount + 63) / 64;
@@ -1072,6 +1096,9 @@ void CellManager::resetSimulation()
     
     // Clear selection state
     clearSelection();
+    
+    // Reset lineage tracking
+    nextUniqueId = 1;
     
     // Clear GPU buffers by setting them to zero
     GLuint zero = 0;
@@ -1110,6 +1137,12 @@ void CellManager::resetSimulation()
     // Clear addition buffer
     if (cellAdditionBuffer != 0) {
         glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    }
+    
+    // Reset unique ID buffer
+    if (uniqueIdBuffer != 0) {
+        GLuint initialId = 1;
+        glNamedBufferSubData(uniqueIdBuffer, 0, sizeof(GLuint), &initialId);
     }
     
     // Clear spatial grid buffers
@@ -1208,6 +1241,14 @@ void CellManager::spawnCells(int count)
         newCell.positionAndMass = glm::vec4(position, 1.);
         newCell.velocity = glm::vec4(velocity, 0.);
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
+        
+        // Assign lineage ID for root cells
+        newCell.parentLineageId = 0;  // Root cells have no parent
+        newCell.uniqueId = nextUniqueId++;
+        newCell.childNumber = 0;      // Root cells are not children
+
+        // Debug output for lineage tracking
+        std::cout << "Spawned root cell " << (i + 1) << " with lineage: " << newCell.getLineageString() << std::endl;
 
         addCellToStagingBuffer(newCell);
     }
