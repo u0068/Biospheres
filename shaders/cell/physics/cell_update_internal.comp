@@ -117,8 +117,8 @@ struct EnhancedDiagnosticEntry {
     float eventValue2;        // Generic event-specific value 2
     uint eventFlags;          // Bit flags for event properties
     
-    // Padding to ensure 16-byte alignment
-    float _padding[3];
+    // Padding to ensure 16-byte alignment (removed 4 uint32_t fields = 16 bytes)
+    float _padding[7];
 };
 
 layout(std430, binding = 0) restrict buffer ReadCellBuffer {
@@ -169,8 +169,6 @@ uniform int u_maxCells;
 uniform int u_maxAdhesions;
 uniform int u_enableAdhesionDiagnostics;
 uniform int u_currentFrame;
-// Use a simple frame counter for diagnostics
-uint u_frameNumber = 1u;
 
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -306,10 +304,10 @@ void logEnhancedDiagnostic(uint eventType, uint cellA, uint cellB, uint connecti
     entry.eventValue2 = eventValue2;
     entry.eventFlags = 0u;
     
-    // Padding
-    entry._padding[0] = 0.0f;
-    entry._padding[1] = 0.0f;
-    entry._padding[2] = 0.0f;
+    // Padding (7 floats for 16-byte alignment)
+    for (int i = 0; i < 7; i++) {
+        entry._padding[i] = 0.0f;
+    }
     
     // Write the entry to the buffer
     diagnosticEntries[index] = entry;
@@ -487,7 +485,7 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         newAdhesionIndex, cellAIndex, cellBIndex, modeIndex,
         1, // reasonCode: Direct
         anchorDirectionA, anchorDirectionB,
-        u_frameNumber, 0u, // frameIndex, splitEventID (0 for direct)
+        uint(u_currentFrame), 0u, // frameIndex, splitEventID (0 for direct)
         0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
     );
     
@@ -502,7 +500,7 @@ void removeAdhesion(int adhesionIndex){
             uint(adhesionIndex), conn.cellAIndex, conn.cellBIndex, conn.modeIndex,
             2, // reasonCode: Broken
             conn.anchorDirectionA, conn.anchorDirectionB,
-            u_frameNumber, 0u, // frameIndex, splitEventID (0 for general removal)
+            uint(u_currentFrame), 0u, // frameIndex, splitEventID (0 for general removal)
             0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
         );
     }
@@ -537,7 +535,7 @@ void removeAdhesion(int adhesionIndex){
 
 float priority(uint seed) {
     // Generate a pseudo-random priority based on the seed
-    return hash11(seed ^ u_frameNumber);
+    return hash11(seed ^ uint(u_currentFrame));
 }
 
 void main() {
@@ -782,7 +780,7 @@ void main() {
                 uint(newConnectionIndex), childAIndex, neighborIndex, oldConnection.modeIndex,
                 0, // reasonCode: Inherited
                 childAnchorDirection, neighborAnchorDirection,
-                u_frameNumber, 1u, // frameIndex, splitEventID (1 for split event)
+                uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
                 childAIndex, 1u, uint(oldAdhesionIndex), adhesionZone // parentCellID, inheritanceType (1=childA_keeps), originalConnectionIndex, adhesionZone
             );
         }
@@ -799,7 +797,7 @@ void main() {
                 uint(newConnectionIndex), childBIndex, neighborIndex, oldConnection.modeIndex,
                 0, // reasonCode: Inherited
                 childAnchorDirection, neighborAnchorDirection,
-                u_frameNumber, 1u, // frameIndex, splitEventID (1 for split event)
+                uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
                 childAIndex, 2u, uint(oldAdhesionIndex), adhesionZone // parentCellID, inheritanceType (2=childB_keeps), originalConnectionIndex, adhesionZone
             );
         }

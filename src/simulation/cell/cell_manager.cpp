@@ -1099,6 +1099,9 @@ void CellManager::resetSimulation()
     
     // Reset lineage tracking
     nextUniqueId = 1;
+    cellIdToIndex.clear();
+    lineageChildren.clear();
+    lineageParents.clear();
     
     // Clear GPU buffers by setting them to zero
     GLuint zero = 0;
@@ -1247,10 +1250,18 @@ void CellManager::spawnCells(int count)
         newCell.uniqueId = nextUniqueId++;
         newCell.childNumber = 0;      // Root cells are not children
 
-        // Debug output for lineage tracking
-        std::cout << "Spawned root cell " << (i + 1) << " with lineage: " << newCell.getLineageString() << std::endl;
-
         addCellToStagingBuffer(newCell);
+        
+        // Update lineage tracking for new cell (after adding to buffer)
+        if (diagnosticState.lineageTrackingEnabled) {
+            // Update lineage data structures directly since cell is not yet in GPU buffer
+            cellIdToIndex[newCell.uniqueId] = static_cast<uint32_t>(i);
+            if (newCell.parentLineageId != 0) {
+                lineageParents[newCell.uniqueId] = newCell.parentLineageId;
+                lineageChildren[newCell.parentLineageId].push_back(newCell.uniqueId);
+            }
+            logDiagnosticEvent(DiagnosticEventType::CELL_BIRTH, static_cast<uint32_t>(i), UINT32_MAX, UINT32_MAX, 0.0f, 0.0f);
+        }
     }
 }
 
@@ -1327,6 +1338,7 @@ void CellManager::toggleEnhancedDiagnostics()
         std::cout << "  - Cell Lifecycle Events: " << (diagnosticState.cellLifecycleEventsEnabled ? "ON" : "OFF") << "\n";
         std::cout << "  - Physics Events: " << (diagnosticState.physicsEventsEnabled ? "ON" : "OFF") << "\n";
         std::cout << "  - Genome Tracking: " << (diagnosticState.genomeTrackingEnabled ? "ON" : "OFF") << "\n";
+        std::cout << "  - Lineage Tracking: " << (diagnosticState.lineageTrackingEnabled ? "ON" : "OFF") << "\n";
         std::cout << "  - Buffer capacity: " << diagnosticState.maxEntries << " entries\n";
         std::cout << "  - Enhanced buffer ID: " << enhancedDiagnosticBuffer << "\n";
         std::cout << "  - Counter buffer ID: " << diagnosticCountBuffer << "\n";
@@ -1379,6 +1391,7 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
     if (cellA < getCurrentCellCount()) {
         const ComputeCell& cell = getCellData(cellA);
         entry.modeIndex = cell.modeIndex;
+        
         entry.positionA[0] = cell.positionAndMass.x;
         entry.positionA[1] = cell.positionAndMass.y;
         entry.positionA[2] = cell.positionAndMass.z;
@@ -1397,11 +1410,17 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
         if (diagnosticState.genomeTrackingEnabled && cell.modeIndex < getGenomeData().modes.size()) {
             updateGenomeTracking(cellA, getGenomeData().modes[cell.modeIndex]);
         }
+        
+        // Update lineage tracking if enabled
+        if (diagnosticState.lineageTrackingEnabled) {
+            updateLineageTracking(cellA);
+        }
     }
     
     // Get second cell data if applicable
     if (cellB != UINT32_MAX && cellB < getCurrentCellCount()) {
         const ComputeCell& cell = getCellData(cellB);
+        
         entry.positionB[0] = cell.positionAndMass.x;
         entry.positionB[1] = cell.positionAndMass.y;
         entry.positionB[2] = cell.positionAndMass.z;
@@ -1570,6 +1589,11 @@ void CellManager::clearDiagnosticData()
     diagnosticState.bufferOverflowOccurred = false;
     cellGenomeDifferences.clear();
     
+    // Clear lineage tracking data
+    cellIdToIndex.clear();
+    lineageChildren.clear();
+    lineageParents.clear();
+    
     // Reset counter buffer
     uint32_t zero = 0;
     glNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &zero);
@@ -1637,8 +1661,14 @@ void CellManager::writeEnhancedDiagnosticLog()
     ofs << "# - Physics Events: " << (diagnosticState.physicsEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
     ofs << "# - System Events: " << (diagnosticState.systemEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
     ofs << "# - Genome Tracking: " << (diagnosticState.genomeTrackingEnabled ? "ENABLED" : "DISABLED") << "\n";
-    ofs << "# \n";
-    ofs << "# EVENT TYPE LEGEND:\n";
+     ofs << "# - Lineage Tracking: " << (diagnosticState.lineageTrackingEnabled ? "ENABLED" : "DISABLED") << "\n";
+     ofs << "# \n";
+     ofs << "# LINEAGE ID FORMAT:\n";
+     ofs << "# - Format: A.B.C where A=parent ID, B=cell unique ID, C=child number (1 or 2)\n";
+     ofs << "# - Root cells (no parent): just show unique ID (e.g., \"5\")\n";
+     ofs << "# - Child cells: show full lineage (e.g., \"5.12.1\" = child 1 of cell 12, whose parent is 5)\n";
+     ofs << "# \n";
+     ofs << "# EVENT TYPE LEGEND:\n";
     ofs << "# === ADHESION EVENTS (0-29) ===\n";
     ofs << "# 0  = ADHESION_INHERITED       - Child inherits parent's connection during split\n";
     ofs << "# 1  = ADHESION_DIRECT          - Normal new connection between cells\n";
@@ -1686,8 +1716,9 @@ void CellManager::writeEnhancedDiagnosticLog()
     ofs << "# 99 = SYSTEM_ERROR             - General system error\n";
     ofs << "# ============================================================================\n\n";
     
-    // Write CSV header for main data
-    ofs << "EventType,EventName,Frame,CellA,CellB,ConnectionIndex,ModeIndex,SplitEventID,ParentCellID,";
+    // Write CSV header for main data (simplified format focusing on lineage tracking)
+    ofs << "EventType,EventName,Frame,CellA_Index,CellB_Index,CellA_Lineage,CellB_Lineage,";
+    ofs << "ConnectionIndex,ModeIndex,SplitEventID,ParentCellID,";
     ofs << "PosA_X,PosA_Y,PosA_Z,PosB_X,PosB_Y,PosB_Z,";
     ofs << "VelA_X,VelA_Y,VelA_Z,VelB_X,VelB_Y,VelB_Z,";
     ofs << "MassA,MassB,AgeA,AgeB,ToxinsA,ToxinsB,NitratesA,NitratesB,";
@@ -1747,7 +1778,24 @@ void CellManager::writeEnhancedDiagnosticLog()
     // Write all entries
     for (const auto& e : entries) {
         ofs << e.eventType << "," << getEventName(e.eventType) << "," << e.frameIndex << ",";
-        ofs << e.cellA << "," << e.cellB << "," << e.connectionIndex << "," << e.modeIndex << ",";
+        ofs << e.cellA << "," << e.cellB << ",";
+        
+        // Generate lineage strings for both cells using the A.B.C format
+        std::string lineageA = "";
+        std::string lineageB = "";
+        
+        if (e.cellA < getCurrentCellCount()) {
+            const ComputeCell& cellA = getCellData(e.cellA);
+            lineageA = cellA.getLineageString();
+        }
+        
+        if (e.cellB != UINT32_MAX && e.cellB < getCurrentCellCount()) {
+            const ComputeCell& cellB = getCellData(e.cellB);
+            lineageB = cellB.getLineageString();
+        }
+        
+        ofs << lineageA << "," << lineageB << ",";
+        ofs << e.connectionIndex << "," << e.modeIndex << ",";
         ofs << e.splitEventID << "," << e.parentCellID << ",";
         
         // Positions
@@ -1800,6 +1848,26 @@ void CellManager::writeEnhancedDiagnosticLog()
                 }
             }
         }
+    }
+    
+    // Write lineage statistics section if enabled
+    if (diagnosticState.lineageTrackingEnabled) {
+        // Sync lineage tracking data from GPU before generating statistics
+        syncLineageTrackingFromGPU();
+        
+        ofs << "\n# ============================================================================\n";
+        ofs << "# LINEAGE STATISTICS\n";
+        ofs << "# ============================================================================\n";
+        ofs << "# This section shows lineage tracking statistics and relationships\n";
+        ofs << "# ============================================================================\n\n";
+        
+        std::string lineageStats = getLineageStatistics();
+        std::istringstream lineageStream(lineageStats);
+        std::string line;
+        while (std::getline(lineageStream, line)) {
+            ofs << "# " << line << "\n";
+        }
+        ofs << "\n";
     }
     
     // Write summary statistics
@@ -1927,4 +1995,153 @@ void CellManager::checkPerformanceThresholds()
 void CellManager::writeAdhesionDiagnosticLog()
 {
     writeEnhancedDiagnosticLog();
+}
+
+// ============================================================================
+// LINEAGE TRACKING SYSTEM
+// ============================================================================
+
+void CellManager::updateLineageTracking(uint32_t cellIndex)
+{
+    if (!diagnosticState.lineageTrackingEnabled || cellIndex >= getCurrentCellCount()) {
+        return;
+    }
+    
+    const ComputeCell& cell = getCellData(cellIndex);
+    
+    // Update cell ID to index mapping
+    cellIdToIndex[cell.uniqueId] = cellIndex;
+    
+    // Update parent-child relationships
+    if (cell.parentLineageId != 0) {
+        lineageParents[cell.uniqueId] = cell.parentLineageId;
+        lineageChildren[cell.parentLineageId].push_back(cell.uniqueId);
+    }
+}
+
+std::unordered_map<uint32_t, std::vector<uint32_t>> CellManager::getLineageTree() const
+{
+    return lineageChildren;
+}
+
+std::vector<uint32_t> CellManager::getLineageAncestors(uint32_t cellId) const
+{
+    std::vector<uint32_t> ancestors;
+    uint32_t currentId = cellId;
+    
+    while (true) {
+        auto it = lineageParents.find(currentId);
+        if (it == lineageParents.end()) {
+            break;
+        }
+        ancestors.push_back(it->second);
+        currentId = it->second;
+    }
+    
+    return ancestors;
+}
+
+std::vector<uint32_t> CellManager::getLineageDescendants(uint32_t cellId) const
+{
+    std::vector<uint32_t> descendants;
+    auto it = lineageChildren.find(cellId);
+    if (it != lineageChildren.end()) {
+        for (uint32_t childId : it->second) {
+            descendants.push_back(childId);
+            // Recursively get descendants of children
+            auto childDescendants = getLineageDescendants(childId);
+            descendants.insert(descendants.end(), childDescendants.begin(), childDescendants.end());
+        }
+    }
+    return descendants;
+}
+
+void CellManager::syncLineageTrackingFromGPU()
+{
+    if (!diagnosticState.lineageTrackingEnabled) {
+        return;
+    }
+    
+    // Sync cell data from GPU to staging buffer
+    syncCellPositionsFromGPU();
+    
+    // Update lineage tracking for all cells
+    for (uint32_t i = 0; i < getCurrentCellCount(); i++) {
+        const ComputeCell& cell = getCellData(i);
+        if (cell.uniqueId == 0) continue; // Skip invalid cells
+        
+        // Update cell ID to index mapping
+        cellIdToIndex[cell.uniqueId] = i;
+        
+        // Update parent-child relationships
+        if (cell.parentLineageId != 0) {
+            lineageParents[cell.uniqueId] = cell.parentLineageId;
+            // Only add if not already present (avoid duplicates)
+            auto& children = lineageChildren[cell.parentLineageId];
+            if (std::find(children.begin(), children.end(), cell.uniqueId) == children.end()) {
+                children.push_back(cell.uniqueId);
+            }
+        }
+    }
+}
+
+uint32_t CellManager::getLineageDepth(uint32_t cellId) const
+{
+    auto ancestors = getLineageAncestors(cellId);
+    return static_cast<uint32_t>(ancestors.size());
+}
+
+std::string CellManager::getLineageStatistics() const
+{
+    if (!diagnosticState.lineageTrackingEnabled) {
+        return "Lineage tracking disabled";
+    }
+    
+    std::stringstream stats;
+    
+    // Count root cells (cells with no parent)
+    uint32_t rootCellCount = 0;
+    uint32_t totalCells = 0;
+    uint32_t maxDepth = 0;
+    uint32_t totalDescendants = 0;
+    
+    for (uint32_t i = 0; i < getCurrentCellCount(); i++) {
+        const ComputeCell& cell = getCellData(i);
+        if (cell.uniqueId == 0) continue; // Skip invalid cells
+        
+        totalCells++;
+        
+        if (cell.parentLineageId == 0) {
+            rootCellCount++;
+        }
+        
+        uint32_t depth = getLineageDepth(cell.uniqueId);
+        maxDepth = std::max(maxDepth, depth);
+        
+        auto descendants = getLineageDescendants(cell.uniqueId);
+        totalDescendants += static_cast<uint32_t>(descendants.size());
+    }
+    
+    stats << "Lineage Statistics:\n";
+    stats << "  Total Cells: " << totalCells << "\n";
+    stats << "  Root Cells: " << rootCellCount << "\n";
+    stats << "  Max Lineage Depth: " << maxDepth << "\n";
+    stats << "  Total Parent-Child Relationships: " << lineageParents.size() << "\n";
+    stats << "  Average Descendants per Cell: " << (totalCells > 0 ? static_cast<float>(totalDescendants) / totalCells : 0.0f) << "\n";
+    
+    // Find most prolific parent
+    uint32_t mostProlificParent = 0;
+    uint32_t maxChildren = 0;
+    for (const auto& pair : lineageChildren) {
+        if (pair.second.size() > maxChildren) {
+            maxChildren = static_cast<uint32_t>(pair.second.size());
+            mostProlificParent = pair.first;
+        }
+    }
+    
+    if (mostProlificParent != 0) {
+        stats << "  Most Prolific Parent: ID " << mostProlificParent << " (" << maxChildren << " children)\n";
+    }
+    
+    return stats.str();
 }

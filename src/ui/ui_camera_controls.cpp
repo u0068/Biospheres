@@ -105,6 +105,9 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
         ImGui::Checkbox("Genome Tracking", &cellManager.diagnosticState.genomeTrackingEnabled);
         addTooltip("Track genome differences from default values for each cell");
         
+        ImGui::Checkbox("Lineage Tracking", &cellManager.diagnosticState.lineageTrackingEnabled);
+        addTooltip("Track cell lineage relationships and family trees");
+        
         ImGui::Checkbox("Real-time Monitoring", &cellManager.diagnosticState.realTimeMonitoringEnabled);
         addTooltip("Enable real-time performance threshold monitoring");
         
@@ -147,6 +150,27 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
                 ImGui::BeginChild("RecentEvents", ImVec2(0, 100), true);
                 for (const auto& event : recentEvents) {
                     ImGui::TextWrapped("%s", event.c_str());
+                }
+                ImGui::EndChild();
+            }
+        }
+        
+        // Lineage statistics display
+        if (cellManager.diagnosticState.lineageTrackingEnabled) {
+            ImGui::Separator();
+            ImGui::Text("Lineage Statistics:");
+            
+            // Sync lineage tracking data from GPU before displaying
+            cellManager.syncLineageTrackingFromGPU();
+            std::string lineageStats = cellManager.getLineageStatistics();
+            if (lineageStats.empty()) {
+                ImGui::TextDisabled("No lineage data available");
+            } else {
+                ImGui::BeginChild("LineageStats", ImVec2(0, 120), true);
+                std::istringstream lineageStream(lineageStats);
+                std::string line;
+                while (std::getline(lineageStream, line)) {
+                    ImGui::TextWrapped("%s", line.c_str());
                 }
                 ImGui::EndChild();
             }

@@ -278,8 +278,10 @@ struct CellManager
         // Core event data
         uint32_t eventType;           // DiagnosticEventType
         uint32_t frameIndex;          // Frame when event occurred
-        uint32_t cellA;               // Primary cell involved
-        uint32_t cellB;               // Secondary cell (if applicable, -1 otherwise)
+        uint32_t cellA;               // Primary cell involved (index)
+        uint32_t cellB;               // Secondary cell (if applicable, -1 otherwise) (index)
+        
+        // Lineage tracking data is now handled via getLineageString() method
         
         // Event-specific data
         uint32_t connectionIndex;     // For adhesion events
@@ -316,8 +318,8 @@ struct CellManager
         float eventValue2;            // Generic event-specific value 2
         uint32_t eventFlags;          // Bit flags for event properties
         
-        // Padding to ensure 16-byte alignment
-        float _padding[3];
+        // Padding to ensure 16-byte alignment (removed 4 uint32_t fields = 16 bytes)
+        float _padding[7];
     };
 #pragma pack(pop)
     static_assert(sizeof(EnhancedDiagnosticEntry) % 16 == 0, "EnhancedDiagnosticEntry must be 16-byte aligned");
@@ -329,6 +331,7 @@ struct CellManager
         bool physicsEventsEnabled = false;
         bool systemEventsEnabled = true;
         bool genomeTrackingEnabled = true;
+        bool lineageTrackingEnabled = true;
         bool realTimeMonitoringEnabled = false;
         
         // Performance thresholds
@@ -353,6 +356,11 @@ struct CellManager
     ModeSettings defaultModeSettings; // Reference for comparison
     GenomeData currentGenome; // Current genome data
     uint32_t currentFrame = 0; // Current simulation frame
+    
+    // Lineage tracking data
+    std::unordered_map<uint32_t, uint32_t> cellIdToIndex; // Map unique ID to cell index
+    std::unordered_map<uint32_t, std::vector<uint32_t>> lineageChildren; // Parent ID -> children IDs
+    std::unordered_map<uint32_t, uint32_t> lineageParents; // Child ID -> parent ID
 
     // Enhanced diagnostic methods
     void initializeEnhancedDiagnostics();
@@ -363,6 +371,15 @@ struct CellManager
     void writeEnhancedDiagnosticLog();
     void clearDiagnosticData();
     std::vector<GenomeDifference> calculateGenomeDifferences(const ModeSettings& current, const ModeSettings& defaultMode);
+    
+    // Lineage tracking methods
+    void updateLineageTracking(uint32_t cellIndex);
+    void syncLineageTrackingFromGPU();
+    std::unordered_map<uint32_t, std::vector<uint32_t>> getLineageTree() const;
+    std::vector<uint32_t> getLineageAncestors(uint32_t cellId) const;
+    std::vector<uint32_t> getLineageDescendants(uint32_t cellId) const;
+    uint32_t getLineageDepth(uint32_t cellId) const;
+    std::string getLineageStatistics() const;
     
     // Legacy adhesion diagnostic methods (for backward compatibility)
     void initializeAdhesionDiagnostics() { initializeEnhancedDiagnostics(); }
