@@ -85,8 +85,8 @@ CellManager::CellManager()
     // Initialize barrier optimization system
     barrierBatch.setStats(&barrierStats);
 
-    // Initialize adhesion diagnostic buffers
-    initializeAdhesionDiagnostics();
+    // Initialize enhanced diagnostic system
+    initializeEnhancedDiagnostics();
 }
 
 CellManager::~CellManager()
@@ -259,11 +259,11 @@ void CellManager::cleanup()
     cleanupLODSystem();
     sphereMesh.cleanup();
     
-    // Clean up diagnostic buffers
-    if (adhesionDiagnosticBuffer != 0)
+    // Clean up enhanced diagnostic buffers
+    if (enhancedDiagnosticBuffer != 0)
     {
-        glDeleteBuffers(1, &adhesionDiagnosticBuffer);
-        adhesionDiagnosticBuffer = 0;
+        glDeleteBuffers(1, &enhancedDiagnosticBuffer);
+        enhancedDiagnosticBuffer = 0;
     }
     if (diagnosticCountBuffer != 0)
     {
@@ -654,6 +654,17 @@ void CellManager::verletIntegration(float deltaTime)
 
 void CellManager::updateCells(float deltaTime)
 {
+    // Increment frame counter for diagnostics
+    currentFrame++;
+    
+    // Sync diagnostic counter from GPU to CPU for UI display (every 10 frames to reduce overhead)
+    if (diagnosticsRunning && currentFrame % 10 == 0) {
+        syncDiagnosticCounter();
+    }
+    
+    // Update real-time monitoring
+    updateRealTimeMonitoring();
+    
     // Clear any pending barriers from previous frame
     clearBarriers();
 
@@ -972,12 +983,24 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, freeCellSlotBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, freeAdhesionSlotBuffer);
 
-    // Bind diagnostic buffers if recording is active
-    if (adhesionDiagnosticsRunning)
+    // Bind enhanced diagnostic buffers if recording is active
+    if (diagnosticsRunning || adhesionDiagnosticsRunning)
     {
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, adhesionDiagnosticBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, enhancedDiagnosticBuffer);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, diagnosticCountBuffer);
         internalUpdateShader->setInt("u_enableAdhesionDiagnostics", 1);
+        
+        // Only set u_currentFrame if it exists in the shader to avoid GL errors
+        GLint currentFrameLoc = glGetUniformLocation(internalUpdateShader->ID, "u_currentFrame");
+        if (currentFrameLoc != -1) {
+            internalUpdateShader->setInt("u_currentFrame", static_cast<int>(currentFrame));
+        }
+        
+        // Debug output every 60 frames
+        if (currentFrame % 60 == 0) {
+            std::cout << "[Debug] Frame " << currentFrame << ": Diagnostics enabled, buffers bound\n";
+            std::cout << "[Debug] Uniform location - u_currentFrame: " << currentFrameLoc << "\n";
+        }
     }
     else
     {
@@ -1225,53 +1248,319 @@ void CellManager::updateCounts()
 }
 
 // ============================================================================
-// ADHESION DIAGNOSTIC SYSTEM (NEW)
+// ============================================================================
+// ENHANCED DIAGNOSTIC SYSTEM
 // ============================================================================
 
-void CellManager::initializeAdhesionDiagnostics()
+void CellManager::initializeEnhancedDiagnostics()
 {
-    // Allocate buffer large enough for every adhesion connection per frame for up to 600 frames
-    const size_t maxEntries = static_cast<size_t>(getAdhesionLimit()) * 600ULL;
-    glCreateBuffers(1, &adhesionDiagnosticBuffer);
-    glNamedBufferData(adhesionDiagnosticBuffer, maxEntries * sizeof(AdhesionDiagnosticEntry), nullptr, GL_DYNAMIC_COPY);
+    // Initialize default mode settings for comparison
+    defaultModeSettings = ModeSettings();
+    
+    // Allocate enhanced diagnostic buffer
+    const size_t maxEntries = diagnosticState.maxEntries;
+    glCreateBuffers(1, &enhancedDiagnosticBuffer);
+    glNamedBufferData(enhancedDiagnosticBuffer, maxEntries * sizeof(EnhancedDiagnosticEntry), nullptr, GL_DYNAMIC_COPY);
 
     // Counter buffer: single uint32 storing current count
     glCreateBuffers(1, &diagnosticCountBuffer);
     uint32_t zero = 0;
     glNamedBufferData(diagnosticCountBuffer, sizeof(uint32_t), &zero, GL_DYNAMIC_COPY);
+    
+    // Note: Legacy adhesion diagnostic buffer removed - all events now use enhanced format
+    
+    std::cout << "[Enhanced Diagnostics] System initialized with " << maxEntries << " entry capacity.\n";
 }
 
-void CellManager::toggleAdhesionDiagnostics()
+void CellManager::toggleEnhancedDiagnostics()
 {
-    adhesionDiagnosticsRunning = !adhesionDiagnosticsRunning;
-    if (adhesionDiagnosticsRunning)
+    diagnosticsRunning = !diagnosticsRunning;
+    adhesionDiagnosticsRunning = diagnosticsRunning; // Keep legacy flag in sync
+    
+    if (diagnosticsRunning)
     {
-        // Reset counter to zero
-        uint32_t zero = 0;
-        glNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &zero);
-        std::cout << "[Diagnostics] Adhesion diagnostics started.\n";
+        // Reset counter and clear data
+        clearDiagnosticData();
+        std::cout << "[Enhanced Diagnostics] Started recording events.\n";
+        std::cout << "  - Adhesion Events: " << (diagnosticState.adhesionEventsEnabled ? "ON" : "OFF") << "\n";
+        std::cout << "  - Cell Lifecycle Events: " << (diagnosticState.cellLifecycleEventsEnabled ? "ON" : "OFF") << "\n";
+        std::cout << "  - Physics Events: " << (diagnosticState.physicsEventsEnabled ? "ON" : "OFF") << "\n";
+        std::cout << "  - Genome Tracking: " << (diagnosticState.genomeTrackingEnabled ? "ON" : "OFF") << "\n";
+        std::cout << "  - Buffer capacity: " << diagnosticState.maxEntries << " entries\n";
+        std::cout << "  - Enhanced buffer ID: " << enhancedDiagnosticBuffer << "\n";
+        std::cout << "  - Counter buffer ID: " << diagnosticCountBuffer << "\n";
+        
+        // Test logging a system event to verify the mechanism works
+        logDiagnosticEvent(DiagnosticEventType::SYSTEM_PERFORMANCE_WARNING, 0, UINT32_MAX, UINT32_MAX, 1.0f, 2.0f);
+        std::cout << "  - Test event logged, CPU entries: " << diagnosticState.currentEntries << "\n";
     }
     else
     {
-        std::cout << "[Diagnostics] Adhesion diagnostics stopped. Writing log...\n";
-        writeAdhesionDiagnosticLog();
+        std::cout << "[Enhanced Diagnostics] Stopped recording. Writing comprehensive log...\n";
+        writeEnhancedDiagnosticLog();
     }
 }
 
-void CellManager::writeAdhesionDiagnosticLog()
+void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cellA, uint32_t cellB, 
+                                   uint32_t connectionIndex, float eventValue1, float eventValue2)
 {
-    // Read counter
-    uint32_t count = 0;
-    glGetNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &count);
+    if (!diagnosticsRunning) return;
+    
+    // Check if this event type is enabled
+    bool shouldLog = false;
+    if (static_cast<uint32_t>(eventType) <= 29 && diagnosticState.adhesionEventsEnabled) shouldLog = true;
+    else if (static_cast<uint32_t>(eventType) >= 30 && static_cast<uint32_t>(eventType) <= 59 && diagnosticState.cellLifecycleEventsEnabled) shouldLog = true;
+    else if (static_cast<uint32_t>(eventType) >= 60 && static_cast<uint32_t>(eventType) <= 89 && diagnosticState.physicsEventsEnabled) shouldLog = true;
+    else if (static_cast<uint32_t>(eventType) >= 90 && diagnosticState.systemEventsEnabled) shouldLog = true;
+    
+    if (!shouldLog) return;
+    
+    // Check buffer capacity
+    if (diagnosticState.currentEntries >= diagnosticState.maxEntries) {
+        if (!diagnosticState.bufferOverflowOccurred) {
+            diagnosticState.bufferOverflowOccurred = true;
+            std::cout << "[Enhanced Diagnostics] WARNING: Buffer overflow occurred. Some events may be lost.\n";
+        }
+        return;
+    }
+    
+    // Create diagnostic entry
+    EnhancedDiagnosticEntry entry{};
+    entry.eventType = static_cast<uint32_t>(eventType);
+    entry.frameIndex = getCurrentFrame();
+    entry.cellA = cellA;
+    entry.cellB = cellB;
+    entry.connectionIndex = connectionIndex;
+    entry.eventValue1 = eventValue1;
+    entry.eventValue2 = eventValue2;
+    
+    // Get cell data if available
+    if (cellA < getCurrentCellCount()) {
+        const ComputeCell& cell = getCellData(cellA);
+        entry.modeIndex = cell.modeIndex;
+        entry.positionA[0] = cell.positionAndMass.x;
+        entry.positionA[1] = cell.positionAndMass.y;
+        entry.positionA[2] = cell.positionAndMass.z;
+        entry.velocityA[0] = cell.velocity.x;
+        entry.velocityA[1] = cell.velocity.y;
+        entry.velocityA[2] = cell.velocity.z;
+        entry.massA = cell.positionAndMass.w;
+        entry.ageA = cell.age;
+        entry.toxinsA = cell.toxins;
+        entry.nitratesA = cell.nitrates;
+        for (int i = 0; i < 4; i++) {
+            entry.signallingA[i] = cell.signallingSubstances[i];
+        }
+        
+        // Update genome tracking if enabled
+        if (diagnosticState.genomeTrackingEnabled && cell.modeIndex < getGenomeData().modes.size()) {
+            updateGenomeTracking(cellA, getGenomeData().modes[cell.modeIndex]);
+        }
+    }
+    
+    // Get second cell data if applicable
+    if (cellB != UINT32_MAX && cellB < getCurrentCellCount()) {
+        const ComputeCell& cell = getCellData(cellB);
+        entry.positionB[0] = cell.positionAndMass.x;
+        entry.positionB[1] = cell.positionAndMass.y;
+        entry.positionB[2] = cell.positionAndMass.z;
+        entry.velocityB[0] = cell.velocity.x;
+        entry.velocityB[1] = cell.velocity.y;
+        entry.velocityB[2] = cell.velocity.z;
+        entry.massB = cell.positionAndMass.w;
+        entry.ageB = cell.age;
+        entry.toxinsB = cell.toxins;
+        entry.nitratesB = cell.nitrates;
+        for (int i = 0; i < 4; i++) {
+            entry.signallingB[i] = cell.signallingSubstances[i];
+        }
+    }
+    
+    // Write to GPU buffer
+    glNamedBufferSubData(enhancedDiagnosticBuffer, 
+                        diagnosticState.currentEntries * sizeof(EnhancedDiagnosticEntry), 
+                        sizeof(EnhancedDiagnosticEntry), &entry);
+    
+    diagnosticState.currentEntries++;
+    
+    // Update counter buffer
+    glNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &diagnosticState.currentEntries);
+}
+
+void CellManager::updateGenomeTracking(uint32_t cellIndex, const ModeSettings& currentMode)
+{
+    if (!diagnosticState.genomeTrackingEnabled) return;
+    
+    // Calculate differences from default
+    auto differences = calculateGenomeDifferences(currentMode, defaultModeSettings);
+    
+    // Store differences for this cell
+    cellGenomeDifferences[cellIndex] = differences;
+}
+
+std::vector<CellManager::GenomeDifference> CellManager::calculateGenomeDifferences(const ModeSettings& current, const ModeSettings& defaultMode)
+{
+    std::vector<GenomeDifference> differences;
+    
+    // Compare basic properties
+    if (current.name != defaultMode.name) {
+        differences.push_back({"name", defaultMode.name, current.name, 0.0f});
+    }
+    
+    if (current.color != defaultMode.color) {
+        differences.push_back({"color", 
+            "(" + std::to_string(defaultMode.color.r) + "," + std::to_string(defaultMode.color.g) + "," + std::to_string(defaultMode.color.b) + ")",
+            "(" + std::to_string(current.color.r) + "," + std::to_string(current.color.g) + "," + std::to_string(current.color.b) + ")",
+            glm::length(current.color - defaultMode.color)});
+    }
+    
+    if (current.parentMakeAdhesion != defaultMode.parentMakeAdhesion) {
+        differences.push_back({"parentMakeAdhesion", 
+            defaultMode.parentMakeAdhesion ? "true" : "false",
+            current.parentMakeAdhesion ? "true" : "false", 0.0f});
+    }
+    
+    if (current.splitMass != defaultMode.splitMass) {
+        differences.push_back({"splitMass", 
+            std::to_string(defaultMode.splitMass),
+            std::to_string(current.splitMass),
+            current.splitMass - defaultMode.splitMass});
+    }
+    
+    if (current.splitInterval != defaultMode.splitInterval) {
+        differences.push_back({"splitInterval", 
+            std::to_string(defaultMode.splitInterval),
+            std::to_string(current.splitInterval),
+            current.splitInterval - defaultMode.splitInterval});
+    }
+    
+    if (current.maxAdhesions != defaultMode.maxAdhesions) {
+        differences.push_back({"maxAdhesions", 
+            std::to_string(defaultMode.maxAdhesions),
+            std::to_string(current.maxAdhesions),
+            static_cast<float>(current.maxAdhesions - defaultMode.maxAdhesions)});
+    }
+    
+    // Compare adhesion settings
+    const auto& currentAdh = current.adhesionSettings;
+    const auto& defaultAdh = defaultMode.adhesionSettings;
+    
+    if (currentAdh.canBreak != defaultAdh.canBreak) {
+        differences.push_back({"adhesion.canBreak", 
+            defaultAdh.canBreak ? "true" : "false",
+            currentAdh.canBreak ? "true" : "false", 0.0f});
+    }
+    
+    if (currentAdh.breakForce != defaultAdh.breakForce) {
+        differences.push_back({"adhesion.breakForce", 
+            std::to_string(defaultAdh.breakForce),
+            std::to_string(currentAdh.breakForce),
+            currentAdh.breakForce - defaultAdh.breakForce});
+    }
+    
+    if (currentAdh.restLength != defaultAdh.restLength) {
+        differences.push_back({"adhesion.restLength", 
+            std::to_string(defaultAdh.restLength),
+            std::to_string(currentAdh.restLength),
+            currentAdh.restLength - defaultAdh.restLength});
+    }
+    
+    if (currentAdh.linearSpringStiffness != defaultAdh.linearSpringStiffness) {
+        differences.push_back({"adhesion.linearSpringStiffness", 
+            std::to_string(defaultAdh.linearSpringStiffness),
+            std::to_string(currentAdh.linearSpringStiffness),
+            currentAdh.linearSpringStiffness - defaultAdh.linearSpringStiffness});
+    }
+    
+    if (currentAdh.linearSpringDamping != defaultAdh.linearSpringDamping) {
+        differences.push_back({"adhesion.linearSpringDamping", 
+            std::to_string(defaultAdh.linearSpringDamping),
+            std::to_string(currentAdh.linearSpringDamping),
+            currentAdh.linearSpringDamping - defaultAdh.linearSpringDamping});
+    }
+    
+    if (currentAdh.orientationSpringStiffness != defaultAdh.orientationSpringStiffness) {
+        differences.push_back({"adhesion.orientationSpringStiffness", 
+            std::to_string(defaultAdh.orientationSpringStiffness),
+            std::to_string(currentAdh.orientationSpringStiffness),
+            currentAdh.orientationSpringStiffness - defaultAdh.orientationSpringStiffness});
+    }
+    
+    if (currentAdh.orientationSpringDamping != defaultAdh.orientationSpringDamping) {
+        differences.push_back({"adhesion.orientationSpringDamping", 
+            std::to_string(defaultAdh.orientationSpringDamping),
+            std::to_string(currentAdh.orientationSpringDamping),
+            currentAdh.orientationSpringDamping - defaultAdh.orientationSpringDamping});
+    }
+    
+    if (currentAdh.maxAngularDeviation != defaultAdh.maxAngularDeviation) {
+        differences.push_back({"adhesion.maxAngularDeviation", 
+            std::to_string(defaultAdh.maxAngularDeviation),
+            std::to_string(currentAdh.maxAngularDeviation),
+            currentAdh.maxAngularDeviation - defaultAdh.maxAngularDeviation});
+    }
+    
+    if (currentAdh.twistConstraintStiffness != defaultAdh.twistConstraintStiffness) {
+        differences.push_back({"adhesion.twistConstraintStiffness", 
+            std::to_string(defaultAdh.twistConstraintStiffness),
+            std::to_string(currentAdh.twistConstraintStiffness),
+            currentAdh.twistConstraintStiffness - defaultAdh.twistConstraintStiffness});
+    }
+    
+    if (currentAdh.twistConstraintDamping != defaultAdh.twistConstraintDamping) {
+        differences.push_back({"adhesion.twistConstraintDamping", 
+            std::to_string(defaultAdh.twistConstraintDamping),
+            std::to_string(currentAdh.twistConstraintDamping),
+            currentAdh.twistConstraintDamping - defaultAdh.twistConstraintDamping});
+    }
+    
+    if (currentAdh.enableTwistConstraint != defaultAdh.enableTwistConstraint) {
+        differences.push_back({"adhesion.enableTwistConstraint", 
+            defaultAdh.enableTwistConstraint ? "true" : "false",
+            currentAdh.enableTwistConstraint ? "true" : "false", 0.0f});
+    }
+    
+    return differences;
+}
+
+void CellManager::clearDiagnosticData()
+{
+    diagnosticState.currentEntries = 0;
+    diagnosticState.bufferOverflowOccurred = false;
+    cellGenomeDifferences.clear();
+    
+    // Reset counter buffer
+    uint32_t zero = 0;
+    glNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &zero);
+}
+
+void CellManager::writeEnhancedDiagnosticLog()
+{
+    // Read counter from GPU buffer (GPU writes to this)
+    uint32_t gpuCount = 0;
+    glGetNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &gpuCount);
+    
+    // Use the higher of GPU count or CPU count
+    uint32_t count = std::max(gpuCount, diagnosticState.currentEntries);
+    
+    std::cout << "[Enhanced Diagnostics] Debug - GPU count: " << gpuCount << ", CPU count: " << diagnosticState.currentEntries << "\n";
+    std::cout << "[Enhanced Diagnostics] Diagnostic state - Running: " << diagnosticsRunning << ", Adhesion events: " << diagnosticState.adhesionEventsEnabled << "\n";
+    
     if (count == 0)
     {
-        std::cout << "[Diagnostics] No adhesion diagnostic entries recorded.\n";
+        std::cout << "[Enhanced Diagnostics] No diagnostic entries recorded.\n";
+        std::cout << "[Enhanced Diagnostics] Possible issues:\n";
+        std::cout << "  - Diagnostics not enabled during simulation\n";
+        std::cout << "  - No events occurred (no cell splitting/adhesion)\n";
+        std::cout << "  - GPU-CPU synchronization issue\n";
         return;
     }
 
-    // Map diagnostic buffer
-    std::vector<AdhesionDiagnosticEntry> entries(count);
-    glGetNamedBufferSubData(adhesionDiagnosticBuffer, 0, count * sizeof(AdhesionDiagnosticEntry), entries.data());
+    std::cout << "[Enhanced Diagnostics] Reading " << count << " entries (GPU: " << gpuCount << ", CPU: " << diagnosticState.currentEntries << ")\n";
+
+    // Read diagnostic buffer
+    std::vector<EnhancedDiagnosticEntry> entries(count);
+    glGetNamedBufferSubData(enhancedDiagnosticBuffer, 0, count * sizeof(EnhancedDiagnosticEntry), entries.data());
 
     // Prepare log path
     namespace fs = std::filesystem;
@@ -1289,143 +1578,312 @@ void CellManager::writeAdhesionDiagnosticLog()
 #endif
     std::ostringstream oss;
     oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
-    fs::path logPath = logDir / ("adhesion_diagnostic_" + oss.str() + ".log");
+    fs::path logPath = logDir / ("enhanced_diagnostic_" + oss.str() + ".log");
 
     std::ofstream ofs(logPath);
     
     // Write comprehensive header with legend
     ofs << "# ============================================================================\n";
-    ofs << "# BIOSPHERES ADHESION DIAGNOSTIC LOG\n";
+    ofs << "# BIOSPHERES ENHANCED DIAGNOSTIC LOG\n";
     ofs << "# ============================================================================\n";
     ofs << "# Timestamp: " << oss.str() << "\n";
     ofs << "# Total Entries: " << count << "\n";
+    ofs << "# Buffer Overflow: " << (diagnosticState.bufferOverflowOccurred ? "YES" : "NO") << "\n";
     ofs << "# \n";
-    ofs << "# REASON CODE LEGEND:\n";
-    ofs << "# 0  = Inherited        - Child inherits parent's connection during split\n";
-    ofs << "# 1  = Direct           - Normal new connection between cells\n";
-    ofs << "# 2  = Broken           - Connection broken due to force/distance\n";
-    ofs << "# 3  = Split_Event      - Original connection removed due to parent split\n";
-    ofs << "# 4  = Cell_Death       - Connection removed due to cell death\n";
-    ofs << "# 5  = Force_Break      - Connection broken by excessive force\n";
-    ofs << "# 6  = Distance_Break   - Connection broken by excessive distance\n";
-    ofs << "# 7  = Mode_Change      - Connection removed due to mode change\n";
-    ofs << "# 8  = Capacity_Full    - Connection failed due to cell adhesion capacity\n";
-    ofs << "# 9  = Invalid_Cells    - Connection failed due to invalid cell indices\n";
-    ofs << "# 10 = Duplicate        - Connection failed due to duplicate connection\n";
-    ofs << "# 11 = Self_Connection  - Connection failed due to self-connection attempt\n";
-    ofs << "# 12 = Out_Of_Bounds    - Connection failed due to out of bounds\n";
-    ofs << "# 13 = Adhesion_Limit   - Connection failed due to global adhesion limit\n";
-    ofs << "# 14 = Restore          - Connection restored from keyframe/save\n";
-    ofs << "# 15 = Manual_Remove    - Connection manually removed by user\n";
-    ofs << "# 16 = Collision_Break  - Connection broken due to collision\n";
-    ofs << "# 17 = Age_Break        - Connection broken due to cell age\n";
-    ofs << "# 18 = Toxin_Break      - Connection broken due to high toxins\n";
-    ofs << "# 19 = Signaling_Break  - Connection broken due to signaling\n";
-    ofs << "# 20 = Unknown_Error    - Connection failed for unknown reason\n";
+    ofs << "# DIAGNOSTIC SYSTEM SETTINGS:\n";
+    ofs << "# - Adhesion Events: " << (diagnosticState.adhesionEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
+    ofs << "# - Cell Lifecycle Events: " << (diagnosticState.cellLifecycleEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
+    ofs << "# - Physics Events: " << (diagnosticState.physicsEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
+    ofs << "# - System Events: " << (diagnosticState.systemEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
+    ofs << "# - Genome Tracking: " << (diagnosticState.genomeTrackingEnabled ? "ENABLED" : "DISABLED") << "\n";
     ofs << "# \n";
-    ofs << "# COLUMN DESCRIPTIONS:\n";
-    ofs << "# ConnectionIndex - Unique ID of the adhesion connection\n";
-    ofs << "# CellA, CellB   - Indices of the connected cells\n";
-    ofs << "# Mode           - Mode index for adhesion settings\n";
-    ofs << "# Reason         - Human-readable reason for the event\n";
-    ofs << "# AnchorA, B     - Local anchor directions [x y z] for each cell\n";
-    ofs << "# Frame          - Frame number when event occurred\n";
-    ofs << "# SplitEventID   - Groups related events from same cell split (0 = no split)\n";
-    ofs << "# ParentCellID   - Original parent cell that split (for inherited connections)\n";
-    ofs << "# InheritanceType- 0=none, 1=childA_keeps, 2=childB_keeps, 3=both_keep, 4=neither_keep\n";
-    ofs << "# OriginalConn   - Index of original connection being inherited from\n";
-    ofs << "# AdhesionZone   - Dot product with split direction (inheritance decision factor)\n";
+    ofs << "# EVENT TYPE LEGEND:\n";
+    ofs << "# === ADHESION EVENTS (0-29) ===\n";
+    ofs << "# 0  = ADHESION_INHERITED       - Child inherits parent's connection during split\n";
+    ofs << "# 1  = ADHESION_DIRECT          - Normal new connection between cells\n";
+    ofs << "# 2  = ADHESION_BROKEN          - Connection broken due to force/distance\n";
+    ofs << "# 3  = ADHESION_SPLIT_EVENT     - Original connection removed due to parent split\n";
+    ofs << "# 4  = ADHESION_CELL_DEATH      - Connection removed due to cell death\n";
+    ofs << "# 5  = ADHESION_FORCE_BREAK     - Connection broken by excessive force\n";
+    ofs << "# 6  = ADHESION_DISTANCE_BREAK  - Connection broken by excessive distance\n";
+    ofs << "# 7  = ADHESION_MODE_CHANGE     - Connection removed due to mode change\n";
+    ofs << "# 8  = ADHESION_CAPACITY_FULL   - Connection failed due to cell adhesion capacity\n";
+    ofs << "# 9  = ADHESION_INVALID_CELLS   - Connection failed due to invalid cell indices\n";
+    ofs << "# 10 = ADHESION_DUPLICATE       - Connection failed due to duplicate connection\n";
+    ofs << "# 11 = ADHESION_SELF_CONNECTION - Connection failed due to self-connection attempt\n";
+    ofs << "# 12 = ADHESION_OUT_OF_BOUNDS   - Connection failed due to out of bounds\n";
+    ofs << "# 13 = ADHESION_LIMIT           - Connection failed due to global adhesion limit\n";
+    ofs << "# 14 = ADHESION_RESTORE         - Connection restored from keyframe/save\n";
+    ofs << "# 15 = ADHESION_MANUAL_REMOVE   - Connection manually removed by user\n";
+    ofs << "# 16 = ADHESION_COLLISION_BREAK - Connection broken due to collision\n";
+    ofs << "# 17 = ADHESION_AGE_BREAK       - Connection broken due to cell age\n";
+    ofs << "# 18 = ADHESION_TOXIN_BREAK     - Connection broken due to high toxins\n";
+    ofs << "# 19 = ADHESION_SIGNALING_BREAK - Connection broken due to signaling\n";
+    ofs << "# 20 = ADHESION_UNKNOWN_ERROR   - Connection failed for unknown reason\n";
+    ofs << "# \n";
+    ofs << "# === CELL LIFECYCLE EVENTS (30-59) ===\n";
+    ofs << "# 30 = CELL_BIRTH               - New cell created\n";
+    ofs << "# 31 = CELL_DEATH               - Cell died\n";
+    ofs << "# 32 = CELL_SPLIT_START         - Cell begins splitting process\n";
+    ofs << "# 33 = CELL_SPLIT_COMPLETE      - Cell split completed\n";
+    ofs << "# 34 = CELL_MODE_CHANGE         - Cell changed mode\n";
+    ofs << "# 35 = CELL_GENOME_MUTATION     - Cell genome mutated\n";
+    ofs << "# 36 = CELL_COLLISION           - Cell collision detected\n";
+    ofs << "# 37 = CELL_OUT_OF_BOUNDS       - Cell moved out of world bounds\n";
+    ofs << "# 38 = CELL_SELECTED            - Cell selected by user\n";
+    ofs << "# 39 = CELL_DRAGGED             - Cell being dragged by user\n";
+    ofs << "# \n";
+    ofs << "# === PHYSICS EVENTS (60-89) ===\n";
+    ofs << "# 60 = PHYSICS_HIGH_VELOCITY    - Cell exceeded velocity threshold\n";
+    ofs << "# 61 = PHYSICS_HIGH_ACCELERATION- Cell exceeded acceleration threshold\n";
+    ofs << "# 62 = PHYSICS_CONSTRAINT_VIOLATION - Physics constraint violated\n";
+    ofs << "# 63 = PHYSICS_INSTABILITY      - Physics instability detected\n";
+    ofs << "# \n";
+    ofs << "# === SYSTEM EVENTS (90-99) ===\n";
+    ofs << "# 90 = SYSTEM_BUFFER_OVERFLOW   - Diagnostic buffer overflow\n";
+    ofs << "# 91 = SYSTEM_PERFORMANCE_WARNING - Performance threshold exceeded\n";
+    ofs << "# 99 = SYSTEM_ERROR             - General system error\n";
     ofs << "# ============================================================================\n\n";
     
-    ofs << "ConnectionIndex,CellA,CellB,Mode,Reason,AnchorA,AnchorB,Frame,SplitEventID,ParentCellID,InheritanceType,OriginalConn,AdhesionZone\n";
+    // Write CSV header for main data
+    ofs << "EventType,EventName,Frame,CellA,CellB,ConnectionIndex,ModeIndex,SplitEventID,ParentCellID,";
+    ofs << "PosA_X,PosA_Y,PosA_Z,PosB_X,PosB_Y,PosB_Z,";
+    ofs << "VelA_X,VelA_Y,VelA_Z,VelB_X,VelB_Y,VelB_Z,";
+    ofs << "MassA,MassB,AgeA,AgeB,ToxinsA,ToxinsB,NitratesA,NitratesB,";
+    ofs << "SignalA1,SignalA2,SignalA3,SignalA4,SignalB1,SignalB2,SignalB3,SignalB4,";
+    ofs << "AnchorA_X,AnchorA_Y,AnchorA_Z,AnchorB_X,AnchorB_Y,AnchorB_Z,";
+    ofs << "EventValue1,EventValue2,EventFlags\n";
     
-    // Group entries by split event for better analysis
-    std::map<uint32_t, std::vector<AdhesionDiagnosticEntry>> splitEvents;
-    for (const auto &e : entries)
-    {
-        splitEvents[e.splitEventID].push_back(e);
+    // Helper function to get event name
+    auto getEventName = [](uint32_t eventType) -> std::string {
+        switch (eventType) {
+            // Adhesion events
+            case 0: return "ADHESION_INHERITED";
+            case 1: return "ADHESION_DIRECT";
+            case 2: return "ADHESION_BROKEN";
+            case 3: return "ADHESION_SPLIT_EVENT";
+            case 4: return "ADHESION_CELL_DEATH";
+            case 5: return "ADHESION_FORCE_BREAK";
+            case 6: return "ADHESION_DISTANCE_BREAK";
+            case 7: return "ADHESION_MODE_CHANGE";
+            case 8: return "ADHESION_CAPACITY_FULL";
+            case 9: return "ADHESION_INVALID_CELLS";
+            case 10: return "ADHESION_DUPLICATE";
+            case 11: return "ADHESION_SELF_CONNECTION";
+            case 12: return "ADHESION_OUT_OF_BOUNDS";
+            case 13: return "ADHESION_LIMIT";
+            case 14: return "ADHESION_RESTORE";
+            case 15: return "ADHESION_MANUAL_REMOVE";
+            case 16: return "ADHESION_COLLISION_BREAK";
+            case 17: return "ADHESION_AGE_BREAK";
+            case 18: return "ADHESION_TOXIN_BREAK";
+            case 19: return "ADHESION_SIGNALING_BREAK";
+            case 20: return "ADHESION_UNKNOWN_ERROR";
+            // Cell lifecycle events
+            case 30: return "CELL_BIRTH";
+            case 31: return "CELL_DEATH";
+            case 32: return "CELL_SPLIT_START";
+            case 33: return "CELL_SPLIT_COMPLETE";
+            case 34: return "CELL_MODE_CHANGE";
+            case 35: return "CELL_GENOME_MUTATION";
+            case 36: return "CELL_COLLISION";
+            case 37: return "CELL_OUT_OF_BOUNDS";
+            case 38: return "CELL_SELECTED";
+            case 39: return "CELL_DRAGGED";
+            // Physics events
+            case 60: return "PHYSICS_HIGH_VELOCITY";
+            case 61: return "PHYSICS_HIGH_ACCELERATION";
+            case 62: return "PHYSICS_CONSTRAINT_VIOLATION";
+            case 63: return "PHYSICS_INSTABILITY";
+            // System events
+            case 90: return "SYSTEM_BUFFER_OVERFLOW";
+            case 91: return "SYSTEM_PERFORMANCE_WARNING";
+            case 99: return "SYSTEM_ERROR";
+            default: return "UNKNOWN_EVENT_" + std::to_string(eventType);
+        }
+    };
+    
+    // Write all entries
+    for (const auto& e : entries) {
+        ofs << e.eventType << "," << getEventName(e.eventType) << "," << e.frameIndex << ",";
+        ofs << e.cellA << "," << e.cellB << "," << e.connectionIndex << "," << e.modeIndex << ",";
+        ofs << e.splitEventID << "," << e.parentCellID << ",";
+        
+        // Positions
+        ofs << e.positionA[0] << "," << e.positionA[1] << "," << e.positionA[2] << ",";
+        ofs << e.positionB[0] << "," << e.positionB[1] << "," << e.positionB[2] << ",";
+        
+        // Velocities
+        ofs << e.velocityA[0] << "," << e.velocityA[1] << "," << e.velocityA[2] << ",";
+        ofs << e.velocityB[0] << "," << e.velocityB[1] << "," << e.velocityB[2] << ",";
+        
+        // Masses and ages
+        ofs << e.massA << "," << e.massB << "," << e.ageA << "," << e.ageB << ",";
+        
+        // Toxins and nitrates
+        ofs << e.toxinsA << "," << e.toxinsB << "," << e.nitratesA << "," << e.nitratesB << ",";
+        
+        // Signaling substances
+        ofs << e.signallingA[0] << "," << e.signallingA[1] << "," << e.signallingA[2] << "," << e.signallingA[3] << ",";
+        ofs << e.signallingB[0] << "," << e.signallingB[1] << "," << e.signallingB[2] << "," << e.signallingB[3] << ",";
+        
+        // Anchor directions
+        ofs << e.anchorDirA[0] << "," << e.anchorDirA[1] << "," << e.anchorDirA[2] << ",";
+        ofs << e.anchorDirB[0] << "," << e.anchorDirB[1] << "," << e.anchorDirB[2] << ",";
+        
+        // Event values and flags
+        ofs << e.eventValue1 << "," << e.eventValue2 << "," << e.eventFlags << "\n";
     }
     
-    // Write entries grouped by split event
-    for (const auto &splitPair : splitEvents)
-    {
-        uint32_t splitID = splitPair.first;
-        const auto &splitEntries = splitPair.second;
+    // Write genome differences section if enabled
+    if (diagnosticState.genomeTrackingEnabled && !cellGenomeDifferences.empty()) {
+        ofs << "\n# ============================================================================\n";
+        ofs << "# GENOME DIFFERENCES FROM DEFAULT\n";
+        ofs << "# ============================================================================\n";
+        ofs << "# This section shows genome settings that differ from default values for each cell\n";
+        ofs << "# Format: CellIndex,PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
+        ofs << "# ============================================================================\n\n";
         
-        if (splitID == 0) {
-            // Non-split related entries (direct connections)
-            for (const auto &e : splitEntries)
-            {
-                const char* reason = "Unknown";
-                switch (e.reasonCode)
-                {
-                    case 0:  reason = "Inherited"; break;
-                    case 1:  reason = "Direct"; break;
-                    case 2:  reason = "Broken"; break;
-                    case 3:  reason = "Split_Event"; break;
-                    case 4:  reason = "Cell_Death"; break;
-                    case 5:  reason = "Force_Break"; break;
-                    case 6:  reason = "Distance_Break"; break;
-                    case 7:  reason = "Mode_Change"; break;
-                    case 8:  reason = "Capacity_Full"; break;
-                    case 9:  reason = "Invalid_Cells"; break;
-                    case 10: reason = "Duplicate"; break;
-                    case 11: reason = "Self_Connection"; break;
-                    case 12: reason = "Out_Of_Bounds"; break;
-                    case 13: reason = "Adhesion_Limit"; break;
-                    case 14: reason = "Restore"; break;
-                    case 15: reason = "Manual_Remove"; break;
-                    case 16: reason = "Collision_Break"; break;
-                    case 17: reason = "Age_Break"; break;
-                    case 18: reason = "Toxin_Break"; break;
-                    case 19: reason = "Signaling_Break"; break;
-                    case 20: reason = "Unknown_Error"; break;
+        ofs << "CellIndex,PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
+        
+        for (const auto& cellPair : cellGenomeDifferences) {
+            uint32_t cellIndex = cellPair.first;
+            const auto& differences = cellPair.second;
+            
+            if (!differences.empty()) {
+                ofs << "\n# === CELL " << cellIndex << " GENOME DIFFERENCES ===\n";
+                for (const auto& diff : differences) {
+                    ofs << cellIndex << "," << diff.propertyName << ",";
+                    ofs << "\"" << diff.defaultValue << "\",\"" << diff.currentValue << "\",";
+                    ofs << diff.numericDifference << "\n";
                 }
-                ofs << e.connectionIndex << ',' << e.cellA << ',' << e.cellB << ',' << e.modeIndex << ',' << reason << ','
-                    << '[' << e.anchorDirA[0] << ' ' << e.anchorDirA[1] << ' ' << e.anchorDirA[2] << "],"
-                    << '[' << e.anchorDirB[0] << ' ' << e.anchorDirB[1] << ' ' << e.anchorDirB[2] << "],"
-                    << e.frameIndex << ',' << e.splitEventID << ',' << e.parentCellID << ',' << e.inheritanceType 
-                    << ',' << e.originalConnectionIndex << ',' << e.adhesionZone << '\n';
-            }
-        } else {
-            // Split event - write header and all related entries
-            ofs << "\n# ===== SPLIT EVENT " << splitID << " =====\n";
-            for (const auto &e : splitEntries)
-            {
-                const char* reason = "Unknown";
-                switch (e.reasonCode)
-                {
-                    case 0:  reason = "Inherited"; break;
-                    case 1:  reason = "Direct"; break;
-                    case 2:  reason = "Broken"; break;
-                    case 3:  reason = "Split_Event"; break;
-                    case 4:  reason = "Cell_Death"; break;
-                    case 5:  reason = "Force_Break"; break;
-                    case 6:  reason = "Distance_Break"; break;
-                    case 7:  reason = "Mode_Change"; break;
-                    case 8:  reason = "Capacity_Full"; break;
-                    case 9:  reason = "Invalid_Cells"; break;
-                    case 10: reason = "Duplicate"; break;
-                    case 11: reason = "Self_Connection"; break;
-                    case 12: reason = "Out_Of_Bounds"; break;
-                    case 13: reason = "Adhesion_Limit"; break;
-                    case 14: reason = "Restore"; break;
-                    case 15: reason = "Manual_Remove"; break;
-                    case 16: reason = "Collision_Break"; break;
-                    case 17: reason = "Age_Break"; break;
-                    case 18: reason = "Toxin_Break"; break;
-                    case 19: reason = "Signaling_Break"; break;
-                    case 20: reason = "Unknown_Error"; break;
-                }
-                ofs << e.connectionIndex << ',' << e.cellA << ',' << e.cellB << ',' << e.modeIndex << ',' << reason << ','
-                    << '[' << e.anchorDirA[0] << ' ' << e.anchorDirA[1] << ' ' << e.anchorDirA[2] << "],"
-                    << '[' << e.anchorDirB[0] << ' ' << e.anchorDirB[1] << ' ' << e.anchorDirB[2] << "],"
-                    << e.frameIndex << ',' << e.splitEventID << ',' << e.parentCellID << ',' << e.inheritanceType 
-                    << ',' << e.originalConnectionIndex << ',' << e.adhesionZone << '\n';
             }
         }
     }
+    
+    // Write summary statistics
+    ofs << "\n# ============================================================================\n";
+    ofs << "# SUMMARY STATISTICS\n";
+    ofs << "# ============================================================================\n";
+    
+    // Count events by type
+    std::map<uint32_t, uint32_t> eventCounts;
+    for (const auto& e : entries) {
+        eventCounts[e.eventType]++;
+    }
+    
+    ofs << "# Event Type Counts:\n";
+    for (const auto& countPair : eventCounts) {
+        ofs << "# " << getEventName(countPair.first) << ": " << countPair.second << " events\n";
+    }
+    
+    ofs << "# \n";
+    ofs << "# Total unique cells with genome differences: " << cellGenomeDifferences.size() << "\n";
+    ofs << "# Diagnostic system performance:\n";
+    ofs << "#   - Buffer utilization: " << (100.0f * count / diagnosticState.maxEntries) << "%\n";
+    ofs << "#   - Buffer overflow occurred: " << (diagnosticState.bufferOverflowOccurred ? "YES" : "NO") << "\n";
+    ofs << "# ============================================================================\n";
+    
     ofs.close();
 
-    std::cout << "[Diagnostics] Adhesion diagnostic log written to " << logPath.string() << " (" << count << " entries)\n";
+    std::cout << "[Enhanced Diagnostics] Comprehensive log written to " << logPath.string() << " (" << count << " entries)\n";
+    std::cout << "  - Event types recorded: " << eventCounts.size() << "\n";
+    std::cout << "  - Cells with genome differences: " << cellGenomeDifferences.size() << "\n";
+    std::cout << "  - Buffer utilization: " << (100.0f * count / diagnosticState.maxEntries) << "%\n";
+}
+
+void CellManager::updateRealTimeMonitoring()
+{
+    if (!diagnosticState.realTimeMonitoringEnabled || !diagnosticsRunning) return;
+    
+    // Check performance thresholds for all cells
+    checkPerformanceThresholds();
+}
+
+void CellManager::syncDiagnosticCounter()
+{
+    if (!diagnosticsRunning) return;
+    
+    // Read the current count from GPU buffer
+    uint32_t gpuCount = 0;
+    glGetNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &gpuCount);
+    
+    // Update CPU counter to match GPU (take the higher value to account for both sources)
+    diagnosticState.currentEntries = std::max(gpuCount, diagnosticState.currentEntries);
+}
+
+std::vector<std::string> CellManager::getRecentEvents(int maxEvents)
+{
+    std::vector<std::string> recentEvents;
+    
+    if (!diagnosticsRunning || diagnosticState.currentEntries == 0) {
+        return recentEvents;
+    }
+    
+    // Read the most recent entries from the buffer
+    uint32_t startIndex = diagnosticState.currentEntries > static_cast<uint32_t>(maxEvents) ? 
+                         diagnosticState.currentEntries - maxEvents : 0;
+    uint32_t numEntries = diagnosticState.currentEntries - startIndex;
+    
+    std::vector<EnhancedDiagnosticEntry> entries(numEntries);
+    glGetNamedBufferSubData(enhancedDiagnosticBuffer, 
+                           startIndex * sizeof(EnhancedDiagnosticEntry),
+                           numEntries * sizeof(EnhancedDiagnosticEntry), 
+                           entries.data());
+    
+    // Convert to human-readable strings
+    for (const auto& entry : entries) {
+        std::ostringstream oss;
+        oss << "Frame " << entry.frameIndex << ": ";
+        
+        // Add event type name
+        switch (entry.eventType) {
+            case 1: oss << "New adhesion between cells " << entry.cellA << " and " << entry.cellB; break;
+            case 2: oss << "Adhesion broken between cells " << entry.cellA << " and " << entry.cellB; break;
+            case 30: oss << "Cell " << entry.cellA << " born"; break;
+            case 31: oss << "Cell " << entry.cellA << " died"; break;
+            case 32: oss << "Cell " << entry.cellA << " started splitting"; break;
+            case 33: oss << "Cell " << entry.cellA << " completed split"; break;
+            case 60: oss << "Cell " << entry.cellA << " high velocity (" << entry.eventValue1 << ")"; break;
+            case 61: oss << "Cell " << entry.cellA << " high acceleration (" << entry.eventValue1 << ")"; break;
+            default: oss << "Event type " << entry.eventType << " for cell " << entry.cellA; break;
+        }
+        
+        recentEvents.push_back(oss.str());
+    }
+    
+    return recentEvents;
+}
+
+void CellManager::checkPerformanceThresholds()
+{
+    if (!diagnosticState.physicsEventsEnabled) return;
+    
+    // Check all cells for threshold violations
+    for (uint32_t i = 0; i < getCurrentCellCount(); i++) {
+        const ComputeCell& cell = getCellData(i);
+        
+        // Check velocity threshold
+        float velocity = glm::length(glm::vec3(cell.velocity.x, cell.velocity.y, cell.velocity.z));
+        if (velocity > diagnosticState.velocityThreshold) {
+            logDiagnosticEvent(DiagnosticEventType::PHYSICS_HIGH_VELOCITY, i, UINT32_MAX, UINT32_MAX, velocity);
+        }
+        
+        // Check acceleration threshold
+        float acceleration = glm::length(glm::vec3(cell.acceleration.x, cell.acceleration.y, cell.acceleration.z));
+        if (acceleration > diagnosticState.accelerationThreshold) {
+            logDiagnosticEvent(DiagnosticEventType::PHYSICS_HIGH_ACCELERATION, i, UINT32_MAX, UINT32_MAX, acceleration);
+        }
+        
+        // Check toxin threshold
+        if (cell.toxins > diagnosticState.toxinThreshold) {
+            logDiagnosticEvent(DiagnosticEventType::PHYSICS_INSTABILITY, i, UINT32_MAX, UINT32_MAX, cell.toxins);
+        }
+    }
+}
+
+// Legacy method for backward compatibility - redirect to enhanced version
+void CellManager::writeAdhesionDiagnosticLog()
+{
+    writeEnhancedDiagnosticLog();
 }

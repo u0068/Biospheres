@@ -68,30 +68,51 @@ struct AdhesionConnection {
     vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
 };
 
-// Adhesion diagnostic entry structure - matches C++ AdhesionDiagnosticEntry
-struct AdhesionDiagnosticEntry {
-    uint connectionIndex;     // 4 bytes
-    uint cellA;               // 4 bytes
-    uint cellB;               // 4 bytes
-    uint modeIndex;           // 4 bytes
-    uint reasonCode;          // 4 bytes
-    float _pad0;              // 4 bytes padding to 16-byte alignment
-    float anchorDirA[3];      // 12 bytes (replacing vec3)
-    float _pad1;              // 4 bytes padding to 16-byte alignment
-    float anchorDirB[3];      // 12 bytes (replacing vec3)
-    float _pad2;              // 4 bytes padding to 16-byte alignment
-    uint frameIndex;          // 4 bytes
-    uint splitEventID;        // 4 bytes
-    uint parentCellID;        // 4 bytes
-    uint inheritanceType;     // 4 bytes
-    uint originalConnectionIndex; // 4 bytes
-    float adhesionZone;       // 4 bytes
-    float _pad3;              // 4 bytes padding to 16-byte alignment
-    float _pad4;              // 4 bytes padding to 16-byte alignment
-    float _pad5;              // 4 bytes padding to 16-byte alignment
-    float _pad6;              // 4 bytes padding to 16-byte alignment
-    float _pad7;              // 4 bytes padding to 16-byte alignment
-    float _pad8;              // 4 bytes padding to 16-byte alignment
+// Enhanced diagnostic entry structure - matches C++ EnhancedDiagnosticEntry
+struct EnhancedDiagnosticEntry {
+    // Core event data
+    uint eventType;           // DiagnosticEventType
+    uint frameIndex;          // Frame when event occurred
+    uint cellA;               // Primary cell involved
+    uint cellB;               // Secondary cell (if applicable, -1 otherwise)
+    
+    // Event-specific data
+    uint connectionIndex;     // For adhesion events
+    uint modeIndex;           // Mode of primary cell
+    uint splitEventID;        // Groups related split events
+    uint parentCellID;        // For inheritance tracking
+    
+    // Spatial data
+    float positionA[3];       // Position of cell A
+    float positionB[3];       // Position of cell B (if applicable)
+    float anchorDirA[3];      // Anchor direction for cell A
+    float anchorDirB[3];      // Anchor direction for cell B
+    
+    // Physics data
+    float velocityA[3];       // Velocity of cell A
+    float velocityB[3];       // Velocity of cell B (if applicable)
+    float massA;              // Mass of cell A
+    float massB;              // Mass of cell B (if applicable)
+    
+    // Cell state data
+    float ageA;               // Age of cell A
+    float ageB;               // Age of cell B (if applicable)
+    float toxinsA;            // Toxin level of cell A
+    float toxinsB;            // Toxin level of cell B (if applicable)
+    float nitratesA;          // Nitrate level of cell A
+    float nitratesB;          // Nitrate level of cell B (if applicable)
+    
+    // Signaling substances
+    float signallingA[4];     // Signalling substances of cell A
+    float signallingB[4];     // Signalling substances of cell B
+    
+    // Additional event data
+    float eventValue1;        // Generic event-specific value 1
+    float eventValue2;        // Generic event-specific value 2
+    uint eventFlags;          // Bit flags for event properties
+    
+    // Padding to ensure 16-byte alignment
+    float _padding[3];
 };
 
 layout(std430, binding = 0) restrict buffer ReadCellBuffer {
@@ -125,8 +146,8 @@ layout(std430, binding = 6) coherent buffer freeAdhesionSlotBuffer {
     uint freeAdhesionSlotIndices[];
 };
 
-layout(std430, binding = 7) coherent buffer AdhesionDiagnosticBuffer {
-    AdhesionDiagnosticEntry diagnosticEntries[];
+layout(std430, binding = 7) coherent buffer EnhancedDiagnosticBuffer {
+    EnhancedDiagnosticEntry diagnosticEntries[];
 };
 
 layout(std430, binding = 8) coherent buffer DiagnosticCountBuffer {
@@ -137,8 +158,9 @@ uniform float u_deltaTime;
 uniform int u_maxCells;
 uniform int u_maxAdhesions;
 uniform int u_enableAdhesionDiagnostics;
-//uniform uint u_frameNumber;
-uint u_frameNumber = 1u; // Placeholder for frame number
+uniform int u_currentFrame;
+// Use a simple frame counter for diagnostics
+uint u_frameNumber = 1u;
 
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -190,11 +212,10 @@ vec4 smallRandomQuat(float angle, uint seed) {
     return normalize(vec4(axis * s, cos(halfAngle)));
 }
 
-// Function to log diagnostic entries
-void logAdhesionDiagnostic(uint connectionIndex, uint cellA, uint cellB, uint modeIndex, 
-                          uint reasonCode, vec3 anchorDirA, vec3 anchorDirB, 
-                          uint frameIndex, uint splitEventID, uint parentCellID, 
-                          uint inheritanceType, uint originalConnectionIndex, float adhesionZone) {
+// Function to log enhanced diagnostic entries
+void logEnhancedDiagnostic(uint eventType, uint cellA, uint cellB, uint connectionIndex, 
+                          uint modeIndex, uint splitEventID, uint parentCellID,
+                          vec3 anchorDirA, vec3 anchorDirB, float eventValue1, float eventValue2) {
     if (u_enableAdhesionDiagnostics == 0) return;
     
     // Atomically increment the counter and get the index
@@ -203,37 +224,96 @@ void logAdhesionDiagnostic(uint connectionIndex, uint cellA, uint cellB, uint mo
     // Check if we have space in the buffer
     if (index >= diagnosticEntries.length()) return;
     
-    // Create the diagnostic entry
-    AdhesionDiagnosticEntry entry;
-    entry.connectionIndex = connectionIndex;
+    // Create the enhanced diagnostic entry
+    EnhancedDiagnosticEntry entry;
+    
+    // Core event data
+    entry.eventType = eventType;
+    entry.frameIndex = uint(u_currentFrame);
     entry.cellA = cellA;
     entry.cellB = cellB;
+    
+    // Event-specific data
+    entry.connectionIndex = connectionIndex;
     entry.modeIndex = modeIndex;
-    entry.reasonCode = reasonCode;
-    entry._pad0 = 0.0f;
+    entry.splitEventID = splitEventID;
+    entry.parentCellID = parentCellID;
+    
+    // Get cell data for comprehensive logging
+    if (cellA < inputCells.length()) {
+        ComputeCell cellDataA = inputCells[cellA];
+        entry.positionA[0] = cellDataA.positionAndMass.x;
+        entry.positionA[1] = cellDataA.positionAndMass.y;
+        entry.positionA[2] = cellDataA.positionAndMass.z;
+        entry.velocityA[0] = cellDataA.velocity.x;
+        entry.velocityA[1] = cellDataA.velocity.y;
+        entry.velocityA[2] = cellDataA.velocity.z;
+        entry.massA = cellDataA.positionAndMass.w;
+        entry.ageA = cellDataA.age;
+        entry.toxinsA = cellDataA.toxins;
+        entry.nitratesA = cellDataA.nitrates;
+        entry.signallingA[0] = cellDataA.signallingSubstances.x;
+        entry.signallingA[1] = cellDataA.signallingSubstances.y;
+        entry.signallingA[2] = cellDataA.signallingSubstances.z;
+        entry.signallingA[3] = cellDataA.signallingSubstances.w;
+    }
+    
+    // Get second cell data if applicable
+    if (cellB != 0xFFFFFFFF && cellB < inputCells.length()) {
+        ComputeCell cellDataB = inputCells[cellB];
+        entry.positionB[0] = cellDataB.positionAndMass.x;
+        entry.positionB[1] = cellDataB.positionAndMass.y;
+        entry.positionB[2] = cellDataB.positionAndMass.z;
+        entry.velocityB[0] = cellDataB.velocity.x;
+        entry.velocityB[1] = cellDataB.velocity.y;
+        entry.velocityB[2] = cellDataB.velocity.z;
+        entry.massB = cellDataB.positionAndMass.w;
+        entry.ageB = cellDataB.age;
+        entry.toxinsB = cellDataB.toxins;
+        entry.nitratesB = cellDataB.nitrates;
+        entry.signallingB[0] = cellDataB.signallingSubstances.x;
+        entry.signallingB[1] = cellDataB.signallingSubstances.y;
+        entry.signallingB[2] = cellDataB.signallingSubstances.z;
+        entry.signallingB[3] = cellDataB.signallingSubstances.w;
+    } else {
+        // Clear second cell data if not applicable
+        entry.positionB[0] = 0.0f; entry.positionB[1] = 0.0f; entry.positionB[2] = 0.0f;
+        entry.velocityB[0] = 0.0f; entry.velocityB[1] = 0.0f; entry.velocityB[2] = 0.0f;
+        entry.massB = 0.0f; entry.ageB = 0.0f; entry.toxinsB = 0.0f; entry.nitratesB = 0.0f;
+        entry.signallingB[0] = 0.0f; entry.signallingB[1] = 0.0f; entry.signallingB[2] = 0.0f; entry.signallingB[3] = 0.0f;
+    }
+    
+    // Anchor directions
     entry.anchorDirA[0] = anchorDirA.x;
     entry.anchorDirA[1] = anchorDirA.y;
     entry.anchorDirA[2] = anchorDirA.z;
-    entry._pad1 = 0.0f;
     entry.anchorDirB[0] = anchorDirB.x;
     entry.anchorDirB[1] = anchorDirB.y;
     entry.anchorDirB[2] = anchorDirB.z;
-    entry._pad2 = 0.0f;
-    entry.frameIndex = frameIndex;
-    entry.splitEventID = splitEventID;
-    entry.parentCellID = parentCellID;
-    entry.inheritanceType = inheritanceType;
-    entry.originalConnectionIndex = originalConnectionIndex;
-    entry.adhesionZone = adhesionZone;
-    entry._pad3 = 0.0f;
-    entry._pad4 = 0.0f;
-    entry._pad5 = 0.0f;
-    entry._pad6 = 0.0f;
-    entry._pad7 = 0.0f;
-    entry._pad8 = 0.0f;
+    
+    // Event values
+    entry.eventValue1 = eventValue1;
+    entry.eventValue2 = eventValue2;
+    entry.eventFlags = 0u;
+    
+    // Padding
+    entry._padding[0] = 0.0f;
+    entry._padding[1] = 0.0f;
+    entry._padding[2] = 0.0f;
     
     // Write the entry to the buffer
     diagnosticEntries[index] = entry;
+}
+
+// Legacy wrapper function for backward compatibility
+void logAdhesionDiagnostic(uint connectionIndex, uint cellA, uint cellB, uint modeIndex, 
+                          uint reasonCode, vec3 anchorDirA, vec3 anchorDirB, 
+                          uint frameIndex, uint splitEventID, uint parentCellID, 
+                          uint inheritanceType, uint originalConnectionIndex, float adhesionZone) {
+    // Map legacy reason codes to enhanced event types (adhesion events are 0-29)
+    logEnhancedDiagnostic(reasonCode, cellA, cellB, connectionIndex, modeIndex, 
+                         splitEventID, parentCellID, anchorDirA, anchorDirB, 
+                         adhesionZone, float(inheritanceType));
 }
 
 uint getNewAdhesionIndex() {
@@ -580,6 +660,46 @@ void main() {
     // CRITICAL FIX: Also write to input buffer to maintain consistency across all buffers
     inputCells[childAIndex] = childA;
     inputCells[childBIndex] = childB;
+    
+    // Log diagnostic events for cell lifecycle
+    // Cell split start event for parent
+    logEnhancedDiagnostic(
+        32u, // CELL_SPLIT_START
+        childAIndex, // Parent cell (childA takes parent's index)
+        childBIndex, // New child cell
+        0xFFFFFFFF, // No connection index
+        cell.modeIndex, // Parent's mode
+        1u, // Split event ID
+        childAIndex, // Parent cell ID
+        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
+        cell.age, float(mode.splitInterval) // Event values: actual age, split interval
+    );
+    
+    // Cell birth event for new child
+    logEnhancedDiagnostic(
+        30u, // CELL_BIRTH
+        childBIndex, // New child cell
+        0xFFFFFFFF, // No second cell
+        0xFFFFFFFF, // No connection index
+        childB.modeIndex, // Child's mode
+        1u, // Split event ID
+        childAIndex, // Parent cell ID
+        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
+        startAge, float(mode.splitInterval) // Event values: starting age, split interval
+    );
+    
+    // Cell split complete event for parent (now childA)
+    logEnhancedDiagnostic(
+        33u, // CELL_SPLIT_COMPLETE
+        childAIndex, // Parent cell (now childA)
+        childBIndex, // New child cell
+        0xFFFFFFFF, // No connection index
+        childA.modeIndex, // Parent's new mode
+        1u, // Split event ID
+        childAIndex, // Parent cell ID
+        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
+        startAge, float(mode.splitInterval) // Event values: starting age, split interval
+    );
 
     // Inherit adhesions for the new child cells
     for (int i = 0; i < 20; ++i) {

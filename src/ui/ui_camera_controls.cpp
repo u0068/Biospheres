@@ -75,12 +75,92 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     addTooltip("Enable distance-based culling and fading for cells far from camera");
     
     ImGui::Separator();
-    ImGui::Text("Diagnostics:");
-    if (ImGui::Button(cellManager.adhesionDiagnosticsRunning ? "Stop Adhesion Diagnostics" : "Run Adhesion Diagnostics"))
+    ImGui::Text("Enhanced Diagnostics:");
+    
+    // Main diagnostic toggle
+    if (ImGui::Button(cellManager.diagnosticsRunning ? "Stop Enhanced Diagnostics" : "Start Enhanced Diagnostics"))
     {
-        cellManager.toggleAdhesionDiagnostics();
+        cellManager.toggleEnhancedDiagnostics();
     }
-    addTooltip("Starts recording adhesion decisions, including inherited connections. Press again to stop and write a log file to the Logs folder.");
+    addTooltip("Start/stop comprehensive diagnostic recording including adhesion events, cell lifecycle, physics events, and genome tracking.");
+    
+    // Diagnostic settings (only show when diagnostics are running)
+    if (cellManager.diagnosticsRunning) {
+        ImGui::Indent();
+        
+        // Event type toggles
+        ImGui::Text("Event Types:");
+        ImGui::Checkbox("Adhesion Events", &cellManager.diagnosticState.adhesionEventsEnabled);
+        addTooltip("Record adhesion connection/disconnection events");
+        
+        ImGui::Checkbox("Cell Lifecycle Events", &cellManager.diagnosticState.cellLifecycleEventsEnabled);
+        addTooltip("Record cell birth, death, splitting, and mode changes");
+        
+        ImGui::Checkbox("Physics Events", &cellManager.diagnosticState.physicsEventsEnabled);
+        addTooltip("Record high velocity, acceleration, and physics instability events");
+        
+        ImGui::Checkbox("System Events", &cellManager.diagnosticState.systemEventsEnabled);
+        addTooltip("Record buffer overflows and performance warnings");
+        
+        ImGui::Checkbox("Genome Tracking", &cellManager.diagnosticState.genomeTrackingEnabled);
+        addTooltip("Track genome differences from default values for each cell");
+        
+        ImGui::Checkbox("Real-time Monitoring", &cellManager.diagnosticState.realTimeMonitoringEnabled);
+        addTooltip("Enable real-time performance threshold monitoring");
+        
+        // Performance thresholds (only show if physics events or real-time monitoring enabled)
+        if (cellManager.diagnosticState.physicsEventsEnabled || cellManager.diagnosticState.realTimeMonitoringEnabled) {
+            ImGui::Separator();
+            ImGui::Text("Performance Thresholds:");
+            
+            ImGui::DragFloat("Velocity Threshold", &cellManager.diagnosticState.velocityThreshold, 1.0f, 10.0f, 200.0f, "%.1f");
+            addTooltip("Velocity threshold for high velocity events");
+            
+            ImGui::DragFloat("Acceleration Threshold", &cellManager.diagnosticState.accelerationThreshold, 5.0f, 50.0f, 500.0f, "%.1f");
+            addTooltip("Acceleration threshold for high acceleration events");
+            
+            ImGui::DragFloat("Toxin Threshold", &cellManager.diagnosticState.toxinThreshold, 0.01f, 0.1f, 1.0f, "%.2f");
+            addTooltip("Toxin level threshold for instability events");
+        }
+        
+        // Buffer status
+        ImGui::Separator();
+        ImGui::Text("Buffer Status:");
+        float bufferUsage = 100.0f * cellManager.diagnosticState.currentEntries / cellManager.diagnosticState.maxEntries;
+        ImGui::ProgressBar(bufferUsage / 100.0f, ImVec2(-1, 0), (std::to_string(static_cast<int>(bufferUsage)) + "%").c_str());
+        
+        if (cellManager.diagnosticState.bufferOverflowOccurred) {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "WARNING: Buffer overflow occurred!");
+        }
+        
+        ImGui::Text("Entries: %u / %u", cellManager.diagnosticState.currentEntries, cellManager.diagnosticState.maxEntries);
+        
+        // Real-time event display
+        if (cellManager.diagnosticState.realTimeMonitoringEnabled) {
+            ImGui::Separator();
+            ImGui::Text("Recent Events:");
+            auto recentEvents = cellManager.getRecentEvents(10);
+            
+            if (recentEvents.empty()) {
+                ImGui::TextDisabled("No recent events");
+            } else {
+                ImGui::BeginChild("RecentEvents", ImVec2(0, 100), true);
+                for (const auto& event : recentEvents) {
+                    ImGui::TextWrapped("%s", event.c_str());
+                }
+                ImGui::EndChild();
+            }
+        }
+        
+        // Clear data button
+        ImGui::Separator();
+        if (ImGui::Button("Clear Diagnostic Data")) {
+            cellManager.clearDiagnosticData();
+        }
+        addTooltip("Clear all recorded diagnostic data and reset counters");
+        
+        ImGui::Unindent();
+    }
     
     // Sync settings with cell manager
             cellManager.useFrustumCulling = enableFrustumCulling;

@@ -1,5 +1,15 @@
 #pragma once
 #include <vector>
+#include <unordered_map>
+#include <string>
+#include <map>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <chrono>
+#include <ctime>
+#include <iostream>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include <cstddef> // for offsetof
@@ -198,69 +208,173 @@ struct CellManager
     Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
 
     // ============================================================================
-    // ADHESION DIAGNOSTICS (NEW)
+    // ENHANCED DIAGNOSTIC SYSTEM
     // ============================================================================
     
-    // Adhesion Reason Codes:
-    // 0  = Inherited        - Child inherits parent's connection during split
-    // 1  = Direct           - Normal new connection between cells
-    // 2  = Broken           - Connection broken due to force/distance
-    // 3  = Split_Event      - Original connection removed due to parent split
-    // 4  = Cell_Death       - Connection removed due to cell death
-    // 5  = Force_Break      - Connection broken by excessive force
-    // 6  = Distance_Break   - Connection broken by excessive distance
-    // 7  = Mode_Change      - Connection removed due to mode change
-    // 8  = Capacity_Full    - Connection failed due to cell adhesion capacity
-    // 9  = Invalid_Cells    - Connection failed due to invalid cell indices
-    // 10 = Duplicate        - Connection failed due to duplicate connection
-    // 11 = Self_Connection  - Connection failed due to self-connection attempt
-    // 12 = Out_Of_Bounds    - Connection failed due to out of bounds
-    // 13 = Adhesion_Limit   - Connection failed due to global adhesion limit
-    // 14 = Restore          - Connection restored from keyframe/save
-    // 15 = Manual_Remove    - Connection manually removed by user
-    // 16 = Collision_Break  - Connection broken due to collision
-    // 17 = Age_Break        - Connection broken due to cell age
-    // 18 = Toxin_Break      - Connection broken due to high toxins
-    // 19 = Signaling_Break  - Connection broken due to signaling
-    // 20 = Unknown_Error    - Connection failed for unknown reason
+    // Event Type Categories
+    enum class DiagnosticEventType : uint32_t {
+        // Adhesion Events (0-29)
+        ADHESION_INHERITED = 0,        // Child inherits parent's connection during split
+        ADHESION_DIRECT = 1,           // Normal new connection between cells
+        ADHESION_BROKEN = 2,           // Connection broken due to force/distance
+        ADHESION_SPLIT_EVENT = 3,      // Original connection removed due to parent split
+        ADHESION_CELL_DEATH = 4,       // Connection removed due to cell death
+        ADHESION_FORCE_BREAK = 5,      // Connection broken by excessive force
+        ADHESION_DISTANCE_BREAK = 6,   // Connection broken by excessive distance
+        ADHESION_MODE_CHANGE = 7,      // Connection removed due to mode change
+        ADHESION_CAPACITY_FULL = 8,    // Connection failed due to cell adhesion capacity
+        ADHESION_INVALID_CELLS = 9,    // Connection failed due to invalid cell indices
+        ADHESION_DUPLICATE = 10,       // Connection failed due to duplicate connection
+        ADHESION_SELF_CONNECTION = 11, // Connection failed due to self-connection attempt
+        ADHESION_OUT_OF_BOUNDS = 12,   // Connection failed due to out of bounds
+        ADHESION_LIMIT = 13,           // Connection failed due to global adhesion limit
+        ADHESION_RESTORE = 14,         // Connection restored from keyframe/save
+        ADHESION_MANUAL_REMOVE = 15,   // Connection manually removed by user
+        ADHESION_COLLISION_BREAK = 16, // Connection broken due to collision
+        ADHESION_AGE_BREAK = 17,       // Connection broken due to cell age
+        ADHESION_TOXIN_BREAK = 18,     // Connection broken due to high toxins
+        ADHESION_SIGNALING_BREAK = 19, // Connection broken due to signaling
+        ADHESION_UNKNOWN_ERROR = 20,   // Connection failed for unknown reason
+        
+        // Cell Lifecycle Events (30-59)
+        CELL_BIRTH = 30,               // New cell created
+        CELL_DEATH = 31,               // Cell died
+        CELL_SPLIT_START = 32,         // Cell begins splitting process
+        CELL_SPLIT_COMPLETE = 33,      // Cell split completed
+        CELL_MODE_CHANGE = 34,         // Cell changed mode
+        CELL_GENOME_MUTATION = 35,     // Cell genome mutated
+        CELL_COLLISION = 36,           // Cell collision detected
+        CELL_OUT_OF_BOUNDS = 37,       // Cell moved out of world bounds
+        CELL_SELECTED = 38,            // Cell selected by user
+        CELL_DRAGGED = 39,             // Cell being dragged by user
+        
+        // Physics Events (60-89)
+        PHYSICS_HIGH_VELOCITY = 60,    // Cell exceeded velocity threshold
+        PHYSICS_HIGH_ACCELERATION = 61, // Cell exceeded acceleration threshold
+        PHYSICS_CONSTRAINT_VIOLATION = 62, // Physics constraint violated
+        PHYSICS_INSTABILITY = 63,      // Physics instability detected
+        
+        // System Events (90-99)
+        SYSTEM_BUFFER_OVERFLOW = 90,   // Diagnostic buffer overflow
+        SYSTEM_PERFORMANCE_WARNING = 91, // Performance threshold exceeded
+        SYSTEM_ERROR = 99              // General system error
+    };
+
+    // Genome difference tracking structure
+    struct GenomeDifference {
+        std::string propertyName;
+        std::string defaultValue;
+        std::string currentValue;
+        float numericDifference; // For numeric values, 0 for non-numeric
+    };
 
 #pragma pack(push, 4)
-    struct AdhesionDiagnosticEntry {
-        uint32_t connectionIndex;     // 4 bytes
-        uint32_t cellA;               // 4 bytes
-        uint32_t cellB;               // 4 bytes
-        uint32_t modeIndex;           // 4 bytes
-        uint32_t reasonCode;          // 4 bytes
-        float _pad0;                  // 4 bytes padding to 16-byte alignment
-        float anchorDirA[3];          // 12 bytes (replacing glm::vec3)
-        float _pad1;                  // 4 bytes padding to 16-byte alignment
-        float anchorDirB[3];          // 12 bytes (replacing glm::vec3)
-        float _pad2;                  // 4 bytes padding to 16-byte alignment
-        uint32_t frameIndex;          // 4 bytes
-        uint32_t splitEventID;        // 4 bytes
-        uint32_t parentCellID;        // 4 bytes
-        uint32_t inheritanceType;     // 4 bytes
-        uint32_t originalConnectionIndex; // 4 bytes
-        float adhesionZone;           // 4 bytes
-        float _pad3;                  // 4 bytes padding to 16-byte alignment
-        float _pad4;                  // 4 bytes padding to 16-byte alignment
-        float _pad5;                  // 4 bytes padding to 16-byte alignment
-        float _pad6;                  // 4 bytes padding to 16-byte alignment
-        float _pad7;                  // 4 bytes padding to 16-byte alignment
-        float _pad8;                  // 4 bytes padding to 16-byte alignment
+    // Enhanced diagnostic entry with genome tracking
+    struct EnhancedDiagnosticEntry {
+        // Core event data
+        uint32_t eventType;           // DiagnosticEventType
+        uint32_t frameIndex;          // Frame when event occurred
+        uint32_t cellA;               // Primary cell involved
+        uint32_t cellB;               // Secondary cell (if applicable, -1 otherwise)
+        
+        // Event-specific data
+        uint32_t connectionIndex;     // For adhesion events
+        uint32_t modeIndex;           // Mode of primary cell
+        uint32_t splitEventID;        // Groups related split events
+        uint32_t parentCellID;        // For inheritance tracking
+        
+        // Spatial data
+        float positionA[3];           // Position of cell A
+        float positionB[3];           // Position of cell B (if applicable)
+        float anchorDirA[3];          // Anchor direction for cell A
+        float anchorDirB[3];          // Anchor direction for cell B
+        
+        // Physics data
+        float velocityA[3];           // Velocity of cell A
+        float velocityB[3];           // Velocity of cell B (if applicable)
+        float massA;                  // Mass of cell A
+        float massB;                  // Mass of cell B (if applicable)
+        
+        // Cell state data
+        float ageA;                   // Age of cell A
+        float ageB;                   // Age of cell B (if applicable)
+        float toxinsA;                // Toxin level of cell A
+        float toxinsB;                // Toxin level of cell B (if applicable)
+        float nitratesA;              // Nitrate level of cell A
+        float nitratesB;              // Nitrate level of cell B (if applicable)
+        
+        // Signaling substances
+        float signallingA[4];         // Signalling substances of cell A
+        float signallingB[4];         // Signalling substances of cell B
+        
+        // Additional event data
+        float eventValue1;            // Generic event-specific value 1
+        float eventValue2;            // Generic event-specific value 2
+        uint32_t eventFlags;          // Bit flags for event properties
+        
+        // Padding to ensure 16-byte alignment
+        float _padding[3];
     };
 #pragma pack(pop)
-    // Note: Structure size may vary by compiler, but should be 16-byte aligned for GPU compatibility
-    // static_assert(sizeof(AdhesionDiagnosticEntry) % 16 == 0, "AdhesionDiagnosticEntry must be 16-byte aligned");
+    static_assert(sizeof(EnhancedDiagnosticEntry) % 16 == 0, "EnhancedDiagnosticEntry must be 16-byte aligned");
 
-    GLuint adhesionDiagnosticBuffer{};    // SSBO for diagnostic entries
-    GLuint diagnosticCountBuffer{};       // SSBO single uint counter (at offset 0)
-    bool   adhesionDiagnosticsRunning{false};
+    // Diagnostic system state
+    struct DiagnosticSystemState {
+        bool adhesionEventsEnabled = true;
+        bool cellLifecycleEventsEnabled = true;
+        bool physicsEventsEnabled = false;
+        bool systemEventsEnabled = true;
+        bool genomeTrackingEnabled = true;
+        bool realTimeMonitoringEnabled = false;
+        
+        // Performance thresholds
+        float velocityThreshold = 50.0f;
+        float accelerationThreshold = 100.0f;
+        float toxinThreshold = 0.8f;
+        
+        // Buffer management
+        uint32_t maxEntries = 100000;
+        uint32_t currentEntries = 0;
+        bool bufferOverflowOccurred = false;
+    };
 
-    // Diagnostic control methods
-    void initializeAdhesionDiagnostics();
-    void toggleAdhesionDiagnostics();
-    void writeAdhesionDiagnosticLog();
+    // Diagnostic buffers and state
+    GLuint enhancedDiagnosticBuffer{};
+    GLuint diagnosticCountBuffer{};
+    DiagnosticSystemState diagnosticState{};
+    bool diagnosticsRunning{false};
+    
+    // Genome tracking
+    std::unordered_map<uint32_t, std::vector<GenomeDifference>> cellGenomeDifferences;
+    ModeSettings defaultModeSettings; // Reference for comparison
+    GenomeData currentGenome; // Current genome data
+    uint32_t currentFrame = 0; // Current simulation frame
+
+    // Enhanced diagnostic methods
+    void initializeEnhancedDiagnostics();
+    void toggleEnhancedDiagnostics();
+    void logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cellA, uint32_t cellB = UINT32_MAX, 
+                           uint32_t connectionIndex = UINT32_MAX, float eventValue1 = 0.0f, float eventValue2 = 0.0f);
+    void updateGenomeTracking(uint32_t cellIndex, const ModeSettings& currentMode);
+    void writeEnhancedDiagnosticLog();
+    void clearDiagnosticData();
+    std::vector<GenomeDifference> calculateGenomeDifferences(const ModeSettings& current, const ModeSettings& defaultMode);
+    
+    // Legacy adhesion diagnostic methods (for backward compatibility)
+    void initializeAdhesionDiagnostics() { initializeEnhancedDiagnostics(); }
+    void toggleAdhesionDiagnostics() { toggleEnhancedDiagnostics(); }
+    void writeAdhesionDiagnosticLog(); // Implementation in cpp file
+    
+    // Real-time monitoring
+    void updateRealTimeMonitoring();
+    void syncDiagnosticCounter();
+    std::vector<std::string> getRecentEvents(int maxEvents = 50);
+    
+    // Performance monitoring
+    void checkPerformanceThresholds();
+    
+    // Legacy compatibility flags
+    bool adhesionDiagnosticsRunning{false}; // Kept for compatibility, redirects to enhanced system
     
     void initializeGizmoBuffers();
     void updateGizmoData();
@@ -345,6 +459,9 @@ struct CellManager
     bool hasSelectedCell() const { return selectedCell.isValid; }
     const SelectedCellInfo &getSelectedCell() const { return selectedCell; }
     ComputeCell getCellData(int index) const;
+    uint32_t getCurrentFrame() const { return currentFrame; }
+    uint32_t getCurrentCellCount() const { return static_cast<uint32_t>(totalCellCount); }
+    const GenomeData& getGenomeData() const { return currentGenome; }
     void updateCellData(int index, const ComputeCell &newData); // Needs refactoring
 
     // Memory barrier optimization system
