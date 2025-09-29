@@ -39,15 +39,18 @@ struct ComputeCell {
         return pow(positionAndMass.w, 1.0f / 3.0f);
     }
     
-    // Generate lineage string in AA.BB.C format
+    // Generate lineage string in A.B.C format where:
+    // A = parent unique ID, B = cell unique ID, C = child number (1 or 2)
     std::string getLineageString() const
     {
         if (parentLineageId == 0) {
-            // Root cell - just show unique ID
-            return std::to_string(uniqueId);
+            // Root cell: parent ID=0, cell unique ID, child number=0
+            return std::to_string(0) + "." +
+                   std::to_string(uniqueId) + "." +
+                   std::to_string(0);
         }
-        return std::to_string(parentLineageId) + "." + 
-               std::to_string(uniqueId) + "." + 
+        return std::to_string(parentLineageId) + "." +
+               std::to_string(uniqueId) + "." +
                std::to_string(childNumber);
     }
 };

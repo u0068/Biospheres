@@ -245,12 +245,13 @@ struct CellManager
         CELL_DEATH = 31,               // Cell died
         CELL_SPLIT_START = 32,         // Cell begins splitting process
         CELL_SPLIT_COMPLETE = 33,      // Cell split completed
-        CELL_MODE_CHANGE = 34,         // Cell changed mode
-        CELL_GENOME_MUTATION = 35,     // Cell genome mutated
-        CELL_COLLISION = 36,           // Cell collision detected
-        CELL_OUT_OF_BOUNDS = 37,       // Cell moved out of world bounds
-        CELL_SELECTED = 38,            // Cell selected by user
-        CELL_DRAGGED = 39,             // Cell being dragged by user
+        CELL_REPLACED = 34,            // Parent cell replaced by children during split
+        CELL_MODE_CHANGE = 35,         // Cell changed mode
+        CELL_GENOME_MUTATION = 36,     // Cell genome mutated
+        CELL_COLLISION = 37,           // Cell collision detected
+        CELL_OUT_OF_BOUNDS = 38,       // Cell moved out of world bounds
+        CELL_SELECTED = 39,            // Cell selected by user
+        CELL_DRAGGED = 40,             // Cell being dragged by user
         
         // Physics Events (60-89)
         PHYSICS_HIGH_VELOCITY = 60,    // Cell exceeded velocity threshold
@@ -281,7 +282,7 @@ struct CellManager
         uint32_t cellA;               // Primary cell involved (index)
         uint32_t cellB;               // Secondary cell (if applicable, -1 otherwise) (index)
         
-        // Lineage tracking data is now handled via getLineageString() method
+        // Lineage tracking data stored directly for accurate historical logging
         
         // Event-specific data
         uint32_t connectionIndex;     // For adhesion events
@@ -313,13 +314,23 @@ struct CellManager
         float signallingA[4];         // Signalling substances of cell A
         float signallingB[4];         // Signalling substances of cell B
         
+        // Lineage data for cell A
+        uint32_t lineageA_parentId;   // Parent unique ID for cell A
+        uint32_t lineageA_uniqueId;   // Unique ID for cell A
+        uint32_t lineageA_childNum;   // Child number for cell A
+
+        // Lineage data for cell B
+        uint32_t lineageB_parentId;   // Parent unique ID for cell B
+        uint32_t lineageB_uniqueId;   // Unique ID for cell B
+        uint32_t lineageB_childNum;   // Child number for cell B
+
         // Additional event data
         float eventValue1;            // Generic event-specific value 1
         float eventValue2;            // Generic event-specific value 2
         uint32_t eventFlags;          // Bit flags for event properties
-        
-        // Padding to ensure 16-byte alignment (removed 4 uint32_t fields = 16 bytes)
-        float _padding[7];
+
+        // Padding to ensure 16-byte alignment (added 6 uint32_t fields = 24 bytes)
+        float _padding[1];
     };
 #pragma pack(pop)
     static_assert(sizeof(EnhancedDiagnosticEntry) % 16 == 0, "EnhancedDiagnosticEntry must be 16-byte aligned");

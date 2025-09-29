@@ -1387,53 +1387,91 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
     entry.eventValue1 = eventValue1;
     entry.eventValue2 = eventValue2;
     
-    // Get cell data if available
-    if (cellA < getCurrentCellCount()) {
+    // Get cell data if available and valid
+    if (cellA < getCurrentCellCount() && cellA < static_cast<int>(cpuCells.size())) {
         const ComputeCell& cell = getCellData(cellA);
-        entry.modeIndex = cell.modeIndex;
-        
-        entry.positionA[0] = cell.positionAndMass.x;
-        entry.positionA[1] = cell.positionAndMass.y;
-        entry.positionA[2] = cell.positionAndMass.z;
-        entry.velocityA[0] = cell.velocity.x;
-        entry.velocityA[1] = cell.velocity.y;
-        entry.velocityA[2] = cell.velocity.z;
-        entry.massA = cell.positionAndMass.w;
-        entry.ageA = cell.age;
-        entry.toxinsA = cell.toxins;
-        entry.nitratesA = cell.nitrates;
-        for (int i = 0; i < 4; i++) {
-            entry.signallingA[i] = cell.signallingSubstances[i];
+
+        // Skip if this is an invalid/empty cell (uniqueId == 0 indicates invalid cell)
+        if (cell.uniqueId == 0) {
+            // For system events or invalid cells, initialize lineage data to invalid values
+            entry.lineageA_parentId = UINT32_MAX;
+            entry.lineageA_uniqueId = UINT32_MAX;
+            entry.lineageA_childNum = UINT32_MAX;
+        } else {
+            entry.modeIndex = cell.modeIndex;
+
+            // Store lineage data for cell A
+            entry.lineageA_parentId = cell.parentLineageId;
+            entry.lineageA_uniqueId = cell.uniqueId;
+            entry.lineageA_childNum = cell.childNumber;
+
+            entry.positionA[0] = cell.positionAndMass.x;
+            entry.positionA[1] = cell.positionAndMass.y;
+            entry.positionA[2] = cell.positionAndMass.z;
+            entry.velocityA[0] = cell.velocity.x;
+            entry.velocityA[1] = cell.velocity.y;
+            entry.velocityA[2] = cell.velocity.z;
+            entry.massA = cell.positionAndMass.w;
+            entry.ageA = cell.age;
+            entry.toxinsA = cell.toxins;
+            entry.nitratesA = cell.nitrates;
+            for (int i = 0; i < 4; i++) {
+                entry.signallingA[i] = cell.signallingSubstances[i];
+            }
+
+            // Update genome tracking if enabled
+            if (diagnosticState.genomeTrackingEnabled && cell.modeIndex < getGenomeData().modes.size()) {
+                updateGenomeTracking(cellA, getGenomeData().modes[cell.modeIndex]);
+            }
+
+            // Update lineage tracking if enabled
+            if (diagnosticState.lineageTrackingEnabled) {
+                updateLineageTracking(cellA);
+            }
         }
-        
-        // Update genome tracking if enabled
-        if (diagnosticState.genomeTrackingEnabled && cell.modeIndex < getGenomeData().modes.size()) {
-            updateGenomeTracking(cellA, getGenomeData().modes[cell.modeIndex]);
-        }
-        
-        // Update lineage tracking if enabled
-        if (diagnosticState.lineageTrackingEnabled) {
-            updateLineageTracking(cellA);
-        }
+    } else {
+        // Invalid cell index, initialize lineage data to invalid values
+        entry.lineageA_parentId = UINT32_MAX;
+        entry.lineageA_uniqueId = UINT32_MAX;
+        entry.lineageA_childNum = UINT32_MAX;
     }
     
     // Get second cell data if applicable
-    if (cellB != UINT32_MAX && cellB < getCurrentCellCount()) {
+    if (cellB != UINT32_MAX && cellB < getCurrentCellCount() && cellB < static_cast<int>(cpuCells.size())) {
         const ComputeCell& cell = getCellData(cellB);
-        
-        entry.positionB[0] = cell.positionAndMass.x;
-        entry.positionB[1] = cell.positionAndMass.y;
-        entry.positionB[2] = cell.positionAndMass.z;
-        entry.velocityB[0] = cell.velocity.x;
-        entry.velocityB[1] = cell.velocity.y;
-        entry.velocityB[2] = cell.velocity.z;
-        entry.massB = cell.positionAndMass.w;
-        entry.ageB = cell.age;
-        entry.toxinsB = cell.toxins;
-        entry.nitratesB = cell.nitrates;
-        for (int i = 0; i < 4; i++) {
-            entry.signallingB[i] = cell.signallingSubstances[i];
+
+        // Skip if this is an invalid/empty cell (uniqueId == 0 indicates invalid cell)
+        if (cell.uniqueId == 0) {
+            // For invalid cells, initialize lineage data to invalid values
+            entry.lineageB_parentId = UINT32_MAX;
+            entry.lineageB_uniqueId = UINT32_MAX;
+            entry.lineageB_childNum = UINT32_MAX;
+        } else {
+            // Store lineage data for cell B
+            entry.lineageB_parentId = cell.parentLineageId;
+            entry.lineageB_uniqueId = cell.uniqueId;
+            entry.lineageB_childNum = cell.childNumber;
+
+            entry.positionB[0] = cell.positionAndMass.x;
+            entry.positionB[1] = cell.positionAndMass.y;
+            entry.positionB[2] = cell.positionAndMass.z;
+            entry.velocityB[0] = cell.velocity.x;
+            entry.velocityB[1] = cell.velocity.y;
+            entry.velocityB[2] = cell.velocity.z;
+            entry.massB = cell.positionAndMass.w;
+            entry.ageB = cell.age;
+            entry.toxinsB = cell.toxins;
+            entry.nitratesB = cell.nitrates;
+            for (int i = 0; i < 4; i++) {
+                entry.signallingB[i] = cell.signallingSubstances[i];
+            }
         }
+    }
+    else {
+        // Initialize cell B lineage data to invalid values
+        entry.lineageB_parentId = UINT32_MAX;
+        entry.lineageB_uniqueId = UINT32_MAX;
+        entry.lineageB_childNum = UINT32_MAX;
     }
     
     // Write to GPU buffer
@@ -1601,6 +1639,9 @@ void CellManager::clearDiagnosticData()
 
 void CellManager::writeEnhancedDiagnosticLog()
 {
+    // Ensure diagnostic counter is synchronized before reading
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
     // Read counter from GPU buffer (GPU writes to this)
     uint32_t gpuCount = 0;
     glGetNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &gpuCount);
@@ -1623,9 +1664,14 @@ void CellManager::writeEnhancedDiagnosticLog()
 
     std::cout << "[Enhanced Diagnostics] Reading " << count << " entries (GPU: " << gpuCount << ", CPU: " << diagnosticState.currentEntries << ")\n";
 
+    // Ensure all GPU buffers are synchronized before reading
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+
     // Read diagnostic buffer
     std::vector<EnhancedDiagnosticEntry> entries(count);
-    glGetNamedBufferSubData(enhancedDiagnosticBuffer, 0, count * sizeof(EnhancedDiagnosticEntry), entries.data());
+    if (count > 0) {
+        glGetNamedBufferSubData(enhancedDiagnosticBuffer, 0, count * sizeof(EnhancedDiagnosticEntry), entries.data());
+    }
 
     // Prepare log path
     namespace fs = std::filesystem;
@@ -1664,9 +1710,21 @@ void CellManager::writeEnhancedDiagnosticLog()
      ofs << "# - Lineage Tracking: " << (diagnosticState.lineageTrackingEnabled ? "ENABLED" : "DISABLED") << "\n";
      ofs << "# \n";
      ofs << "# LINEAGE ID FORMAT:\n";
-     ofs << "# - Format: A.B.C where A=parent ID, B=cell unique ID, C=child number (1 or 2)\n";
-     ofs << "# - Root cells (no parent): just show unique ID (e.g., \"5\")\n";
-     ofs << "# - Child cells: show full lineage (e.g., \"5.12.1\" = child 1 of cell 12, whose parent is 5)\n";
+     ofs << "# - Format: A.B.C where:\n";
+     ofs << "#   • A = parent unique ID (unique ID of the cell's parent, 0 for root cells)\n";
+     ofs << "#   • B = cell unique ID (unique ID assigned to this specific cell)\n";
+     ofs << "#   • C = child number (1 or 2 for split children, 0 for root cells)\n";
+     ofs << "# \n";
+     ofs << "# - Root cells: A=0, B=unique ID, C=0 (e.g., \"0.1.0\" = first root cell)\n";
+     ofs << "# - Child cells: A=parent's unique ID, B=cell unique ID, C=child number\n";
+     ofs << "#   Example: \"1.2.1\" = child 1 of cell with unique ID 1\n";
+     ofs << "# \n";
+     ofs << "# - Lineage Evolution Examples:\n";
+     ofs << "#   • Root cell \"0.1.0\" splits → produces \"1.2.1\" and \"1.3.2\"\n";
+     ofs << "#   • Cell \"1.2.1\" splits → produces \"2.4.1\" and \"2.5.2\"\n";
+     ofs << "#   • Cell \"1.3.2\" splits → produces \"3.6.1\" and \"3.7.2\"\n";
+     ofs << "# \n";
+     ofs << "# - This system allows complete lineage tracing while maintaining unique cell identification.\n";
      ofs << "# \n";
      ofs << "# EVENT TYPE LEGEND:\n";
     ofs << "# === ADHESION EVENTS (0-29) ===\n";
@@ -1697,12 +1755,13 @@ void CellManager::writeEnhancedDiagnosticLog()
     ofs << "# 31 = CELL_DEATH               - Cell died\n";
     ofs << "# 32 = CELL_SPLIT_START         - Cell begins splitting process\n";
     ofs << "# 33 = CELL_SPLIT_COMPLETE      - Cell split completed\n";
-    ofs << "# 34 = CELL_MODE_CHANGE         - Cell changed mode\n";
-    ofs << "# 35 = CELL_GENOME_MUTATION     - Cell genome mutated\n";
-    ofs << "# 36 = CELL_COLLISION           - Cell collision detected\n";
-    ofs << "# 37 = CELL_OUT_OF_BOUNDS       - Cell moved out of world bounds\n";
-    ofs << "# 38 = CELL_SELECTED            - Cell selected by user\n";
-    ofs << "# 39 = CELL_DRAGGED             - Cell being dragged by user\n";
+    ofs << "# 34 = CELL_REPLACED            - Parent cell replaced by children during split\n";
+    ofs << "# 35 = CELL_MODE_CHANGE         - Cell changed mode\n";
+    ofs << "# 36 = CELL_GENOME_MUTATION     - Cell genome mutated\n";
+    ofs << "# 37 = CELL_COLLISION           - Cell collision detected\n";
+    ofs << "# 38 = CELL_OUT_OF_BOUNDS       - Cell moved out of world bounds\n";
+    ofs << "# 39 = CELL_SELECTED            - Cell selected by user\n";
+    ofs << "# 40 = CELL_DRAGGED             - Cell being dragged by user\n";
     ofs << "# \n";
     ofs << "# === PHYSICS EVENTS (60-89) ===\n";
     ofs << "# 60 = PHYSICS_HIGH_VELOCITY    - Cell exceeded velocity threshold\n";
@@ -1717,7 +1776,7 @@ void CellManager::writeEnhancedDiagnosticLog()
     ofs << "# ============================================================================\n\n";
     
     // Write CSV header for main data (simplified format focusing on lineage tracking)
-    ofs << "EventType,EventName,Frame,CellA_Index,CellB_Index,CellA_Lineage,CellB_Lineage,";
+    ofs << "EventType,EventName,Frame,CellA_Lineage,CellB_Lineage,";
     ofs << "ConnectionIndex,ModeIndex,SplitEventID,ParentCellID,";
     ofs << "PosA_X,PosA_Y,PosA_Z,PosB_X,PosB_Y,PosB_Z,";
     ofs << "VelA_X,VelA_Y,VelA_Z,VelB_X,VelB_Y,VelB_Z,";
@@ -1756,12 +1815,13 @@ void CellManager::writeEnhancedDiagnosticLog()
             case 31: return "CELL_DEATH";
             case 32: return "CELL_SPLIT_START";
             case 33: return "CELL_SPLIT_COMPLETE";
-            case 34: return "CELL_MODE_CHANGE";
-            case 35: return "CELL_GENOME_MUTATION";
-            case 36: return "CELL_COLLISION";
-            case 37: return "CELL_OUT_OF_BOUNDS";
-            case 38: return "CELL_SELECTED";
-            case 39: return "CELL_DRAGGED";
+            case 34: return "CELL_REPLACED";
+            case 35: return "CELL_MODE_CHANGE";
+            case 36: return "CELL_GENOME_MUTATION";
+            case 37: return "CELL_COLLISION";
+            case 38: return "CELL_OUT_OF_BOUNDS";
+            case 39: return "CELL_SELECTED";
+            case 40: return "CELL_DRAGGED";
             // Physics events
             case 60: return "PHYSICS_HIGH_VELOCITY";
             case 61: return "PHYSICS_HIGH_ACCELERATION";
@@ -1778,22 +1838,40 @@ void CellManager::writeEnhancedDiagnosticLog()
     // Write all entries
     for (const auto& e : entries) {
         ofs << e.eventType << "," << getEventName(e.eventType) << "," << e.frameIndex << ",";
-        ofs << e.cellA << "," << e.cellB << ",";
         
-        // Generate lineage strings for both cells using the A.B.C format
+        // Generate lineage strings for both cells using the stored A.B.C data
         std::string lineageA = "";
         std::string lineageB = "";
-        
-        if (e.cellA < getCurrentCellCount()) {
-            const ComputeCell& cellA = getCellData(e.cellA);
-            lineageA = cellA.getLineageString();
+
+        // Use stored lineage data from when the event occurred
+        if (e.lineageA_parentId != UINT32_MAX) {
+            if (e.lineageA_parentId == 0) {
+                // Root cell: A=0, B=unique ID, C=0
+                lineageA = std::to_string(0) + "." +
+                          std::to_string(e.lineageA_uniqueId) + "." +
+                          std::to_string(0);
+            } else {
+                // Child cell: A=parent ID, B=unique ID, C=child number
+                lineageA = std::to_string(e.lineageA_parentId) + "." +
+                          std::to_string(e.lineageA_uniqueId) + "." +
+                          std::to_string(e.lineageA_childNum);
+            }
         }
-        
-        if (e.cellB != UINT32_MAX && e.cellB < getCurrentCellCount()) {
-            const ComputeCell& cellB = getCellData(e.cellB);
-            lineageB = cellB.getLineageString();
+
+        if (e.lineageB_parentId != UINT32_MAX) {
+            if (e.lineageB_parentId == 0) {
+                // Root cell: A=0, B=unique ID, C=0
+                lineageB = std::to_string(0) + "." +
+                          std::to_string(e.lineageB_uniqueId) + "." +
+                          std::to_string(0);
+            } else {
+                // Child cell: A=parent ID, B=unique ID, C=child number
+                lineageB = std::to_string(e.lineageB_parentId) + "." +
+                          std::to_string(e.lineageB_uniqueId) + "." +
+                          std::to_string(e.lineageB_childNum);
+            }
         }
-        
+
         ofs << lineageA << "," << lineageB << ",";
         ofs << e.connectionIndex << "," << e.modeIndex << ",";
         ofs << e.splitEventID << "," << e.parentCellID << ",";
@@ -1830,19 +1908,17 @@ void CellManager::writeEnhancedDiagnosticLog()
         ofs << "# GENOME DIFFERENCES FROM DEFAULT\n";
         ofs << "# ============================================================================\n";
         ofs << "# This section shows genome settings that differ from default values for each cell\n";
-        ofs << "# Format: CellIndex,PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
+        ofs << "# Format: PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
         ofs << "# ============================================================================\n\n";
-        
-        ofs << "CellIndex,PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
+
+        ofs << "PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
         
         for (const auto& cellPair : cellGenomeDifferences) {
-            uint32_t cellIndex = cellPair.first;
             const auto& differences = cellPair.second;
-            
+
             if (!differences.empty()) {
-                ofs << "\n# === CELL " << cellIndex << " GENOME DIFFERENCES ===\n";
                 for (const auto& diff : differences) {
-                    ofs << cellIndex << "," << diff.propertyName << ",";
+                    ofs << diff.propertyName << ",";
                     ofs << "\"" << diff.defaultValue << "\",\"" << diff.currentValue << "\",";
                     ofs << diff.numericDifference << "\n";
                 }
@@ -1913,6 +1989,9 @@ void CellManager::syncDiagnosticCounter()
 {
     if (!diagnosticsRunning) return;
     
+    // Ensure diagnostic counter is synchronized before reading
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
     // Read the current count from GPU buffer
     uint32_t gpuCount = 0;
     glGetNamedBufferSubData(diagnosticCountBuffer, 0, sizeof(uint32_t), &gpuCount);
