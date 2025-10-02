@@ -66,12 +66,15 @@ struct AdhesionConnection {
     uint cellBIndex;      // Index of second cell in the connection
     uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    uint zoneA;           // Zone classification for cell A (0=ZoneA, 1=ZoneB, 2=ZoneC)
+    uint zoneB;           // Zone classification for cell B (0=ZoneA, 1=ZoneB, 2=ZoneC)
     vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
     float paddingA;       // Padding to ensure 16-byte alignment
     vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
     float paddingB;       // Padding to ensure 16-byte alignment
     vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
     vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
+    uint _padding[2];     // Padding to ensure 16-byte alignment (96 bytes total)
 };
 
 // Enhanced diagnostic entry structure - matches C++ EnhancedDiagnosticEntry
@@ -81,25 +84,25 @@ struct EnhancedDiagnosticEntry {
     uint frameIndex;          // Frame when event occurred
     uint cellA;               // Primary cell involved
     uint cellB;               // Secondary cell (if applicable, -1 otherwise)
-    
+
     // Event-specific data
     uint connectionIndex;     // For adhesion events
     uint modeIndex;           // Mode of primary cell
     uint splitEventID;        // Groups related split events
     uint parentCellID;        // For inheritance tracking
-    
+
     // Spatial data
     float positionA[3];       // Position of cell A
     float positionB[3];       // Position of cell B (if applicable)
     float anchorDirA[3];      // Anchor direction for cell A
     float anchorDirB[3];      // Anchor direction for cell B
-    
+
     // Physics data
     float velocityA[3];       // Velocity of cell A
     float velocityB[3];       // Velocity of cell B (if applicable)
     float massA;              // Mass of cell A
     float massB;              // Mass of cell B (if applicable)
-    
+
     // Cell state data
     float ageA;               // Age of cell A
     float ageB;               // Age of cell B (if applicable)
@@ -107,7 +110,7 @@ struct EnhancedDiagnosticEntry {
     float toxinsB;            // Toxin level of cell B (if applicable)
     float nitratesA;          // Nitrate level of cell A
     float nitratesB;          // Nitrate level of cell B (if applicable)
-    
+
     // Signaling substances
     float signallingA[4];     // Signalling substances of cell A
     float signallingB[4];     // Signalling substances of cell B
@@ -189,6 +192,22 @@ vec4 quatMultiply(vec4 q1, vec4 q2) {
     );
 }
 
+// Classify bond direction into zones (A, B, C) based on angle from split direction
+// Based on Unity CellAdhesionManager classification logic
+uint classifyBondDirection(vec3 bondDirLocal, vec3 splitDirLocal, float inheritanceAngleDeg) {
+    float dot = dot(bondDirLocal, splitDirLocal);
+    float angle = acos(clamp(dot, -1.0, 1.0)) * 180.0 / 3.141592653589793; // Convert to degrees
+    float halfWidth = inheritanceAngleDeg * 1.0;
+    float equatorialAngle = 90.0;
+
+    if (abs(angle - equatorialAngle) <= halfWidth)
+        return 2u; // Zone C (equatorial)
+    else if (dot > 0.0)
+        return 1u; // Zone B (positive dot product)
+    else
+        return 0u; // Zone A (negative dot product)
+}
+
 vec3 rotateVectorByQuaternion(vec3 v, vec4 q) {
     // v' = q * v * q^-1
     // Optimized version using cross product:
@@ -244,13 +263,13 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
                           uint modeIndex, uint splitEventID, uint parentCellLineageId,
                           vec3 anchorDirA, vec3 anchorDirB, float eventValue1, float eventValue2, uint eventFlags) {
     if (u_enableAdhesionDiagnostics == 0) return;
-    
+
     // Atomically increment the counter and get the index
     uint index = atomicAdd(diagnosticCount, 1u);
-    
+
     // Check if we have space in the buffer
     if (index >= diagnosticEntries.length()) return;
-    
+
     // Create the enhanced diagnostic entry
     EnhancedDiagnosticEntry entry;
 
@@ -350,7 +369,7 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.massB = 0.0f; entry.ageB = 0.0f; entry.toxinsB = 0.0f; entry.nitratesB = 0.0f;
         entry.signallingB[0] = 0.0f; entry.signallingB[1] = 0.0f; entry.signallingB[2] = 0.0f; entry.signallingB[3] = 0.0f;
     }
-    
+
     // Anchor directions
     entry.anchorDirA[0] = anchorDirA.x;
     entry.anchorDirA[1] = anchorDirA.y;
@@ -358,17 +377,17 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
     entry.anchorDirB[0] = anchorDirB.x;
     entry.anchorDirB[1] = anchorDirB.y;
     entry.anchorDirB[2] = anchorDirB.z;
-    
+
     // Event values
     entry.eventValue1 = eventValue1;
     entry.eventValue2 = eventValue2;
     entry.eventFlags = eventFlags;
-    
+
     // Padding (7 floats for 16-byte alignment)
     for (int i = 0; i < 7; i++) {
         entry._padding[i] = 0.0f;
     }
-    
+
     // Write the entry to the buffer
     diagnosticEntries[index] = entry;
 }
@@ -457,22 +476,45 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     vec4 twistReferenceA = inputCells[cellAIndex].orientation;
     vec4 twistReferenceB = inputCells[cellBIndex].orientation;
 
+    // Classify zones for both cells based on their split directions
+    ComputeCell cellA = inputCells[cellAIndex];
+    ComputeCell cellB = inputCells[cellBIndex];
+    GPUMode modeA = modes[cellA.modeIndex];
+    GPUMode modeB = modes[cellB.modeIndex];
+
+    // Extract positions for zone classification
+    vec3 posA = cellA.positionAndMass.xyz;
+    vec3 posB = cellB.positionAndMass.xyz;
+
+    // Classify zone for cell A (direction from A to B in A's local space)
+    vec3 bondDirFromA = normalize(posB - posA);
+    vec3 bondDirLocalA = rotateVectorByQuaternion(bondDirFromA, quatInverse(cellA.orientation));
+    uint zoneA = classifyBondDirection(bondDirLocalA, modeA.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
+
+    // Classify zone for cell B (direction from B to A in B's local space)
+    vec3 bondDirFromB = normalize(posA - posB);
+    vec3 bondDirLocalB = rotateVectorByQuaternion(bondDirFromB, quatInverse(cellB.orientation));
+    uint zoneB = classifyBondDirection(bondDirLocalB, modeB.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
+
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
         cellBIndex,
         modeIndex,
-        1,
+        1, // isActive
+        zoneA,
+        zoneB,
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
         0.0, // paddingB
         twistReferenceA,
-        twistReferenceB
+        twistReferenceB,
+        uint[2](0u, 0u) // padding to ensure 16-byte alignment
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
-    
+
     return int(newAdhesionIndex);
 }
 
@@ -513,16 +555,16 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     // Use spatial calculation since this is called immediately after split when positions are correct
     vec3 posA = inputCells[cellAIndex].positionAndMass.xyz;
     vec3 posB = inputCells[cellBIndex].positionAndMass.xyz;
-    
+
     // Calculate direction vectors from each cell to the other in world space
     vec3 directionAtoB = normalize(posB - posA);
     vec3 directionBtoA = normalize(posA - posB);
-    
+
     // Transform world space directions to local cell space using inverse cell orientations
     // This ensures anchors are stored relative to the cell's local coordinate system
     vec4 invOrientationA = quatInverse(inputCells[cellAIndex].orientation);
     vec4 invOrientationB = quatInverse(inputCells[cellBIndex].orientation);
-    
+
     vec3 anchorDirectionA = rotateVectorByQuaternion(directionAtoB, invOrientationA);
     vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, invOrientationB);
 
@@ -530,22 +572,43 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     vec4 twistReferenceA = inputCells[cellAIndex].orientation;
     vec4 twistReferenceB = inputCells[cellBIndex].orientation;
 
+    // Classify zones for both cells based on their split directions
+    ComputeCell cellA = inputCells[cellAIndex];
+    ComputeCell cellB = inputCells[cellBIndex];
+    GPUMode modeA = modes[cellA.modeIndex];
+    GPUMode modeB = modes[cellB.modeIndex];
+
+    // Use already declared position variables for zone classification
+
+    // Classify zone for cell A (direction from A to B in A's local space)
+    vec3 bondDirFromA = normalize(posB - posA);
+    vec3 bondDirLocalA = rotateVectorByQuaternion(bondDirFromA, quatInverse(cellA.orientation));
+    uint zoneA = classifyBondDirection(bondDirLocalA, modeA.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
+
+    // Classify zone for cell B (direction from B to A in B's local space)
+    vec3 bondDirFromB = normalize(posA - posB);
+    vec3 bondDirLocalB = rotateVectorByQuaternion(bondDirFromB, quatInverse(cellB.orientation));
+    uint zoneB = classifyBondDirection(bondDirLocalB, modeB.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
+
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
         cellBIndex,
         modeIndex,
-        1,
+        1, // isActive
+        zoneA,
+        zoneB,
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
         0.0, // paddingB
         twistReferenceA,
-        twistReferenceB
+        twistReferenceB,
+        uint[2](0u, 0u) // padding to ensure 16-byte alignment
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
-    
+
     // Log diagnostic entry for direct adhesion creation
     logAdhesionDiagnostic(
         newAdhesionIndex, getLineageIdFromIndex(cellAIndex), getLineageIdFromIndex(cellBIndex), modeIndex,
@@ -554,7 +617,7 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         uint(u_currentFrame), 0u, // frameIndex, splitEventID (0 for direct)
         0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
     );
-    
+
     return true;
 }
 
@@ -649,7 +712,7 @@ void main() {
             return;
         }
     }
-    
+
     // CRITICAL FIX: Replace atomic splitting with safer reservation system
     // First, check if we have space for a new cell
     uint currentCount = totalCellCount;
@@ -661,7 +724,7 @@ void main() {
     
     // Try to reserve a slot atomically
     uint newIndex = atomicAdd(totalCellCount, 1);
-    
+
     // Check if we successfully got a valid slot
     if (newIndex >= u_maxCells) {
         // We exceeded the limit, rollback and cancel
@@ -669,10 +732,10 @@ void main() {
         outputCells[index] = cell;
         return;
     }
-    
+
     // Successfully reserved a slot, increment live count
     atomicAdd(liveCellCount, 1);
-    
+
     // CRITICAL FIX: Add memory barrier to ensure atomic operations are complete
     memoryBarrierBuffer();
     
@@ -734,7 +797,7 @@ void main() {
     for (int i = 0; i < 20; ++i) {
         childB.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
-    
+
     // Store new cells
     outputCells[childAIndex] = childA;
     outputCells[childBIndex] = childB;
@@ -855,30 +918,33 @@ void main() {
         // Determine which anchor direction to use based on parent's role in the connection
         bool isParentCellA = (oldConnection.cellAIndex == childAIndex); // childAIndex is same as parent index
         vec3 localAnchorDirection = isParentCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
-        
-        // Genome-only zone test: compare in parent-local space
-        float adhesionZone = dot(localAnchorDirection, mode.splitDirection.xyz);
-        // Make selection disjoint to avoid double-inheritance. Use sign only.
-        // adhesionZone >= 0 => Child A side, adhesionZone < 0 => Child B side
 
-        // Create proper cousin pairing: A1↔B1 and A2↔B2, avoiding cross connections
-        // Use both parent's and neighbor's split directions to determine correct inheritance
-        
-        // Get neighbor's mode to access its split direction
-        ComputeCell neighborCell = inputCells[neighborIndex];
-        GPUMode neighborMode = modes[neighborCell.modeIndex];
-        
-        // Determine which child should inherit based on both split directions
-        // Parent's split direction determines which of our children inherits
-        bool childAInherits = (adhesionZone >= 0.0);
-        bool childBInherits = (adhesionZone < 0.0);
+        // Use the stored zone information from the original connection instead of recalculating
+        // The original connection already has the correct zone classification
+        uint parentZone = isParentCellA ? oldConnection.zoneA : oldConnection.zoneB;
+
+        // Apply Zone C inheritance logic: Zone C bonds can go to both children, polar bonds go to specific children
+        bool childAInherits = false;
+        bool childBInherits = false;
+
+        if (parentZone == 2u) { // Zone C - can go to both children if they both want to keep adhesion
+            childAInherits = (mode.childAKeepAdhesion == 1);
+            childBInherits = (mode.childBKeepAdhesion == 1);
+        } else if (parentZone == 1u) { // Zone B - goes to Child A if it wants to keep adhesion
+            childAInherits = (mode.childAKeepAdhesion == 1);
+        } else { // Zone A - goes to Child B if it wants to keep adhesion
+            childBInherits = (mode.childBKeepAdhesion == 1);
+        }
         
         // Determine neighbor's role in the original connection
         bool neighborWasCellA = (oldConnection.cellAIndex == neighborIndex);
         vec3 neighborAnchorDirection = neighborWasCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
 
-        // Only one child inherits each connection to avoid cross connections
-        if (mode.childAKeepAdhesion == 1 && childAInherits) {
+        // Create new adhesion connections for inheriting children
+        // Zone C bonds can create connections for both children, polar bonds create connections for specific children
+
+        // Child A inheritance
+        if (childAInherits) {
             // Genome-only transform: rotate parent's local anchor into child A's local space via inverse of delta quat
             vec4 invDeltaA = quatInverse(mode.orientationA);
             vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaA);
@@ -904,10 +970,12 @@ void main() {
                 neighborWasCellA ? neighborAnchorDirection : childAnchorDirection,
                 neighborWasCellA ? childAnchorDirection : neighborAnchorDirection,
                 uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
-                getLineageIdFromIndex(index), 1u, uint(oldAdhesionIndex), adhesionZone // original parentCellID, inheritanceType (1=childA_keeps), originalConnectionIndex, adhesionZone
+                getLineageIdFromIndex(index), 1u, uint(oldAdhesionIndex), float(parentZone) // original parentCellID, inheritanceType (1=childA_keeps), originalConnectionIndex, adhesionZone
             );
         }
-        else if (mode.childBKeepAdhesion == 1 && childBInherits) {
+
+        // Child B inheritance (Zone C bonds can also create this)
+        if (childBInherits) {
             // Genome-only transform: rotate parent's local anchor into child B's local space via inverse of delta quat
             vec4 invDeltaB = quatInverse(mode.orientationB);
             vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaB);
@@ -933,14 +1001,65 @@ void main() {
                 neighborWasCellA ? neighborAnchorDirection : childAnchorDirection,
                 neighborWasCellA ? childAnchorDirection : neighborAnchorDirection,
                 uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
-                getLineageIdFromIndex(index), 2u, uint(oldAdhesionIndex), adhesionZone // original parentCellID, inheritanceType (2=childB_keeps), originalConnectionIndex, adhesionZone
+                getLineageIdFromIndex(index), 2u, uint(oldAdhesionIndex), float(parentZone) // original parentCellID, inheritanceType (2=childB_keeps), originalConnectionIndex, adhesionZone
             );
         }
     }
-    
+
     // Now we need to add the adhesion connection between the children
     if (mode.parentMakeAdhesion == 0)  return;
-    
-    // Create a new adhesion connection between the two children
-    if (!addAdhesion(childAIndex, childBIndex, cell.modeIndex)) return;
+
+    // Create a new adhesion connection between the two children with Zone C classification
+    // Child-to-child bonds are always Zone C ↔ Zone C since they're created by the parent
+    vec3 posA = outputCells[childAIndex].positionAndMass.xyz;
+    vec3 posB = outputCells[childBIndex].positionAndMass.xyz;
+
+    // Calculate initial anchor directions in local cell space
+    vec3 directionAtoB = normalize(posB - posA);
+    vec3 anchorDirectionA = rotateVectorByQuaternion(directionAtoB, quatInverse(outputCells[childAIndex].orientation));
+
+    vec3 directionBtoA = normalize(posA - posB);
+    vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, quatInverse(outputCells[childBIndex].orientation));
+
+    uint childToChildConnectionIndex = getNewAdhesionIndex();
+    if (childToChildConnectionIndex == uint(-1)) return;
+
+    // Create child-to-child adhesion connection with Zone C classification for both cells
+    connections[childToChildConnectionIndex] = AdhesionConnection(
+        childAIndex,
+        childBIndex,
+        cell.modeIndex,
+        1, // isActive
+        2u, // zoneA: Zone C (child-to-child bonds are always Zone C)
+        2u, // zoneB: Zone C (child-to-child bonds are always Zone C)
+        anchorDirectionA,
+        0.0, // paddingA
+        anchorDirectionB,
+        0.0, // paddingB
+        outputCells[childAIndex].orientation,
+        outputCells[childBIndex].orientation,
+        uint[2](0u, 0u) // padding to ensure 16-byte alignment
+    );
+
+    // Assign to cell adhesion slots (find available slots)
+    int slotA = -1, slotB = -1;
+    for (int j = 0; j < 20; ++j) {
+        if (outputCells[childAIndex].adhesionIndices[j] < 0 && slotA == -1) slotA = j;
+        if (outputCells[childBIndex].adhesionIndices[j] < 0 && slotB == -1) slotB = j;
+        if (slotA != -1 && slotB != -1) break;
+    }
+
+    if (slotA != -1 && slotB != -1) {
+        outputCells[childAIndex].adhesionIndices[slotA] = int(childToChildConnectionIndex);
+        outputCells[childBIndex].adhesionIndices[slotB] = int(childToChildConnectionIndex);
+
+        // Log diagnostic entry for child-to-child adhesion
+        logAdhesionDiagnostic(
+            childToChildConnectionIndex, getLineageIdFromIndex(childAIndex), getLineageIdFromIndex(childBIndex), cell.modeIndex,
+            3, // reasonCode: ChildToChild
+            anchorDirectionA, anchorDirectionB,
+            uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
+            getLineageIdFromIndex(index), 3u, 0u, 2.0 // original parentCellID, inheritanceType (3=child_to_child), originalConnectionIndex=0, adhesionZone=2.0 (Zone C)
+        );
+    }
 }
