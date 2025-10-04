@@ -165,14 +165,14 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     sceneManager.setPaused(true);
                     
                     float timeRemaining = targetTime - nearestKeyframe.time;
-                    float physicsTimeStep = config::physicsTimeStep;
-                    int maxSteps = (int)(timeRemaining / physicsTimeStep) + 1;
+                    float fastForwardStep = config::fastForwardTimeStep;
+                    int maxSteps = (int)(timeRemaining / fastForwardStep) + 1;
                     
 
                     
                     for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
                     {
-                        float stepTime = (timeRemaining > physicsTimeStep) ? physicsTimeStep : timeRemaining;
+                        float stepTime = (timeRemaining > fastForwardStep) ? fastForwardStep : timeRemaining;
                         cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
                         timeRemaining -= stepTime;
                         
@@ -219,7 +219,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     bool wasPaused = sceneManager.isPaused();
                     sceneManager.setPaused(true);
                 	// Use a coarser time step for scrubbing to make it more responsive
-                    float scrubTimeStep = config::scrubTimeStep;
+                    float scrubTimeStep = config::fastForwardTimeStep;
                     float timeRemaining = targetTime;
                     int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
                     

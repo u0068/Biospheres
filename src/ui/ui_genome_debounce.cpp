@@ -37,8 +37,8 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
                 bool wasPaused = sceneManager.isPaused();
                 sceneManager.setPaused(true);
                 
-                // Use the same time step as live simulation for consistent physics
-                float scrubTimeStep = config::physicsTimeStep;
+                // Use larger time step for fast resimulation
+                float scrubTimeStep = config::fastForwardTimeStep;
                 float timeRemaining = currentTime;
                 int maxSteps = (int)(currentTime / scrubTimeStep) + 1;
                 
@@ -58,7 +58,7 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
             else
             {
                 // If at time 0, just advance simulation by one frame after reset
-                cellManager.updateCellsFastForward(config::physicsTimeStep); // Use optimized fast-forward
+                cellManager.updateCellsFastForward(config::fastForwardTimeStep); // Use optimized fast-forward
             }
             
             // Clear the pending flag and reset timer
