@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -131,16 +131,38 @@ void main() {
     float ratio = (totalAdhesionCount > 1) ? (index / float(totalAdhesionCount - 1)) : 0.0;
     vec4 lineColor = vec4(1.0, ratio, 0.0, 1.0); // Orange/Amber for active
     
-    // Each cell pair generates one line (2 vertices)
-    // We use the current cell's index to determine where to store the line
-    uint lineIndex = index * 2;
+    // Calculate midpoint between the two anchors
+    vec3 midPoint = (anchorA + anchorB) * 0.5;
     
-    // Store the line vertices connecting the fixed anchor positions
-    if (lineIndex < lineVertices.length() && lineIndex + 1 < lineVertices.length()) {
+    // Each cell pair now generates two line segments (3 points)
+    // We need 4 vertices (2 per line segment) for the two-colored line
+    uint lineIndex = index * 4;
+    
+    // Define zone colors
+    vec4 zoneColors[3];
+    zoneColors[0] = vec4(0.0, 1.0, 0.0, 1.0); // Green for Zone A
+    zoneColors[1] = vec4(0.0, 0.0, 1.0, 1.0); // Blue for Zone B
+    zoneColors[2] = vec4(1.0, 0.0, 0.0, 1.0); // Red for Zone C
+    
+    // Ensure zone indices are within bounds
+    uint zoneA = min(currentAdhesion.zoneA, 2u);
+    uint zoneB = min(currentAdhesion.zoneB, 2u);
+    
+    // Store the first line segment (from anchorA to midpoint)
+    if (lineIndex < lineVertices.length() - 1) {
         lineVertices[lineIndex].position = vec4(anchorA, 1.0);
-        lineVertices[lineIndex].color = lineColor;
+        lineVertices[lineIndex].color = zoneColors[zoneA];
         
-        lineVertices[lineIndex + 1].position = vec4(anchorB, 1.0);
-        lineVertices[lineIndex + 1].color = lineColor;
+        lineVertices[lineIndex + 1].position = vec4(midPoint, 1.0);
+        lineVertices[lineIndex + 1].color = zoneColors[zoneA];
+    }
+    
+    // Store the second line segment (from midpoint to anchorB)
+    if (lineIndex + 2 < lineVertices.length() - 1) {
+        lineVertices[lineIndex + 2].position = vec4(midPoint, 1.0);
+        lineVertices[lineIndex + 2].color = zoneColors[zoneB];
+        
+        lineVertices[lineIndex + 3].position = vec4(anchorB, 1.0);
+        lineVertices[lineIndex + 3].color = zoneColors[zoneB];
     }
 } 

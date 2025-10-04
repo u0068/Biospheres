@@ -21,20 +21,20 @@ void CellManager::initializeAdhesionLineBuffers()
 {
     std::cout << "Initializing adhesion line buffers with capacity for " << getAdhesionLimit() << " connections\n";
     
-    // Create buffer for adhesionSettings line vertices (each line has 2 vertices)
+    // Create buffer for adhesion line vertices (each connection has 2 segments = 4 vertices)
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &adhesionLineBuffer);
     glNamedBufferData(adhesionLineBuffer,
-        getAdhesionLimit() * sizeof(AdhesionLineVertex) * 2, // 2 vertices per line
+        getAdhesionLimit() * sizeof(AdhesionLineVertex) * 4, // 4 vertices per connection (2 segments)
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
-    // Create VAO for adhesionSettings line rendering
+    // Create VAO for adhesion line rendering
     glCreateVertexArrays(1, &adhesionLineVAO);
     
-    // Create VBO that will be bound to the adhesionSettings line buffer
+    // Create VBO that will be bound to the adhesion line buffer
     glCreateBuffers(1, &adhesionLineVBO);
     glNamedBufferData(adhesionLineVBO,
-        getAdhesionLimit() * sizeof(AdhesionLineVertex) * 2,
+        getAdhesionLimit() * sizeof(AdhesionLineVertex) * 4, // 4 vertices per connection (2 segments)
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
@@ -75,9 +75,9 @@ void CellManager::updateAdhesionLineData()
 
     // Bind cell data as input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
-    // Bind adhesionSettings connection buffer as input
+    // Bind adhesion connection buffer as input
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, adhesionConnectionBuffer);
-    // Bind adhesionSettings line buffer as output
+    // Bind adhesion line buffer as output
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionLineBuffer);
     // Bind cell count buffer
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
@@ -92,8 +92,9 @@ void CellManager::updateAdhesionLineData()
     flushBarriers();
 
     // Copy data from compute buffer to VBO for rendering
-    // Only copy the actual number of adhesion connections, not the full buffer capacity
-    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, totalAdhesionCount * sizeof(AdhesionLineVertex) * 2);
+    // Each connection now has 4 vertices (2 segments)
+    glCopyNamedBufferSubData(adhesionLineBuffer, adhesionLineVBO, 0, 0, 
+        totalAdhesionCount * sizeof(AdhesionLineVertex) * 4);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
@@ -139,9 +140,9 @@ void CellManager::renderAdhesionLines(glm::vec2 resolution, const Camera& camera
     // Enable line width for better visibility
     glLineWidth(4.0f);
 
-    // Render adhesion lines
+    // Render adhesion lines - each connection has 2 line segments (4 vertices)
     glBindVertexArray(adhesionLineVAO);
-    glDrawArrays(GL_LINES, 0, totalAdhesionCount * 2); // 2 vertices per adhesion - only render actual connections
+    glDrawArrays(GL_LINES, 0, totalAdhesionCount * 4); // 4 vertices per connection (2 line segments)
     glBindVertexArray(0);
     glLineWidth(1.0f);
     

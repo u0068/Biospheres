@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -1009,8 +1009,7 @@ void main() {
     // Now we need to add the adhesion connection between the children
     if (mode.parentMakeAdhesion == 0)  return;
 
-    // Create a new adhesion connection between the two children with Zone C classification
-    // Child-to-child bonds are always Zone C ↔ Zone C since they're created by the parent
+    // Create a new adhesion connection between the two children
     vec3 posA = outputCells[childAIndex].positionAndMass.xyz;
     vec3 posB = outputCells[childBIndex].positionAndMass.xyz;
 
@@ -1021,17 +1020,21 @@ void main() {
     vec3 directionBtoA = normalize(posA - posB);
     vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, quatInverse(outputCells[childBIndex].orientation));
 
+    // Classify zones for child-to-child connection based on actual bond direction
+    uint childZoneA = classifyBondDirection(anchorDirectionA, mode.splitDirection.xyz, 10.0);
+    uint childZoneB = classifyBondDirection(anchorDirectionB, mode.splitDirection.xyz, 10.0);
+
     uint childToChildConnectionIndex = getNewAdhesionIndex();
     if (childToChildConnectionIndex == uint(-1)) return;
 
-    // Create child-to-child adhesion connection with Zone C classification for both cells
+    // Create child-to-child adhesion connection with properly classified zones
     connections[childToChildConnectionIndex] = AdhesionConnection(
         childAIndex,
         childBIndex,
         cell.modeIndex,
         1, // isActive
-        2u, // zoneA: Zone C (child-to-child bonds are always Zone C)
-        2u, // zoneB: Zone C (child-to-child bonds are always Zone C)
+        childZoneA, // zoneA: Properly classified based on bond direction
+        childZoneB, // zoneB: Properly classified based on bond direction
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
@@ -1059,7 +1062,7 @@ void main() {
             3, // reasonCode: ChildToChild
             anchorDirectionA, anchorDirectionB,
             uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
-            getLineageIdFromIndex(index), 3u, 0u, 2.0 // original parentCellID, inheritanceType (3=child_to_child), originalConnectionIndex=0, adhesionZone=2.0 (Zone C)
+            getLineageIdFromIndex(index), 3u, 0u, float(childZoneA) // original parentCellID, inheritanceType (3=child_to_child), originalConnectionIndex=0, adhesionZone (actual zone)
         );
     }
 }
