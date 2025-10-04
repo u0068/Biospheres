@@ -442,6 +442,7 @@ struct CellManager
     void addStagedCellsToQueueBuffer();
     void addGenomeToBuffer(GenomeData& genomeData) const;
     void updateCells(float deltaTime);
+    void updateCellsFastForward(float deltaTime); // Optimized update for resimulation
     void cleanup();
 
     // Spatial partitioning functions

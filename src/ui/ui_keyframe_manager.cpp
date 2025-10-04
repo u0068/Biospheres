@@ -46,7 +46,7 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
         while (timeToSimulate > 0.0f)
         {
             float stepTime = (timeToSimulate > scrubTimeStep) ? scrubTimeStep : timeToSimulate;
-            cellManager.updateCells(stepTime);
+            cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
             timeToSimulate -= stepTime;
         }
         
@@ -129,13 +129,11 @@ void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
         
         // Update CPU cell data to match GPU
         cellManager.setCPUCellData(keyframes[keyframeIndex].cellStates);
-    }
-    
-    // CRITICAL FIX: Ensure proper GPU buffer synchronization
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
-    
-    // Force update of spatial grid after restoration
-    if (keyframes[keyframeIndex].cellCount > 0) {
+        
+        // Use targeted barrier for better performance
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+        
+        // Force update of spatial grid after restoration
         cellManager.updateSpatialGrid();
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
@@ -189,9 +187,7 @@ void UIManager::captureKeyframe(CellManager& cellManager, float time, int keyfra
     
     SimulationKeyframe& keyframe = keyframes[keyframeIndex];
     
-    // CRITICAL FIX: Ensure all GPU operations are complete before capturing state
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
-    // Use targeted barrier instead of glFinish() to avoid pixel transfer synchronization warning
+    // Use targeted barrier for better performance - only sync compute shader storage
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
     
     // Capture current simulation state

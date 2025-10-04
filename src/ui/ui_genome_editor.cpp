@@ -233,58 +233,17 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     {        ImGui::BeginChild("ModeSettings", ImVec2(0, 0), false);
         drawModeSettings(currentGenome.modes[selectedModeIndex], selectedModeIndex, cellManager);
         ImGui::EndChild();
-    }    // Handle genome changes - trigger instant resimulation
+    }    // Handle genome changes - use debouncing to prevent overshooting during rapid adjustments
     if (genomeChanged)
     {
         // Invalidate keyframes when genome changes
         keyframesInitialized = false;
         
-        // Reset the simulation with the new genome
-        cellManager.resetSimulation();
-        cellManager.addGenomeToBuffer(currentGenome);
-        ComputeCell newCell{};
-        newCell.modeIndex = currentGenome.initialMode;
-        // Set initial cell orientation to the genome's initial orientation
-        // This keeps the initial cell orientation independent of Child A/B settings
-        newCell.orientation = currentGenome.initialOrientation;
-        cellManager.addCellToStagingBuffer(newCell);
-        cellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
+        // Mark that we have a pending resimulation and reset the debounce timer
+        pendingGenomeResimulation = true;
+        genomeChangeDebounceTimer = 0.0f;
         
-        // Reset simulation time
-        sceneManager.resetPreviewSimulationTime();
-        
-        // If time scrubber is at a specific time, fast-forward to that time
-        if (currentTime > 0.0f)
-        {
-            // Temporarily pause to prevent normal time updates during fast-forward
-            bool wasPaused = sceneManager.isPaused();
-            sceneManager.setPaused(true);
-            
-            // Use the same time step as live simulation for consistent physics
-            float scrubTimeStep = config::physicsTimeStep;
-            float timeRemaining = currentTime;
-            int maxSteps = (int)(currentTime / scrubTimeStep) + 1;
-            
-            for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
-            {
-                float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
-                cellManager.updateCells(stepTime);
-                timeRemaining -= stepTime;
-                
-                // Update simulation time manually during fast-forward
-                sceneManager.setPreviewSimulationTime(currentTime - timeRemaining);
-            }
-            
-            // Restore original pause state after fast-forward
-            sceneManager.setPaused(wasPaused);
-        }
-        else
-        {
-            // If at time 0, just advance simulation by one frame after reset
-            cellManager.updateCells(config::physicsTimeStep);
-        }
-        
-        // Clear the flag
+        // Clear the flag immediately to allow detecting new changes
         genomeChanged = false;
     }
 

@@ -75,6 +75,9 @@ public:
 
     // Preview simulation time control
     void updatePreviewSimulation(CellManager& previewCellManager);
+    
+    // Debounced genome resimulation handler
+    void updateDebouncedGenomeResimulation(CellManager& cellManager, SceneManager& sceneManager, float deltaTime);
 
     // Performance monitoring helpers
     void updatePerformanceMetrics(PerformanceMonitor &perfMonitor, float deltaTime);
@@ -120,7 +123,12 @@ private:    // Helper to get window flags based on lock state
     void validateGenomeColors(); // Validate and fix color values in genome
     void addTooltip(const char* tooltip); // Helper to add question mark tooltips
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
-    int selectedModeIndex = 0;    // Time Scrubber Data
+    int selectedModeIndex = 0;
+    
+    // Debouncing for genome changes to prevent overshooting during rapid adjustments
+    float genomeChangeDebounceTimer = 0.0f;
+    static constexpr float GENOME_CHANGE_DEBOUNCE_DELAY = 0.15f; // 150ms delay before resimulation
+    bool pendingGenomeResimulation = false;    // Time Scrubber Data
     float currentTime = 0.0f;
     float maxTime = 50.0f;
     char timeInputBuffer[32] = "0.00";

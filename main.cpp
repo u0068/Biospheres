@@ -419,6 +419,12 @@ int main()
 		// Take care of all GLFW events
 		processInput(input, previewCamera, mainCamera, previewCellManager, mainCellManager, sceneManager, deltaTime, width, height, synthEngine);
 
+		/// Handle debounced genome resimulation for preview simulation
+		if (sceneManager.getCurrentScene() == Scene::PreviewSimulation)
+		{
+			uiManager.updateDebouncedGenomeResimulation(previewCellManager, sceneManager, deltaTime);
+		}
+
 		/// Then we handle cell simulation
 		while (accumulator >= tickPeriod)
 		{

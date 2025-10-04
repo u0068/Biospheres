@@ -173,7 +173,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
                     {
                         float stepTime = (timeRemaining > physicsTimeStep) ? physicsTimeStep : timeRemaining;
-                        cellManager.updateCells(stepTime);
+                        cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
                         timeRemaining -= stepTime;
                         
                         // Update simulation time manually during fast-forward
@@ -226,7 +226,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     for (int i = 0; i < maxSteps && timeRemaining > scrubTimeStep; ++i)
                     {
                         float stepTime = scrubTimeStep;
-                        cellManager.updateCells(stepTime);
+                        cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
                         timeRemaining -= stepTime;
                         
                         // Update simulation time manually during fast-forward

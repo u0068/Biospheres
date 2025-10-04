@@ -734,6 +734,67 @@ void CellManager::updateCells(float deltaTime)
     }
 }
 
+void CellManager::updateCellsFastForward(float deltaTime)
+{
+    // Increment frame counter for diagnostics
+    currentFrame++;
+    
+    // Clear any pending barriers from previous frame
+    clearBarriers();
+
+    if (pendingCellCount > 0)
+    {
+        addStagedCellsToQueueBuffer(); // Sync any pending cells to GPU
+    }
+
+    int previousCellCount = totalCellCount;
+    updateCounts();
+    
+    // CRITICAL FIX: Safety check to prevent cell count overflow
+    if (totalCellCount > cellLimit) {
+        totalCellCount = cellLimit;
+        liveCellCount = std::min(liveCellCount, cellLimit);
+        
+        // Update GPU buffer with clamped values
+        GLuint counts[4] = { 
+            static_cast<GLuint>(totalCellCount), 
+            static_cast<GLuint>(liveCellCount), 
+            static_cast<GLuint>(totalAdhesionCount), 
+            static_cast<GLuint>(liveAdhesionCount) 
+        };
+        glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
+    }
+    
+    // Invalidate cache if cell count changed
+    if (previousCellCount != totalCellCount) {
+        invalidateStatisticsCache();
+    }
+
+    if (totalCellCount > 0) // Don't update cells if there are no cells to update
+    {
+        // Flush barriers before starting compute pipeline
+        flushBarriers();
+
+        verletIntegration(deltaTime);
+
+        // Run cells' internal calculations with diagnostics DISABLED for performance
+        // This is the key optimization - we temporarily disable diagnostics
+        bool wasDiagnosticsRunning = diagnosticsRunning;
+        bool wasAdhesionDiagnosticsRunning = adhesionDiagnosticsRunning;
+        diagnosticsRunning = false;
+        adhesionDiagnosticsRunning = false;
+        
+        runInternalUpdateCompute(deltaTime);
+        
+        // Restore diagnostic state
+        diagnosticsRunning = wasDiagnosticsRunning;
+        adhesionDiagnosticsRunning = wasAdhesionDiagnosticsRunning;
+        
+        // CRITICAL FIX: Add memory barrier after splitting to ensure new cells are synchronized
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+    }
+}
+
 // ============================================================================
 // COMPUTE SHADER DISPATCH
 // ============================================================================
