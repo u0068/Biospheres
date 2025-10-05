@@ -160,34 +160,44 @@ vec4 axisAngleToQuat(vec4 axisAngle) {
     return vec4(axisAngle.xyz * s, cos(halfAngle));
 }
 
-// Create quaternion that rotates from vector a to vector b
-vec4 quatFromTwoVectors(vec3 a, vec3 b) {
-    vec3 normA = normalize(a);
-    vec3 normB = normalize(b);
+// Deterministic quaternion rotation from one vector to another
+// Uses a consistent method that avoids cross product ambiguity
+vec4 quatFromTwoVectors(vec3 from, vec3 to) {
+    // Normalize inputs
+    vec3 v1 = normalize(from);
+    vec3 v2 = normalize(to);
     
-    float dot_product = dot(normA, normB);
+    float cosAngle = dot(v1, v2);
     
-    // If vectors are nearly identical, return identity quaternion
-    if (dot_product > 0.9999) {
-        return vec4(0.0, 0.0, 0.0, 1.0);
+    // Vectors are already aligned
+    if (cosAngle > 0.9999) {
+        return vec4(0.0, 0.0, 0.0, 1.0); // Identity
     }
     
-    // If vectors are nearly opposite, find a perpendicular axis
-    if (dot_product < -0.9999) {
-        vec3 axis = cross(vec3(1.0, 0.0, 0.0), normA);
-        if (length(axis) < 0.01) {
-            axis = cross(vec3(0.0, 1.0, 0.0), normA);
+    // Vectors are opposite - use deterministic perpendicular axis
+    if (cosAngle < -0.9999) {
+        // Choose axis deterministically based on which component is smallest
+        vec3 axis;
+        if (abs(v1.x) < abs(v1.y) && abs(v1.x) < abs(v1.z)) {
+            axis = normalize(vec3(0.0, -v1.z, v1.y));
+        } else if (abs(v1.y) < abs(v1.z)) {
+            axis = normalize(vec3(-v1.z, 0.0, v1.x));
+        } else {
+            axis = normalize(vec3(-v1.y, v1.x, 0.0));
         }
-        axis = normalize(axis);
         return vec4(axis, 0.0); // 180 degree rotation
     }
     
-    // General case
-    vec3 axis = cross(normA, normB);
-    float w = sqrt((1.0 + dot_product) * 2.0);
-    float inv_w = 1.0 / w;
+    // General case: use half-way quaternion method (more stable than cross product)
+    vec3 halfway = normalize(v1 + v2);
+    vec3 axis = vec3(
+        v1.y * halfway.z - v1.z * halfway.y,
+        v1.z * halfway.x - v1.x * halfway.z,
+        v1.x * halfway.y - v1.y * halfway.x
+    );
+    float w = dot(v1, halfway);
     
-    return normalize(vec4(axis * inv_w, w * 0.5));
+    return normalize(vec4(axis, w));
 }
 
 void computeAdhesionForces(

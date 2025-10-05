@@ -114,25 +114,32 @@ void main() {
         anchorA = posA;
         anchorB = posB;
     } else {
-        // Use the stored local anchor directions, transformed to world space
+        // Use stored anchor directions (ideal geometry) to calculate anchor positions
         vec3 posA = cellA.positionAndMass.xyz;
         vec3 posB = cellB.positionAndMass.xyz;
         float radiusA = pow(cellA.positionAndMass.w, 1.0/3.0);
         float radiusB = pow(cellB.positionAndMass.w, 1.0/3.0);
         
+        // Transform stored anchor directions from local to world space
+        // These directions represent the ideal center-to-center geometry at rest length
         vec3 worldAnchorDirectionA = rotateVectorByQuaternion(currentAdhesion.anchorDirectionA, cellA.orientation);
         vec3 worldAnchorDirectionB = rotateVectorByQuaternion(currentAdhesion.anchorDirectionB, cellB.orientation);
         
+        // Place anchors at radius intersections using the ideal directions
         anchorA = posA + worldAnchorDirectionA * radiusA;
         anchorB = posB + worldAnchorDirectionB * radiusB;
     }
+    
+    // Get cell centers for drawing center-to-center lines
+    vec3 centerA = cellA.positionAndMass.xyz;
+    vec3 centerB = cellB.positionAndMass.xyz;
     
     // Use a distinctive color for adhesion lines (orange/amber)
     float ratio = (totalAdhesionCount > 1) ? (index / float(totalAdhesionCount - 1)) : 0.0;
     vec4 lineColor = vec4(1.0, ratio, 0.0, 1.0); // Orange/Amber for active
     
-    // Calculate midpoint between the two anchors
-    vec3 midPoint = (anchorA + anchorB) * 0.5;
+    // Calculate midpoint between the two centers (not anchors)
+    vec3 midPoint = (centerA + centerB) * 0.5;
     
     // Each cell pair now generates two line segments (3 points)
     // We need 4 vertices (2 per line segment) for the two-colored line
@@ -148,21 +155,22 @@ void main() {
     uint zoneA = min(currentAdhesion.zoneA, 2u);
     uint zoneB = min(currentAdhesion.zoneB, 2u);
     
-    // Store the first line segment (from anchorA to midpoint)
+    // Store the first line segment (from centerA to midpoint)
+    // Line goes center-to-center, but anchor points remain at radius for visualization
     if (lineIndex < lineVertices.length() - 1) {
-        lineVertices[lineIndex].position = vec4(anchorA, 1.0);
+        lineVertices[lineIndex].position = vec4(centerA, 1.0);
         lineVertices[lineIndex].color = zoneColors[zoneA];
         
         lineVertices[lineIndex + 1].position = vec4(midPoint, 1.0);
         lineVertices[lineIndex + 1].color = zoneColors[zoneA];
     }
     
-    // Store the second line segment (from midpoint to anchorB)
+    // Store the second line segment (from midpoint to centerB)
     if (lineIndex + 2 < lineVertices.length() - 1) {
         lineVertices[lineIndex + 2].position = vec4(midPoint, 1.0);
         lineVertices[lineIndex + 2].color = zoneColors[zoneB];
         
-        lineVertices[lineIndex + 3].position = vec4(anchorB, 1.0);
+        lineVertices[lineIndex + 3].position = vec4(centerB, 1.0);
         lineVertices[lineIndex + 3].color = zoneColors[zoneB];
     }
 } 

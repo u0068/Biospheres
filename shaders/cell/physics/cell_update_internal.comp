@@ -68,15 +68,13 @@ struct AdhesionConnection {
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
     uint zoneA;           // Zone classification for cell A (0=ZoneA, 1=ZoneB, 2=ZoneC)
     uint zoneB;           // Zone classification for cell B (0=ZoneA, 1=ZoneB, 2=ZoneC)
-    uint sourceChildNumA; // Child number that created this bond for cell A (1 or 2, 0 if not from child)
-    uint sourceChildNumB; // Child number that created this bond for cell B (1 or 2, 0 if not from child)
     vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
     float paddingA;       // Padding to ensure 16-byte alignment
     vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
     float paddingB;       // Padding to ensure 16-byte alignment
     vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
     vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
-    uint _padding[2];     // Padding to ensure 16-byte alignment (96 bytes total)
+    uint _padding[4];     // Padding to ensure 16-byte alignment (96 bytes total)
 };
 
 // Enhanced diagnostic entry structure - matches C++ EnhancedDiagnosticEntry
@@ -226,7 +224,47 @@ vec4 quatInverse(vec4 q) {
     if (norm > 0.0) {
         return vec4(-q.xyz, q.w) / norm;
     }
-    return vec4(0.0, 0.0, 0.0, 1.0);
+    return vec4(0.0, 0.0, 0.0, 1.0); // Identity quaternion
+}
+
+// Deterministic quaternion rotation from one vector to another
+// Uses a consistent method that avoids cross product ambiguity
+vec4 quatFromTwoVectors(vec3 from, vec3 to) {
+    // Normalize inputs
+    vec3 v1 = normalize(from);
+    vec3 v2 = normalize(to);
+    
+    float cosAngle = dot(v1, v2);
+    
+    // Vectors are already aligned
+    if (cosAngle > 0.9999) {
+        return vec4(0.0, 0.0, 0.0, 1.0); // Identity
+    }
+    
+    // Vectors are opposite - use deterministic perpendicular axis
+    if (cosAngle < -0.9999) {
+        // Choose axis deterministically based on which component is smallest
+        vec3 axis;
+        if (abs(v1.x) < abs(v1.y) && abs(v1.x) < abs(v1.z)) {
+            axis = normalize(vec3(0.0, -v1.z, v1.y));
+        } else if (abs(v1.y) < abs(v1.z)) {
+            axis = normalize(vec3(-v1.z, 0.0, v1.x));
+        } else {
+            axis = normalize(vec3(-v1.y, v1.x, 0.0));
+        }
+        return vec4(axis, 0.0); // 180 degree rotation
+    }
+    
+    // General case: use half-way quaternion method (more stable than cross product)
+    vec3 halfway = normalize(v1 + v2);
+    vec3 axis = vec3(
+        v1.y * halfway.z - v1.z * halfway.y,
+        v1.z * halfway.x - v1.x * halfway.z,
+        v1.x * halfway.y - v1.y * halfway.x
+    );
+    float w = dot(v1, halfway);
+    
+    return normalize(vec4(axis, w));
 }
 
 // Hash function to generate a pseudo-random float in [0,1] from a uint seed
@@ -437,7 +475,7 @@ uint getNewAdhesionIndex() {
 
 // Add adhesion with preserved anchor directions (for inheritance)
 // Returns the connection index on success, -1 on failure
-int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB, uint sourceChildA, uint sourceChildB) {
+int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB) {
     uint newAdhesionIndex = getNewAdhesionIndex();
     if (newAdhesionIndex == uint(-1)) {
         // Failed to reserve an adhesion index
@@ -478,27 +516,17 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     vec4 twistReferenceA = inputCells[cellAIndex].orientation;
     vec4 twistReferenceB = inputCells[cellBIndex].orientation;
 
-    // Classify zones for both cells based on their split directions
+    // Classify zones using the preserved anchor directions (already in local space)
     ComputeCell cellA = inputCells[cellAIndex];
     ComputeCell cellB = inputCells[cellBIndex];
     GPUMode modeA = modes[cellA.modeIndex];
     GPUMode modeB = modes[cellB.modeIndex];
 
-    // Extract positions for zone classification
-    vec3 posA = cellA.positionAndMass.xyz;
-    vec3 posB = cellB.positionAndMass.xyz;
+    // Use preserved anchor directions for zone classification (genome-based, not spatial)
+    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 10.0);
+    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 10.0);
 
-    // Classify zone for cell A (direction from A to B in A's local space)
-    vec3 bondDirFromA = normalize(posB - posA);
-    vec3 bondDirLocalA = rotateVectorByQuaternion(bondDirFromA, quatInverse(cellA.orientation));
-    uint zoneA = classifyBondDirection(bondDirLocalA, modeA.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
-
-    // Classify zone for cell B (direction from B to A in B's local space)
-    vec3 bondDirFromB = normalize(posA - posB);
-    vec3 bondDirLocalB = rotateVectorByQuaternion(bondDirFromB, quatInverse(cellB.orientation));
-    uint zoneB = classifyBondDirection(bondDirLocalB, modeB.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
-
-    // Write connection and assign indices with source child metadata
+    // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
         cellBIndex,
@@ -506,15 +534,13 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
         1, // isActive
         zoneA,
         zoneB,
-        sourceChildA, // sourceChildNumA - which child created this for cell A
-        sourceChildB, // sourceChildNumB - which child created this for cell B
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
         0.0, // paddingB
         twistReferenceA,
         twistReferenceB,
-        uint[2](0u, 0u) // padding to ensure 16-byte alignment
+        uint[4](0u, 0u, 0u, 0u) // padding to ensure 16-byte alignment
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
@@ -555,44 +581,44 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         return false;
     }
 
-    // Calculate initial anchor directions in local cell space
-    // Use spatial calculation since this is called immediately after split when positions are correct
-    vec3 posA = inputCells[cellAIndex].positionAndMass.xyz;
-    vec3 posB = inputCells[cellBIndex].positionAndMass.xyz;
+    // Calculate initial anchor directions using ONLY genome-based data
+    // This function is called for sibling bonds during split
+    // We need to use genome-derived orientations, not actual cell orientations
+    GPUMode modeForBond = modes[modeIndex];
+    
+    // The split direction in the parent's local frame
+    vec3 splitDirLocal = modeForBond.splitDirection.xyz;
+    
+    // Direction vectors in parent's local frame
+    // Child A is at +offset, child B is at -offset
+    vec3 directionAtoB_parentLocal = -splitDirLocal;  // A points toward B (at -offset)
+    vec3 directionBtoA_parentLocal = splitDirLocal;   // B points toward A (at +offset)
 
-    // Calculate direction vectors from each cell to the other in world space
-    vec3 directionAtoB = normalize(posB - posA);
-    vec3 directionBtoA = normalize(posA - posB);
+    // Transform to each child's local space using genome-derived orientation deltas
+    // Child A's local space: rotate by inverse of orientationA
+    vec4 invDeltaA = quatInverse(modeForBond.orientationA);
+    vec3 anchorDirectionA = normalize(rotateVectorByQuaternion(directionAtoB_parentLocal, invDeltaA));
+    
+    // Child B's local space: rotate by inverse of orientationB
+    vec4 invDeltaB = quatInverse(modeForBond.orientationB);
+    vec3 anchorDirectionB = normalize(rotateVectorByQuaternion(directionBtoA_parentLocal, invDeltaB));
 
-    // Transform world space directions to local cell space using inverse cell orientations
-    // This ensures anchors are stored relative to the cell's local coordinate system
-    vec4 invOrientationA = quatInverse(inputCells[cellAIndex].orientation);
-    vec4 invOrientationB = quatInverse(inputCells[cellBIndex].orientation);
-
-    vec3 anchorDirectionA = rotateVectorByQuaternion(directionAtoB, invOrientationA);
-    vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, invOrientationB);
-
-    // Store current orientations as twist reference for constraint
-    vec4 twistReferenceA = inputCells[cellAIndex].orientation;
-    vec4 twistReferenceB = inputCells[cellBIndex].orientation;
-
-    // Classify zones for both cells based on their split directions
+    // Get cell data for mode lookup
     ComputeCell cellA = inputCells[cellAIndex];
     ComputeCell cellB = inputCells[cellBIndex];
+    
+    // Use genome-based orientations as twist reference (deterministic, independent of physics)
+    // This ensures twist constraints are consistent regardless of cell rotation before split
+    vec4 twistReferenceA = cellA.orientation;
+    vec4 twistReferenceB = cellB.orientation;
+
+    // Classify zones using the genome-derived anchor directions (already in local space)
     GPUMode modeA = modes[cellA.modeIndex];
     GPUMode modeB = modes[cellB.modeIndex];
 
-    // Use already declared position variables for zone classification
-
-    // Classify zone for cell A (direction from A to B in A's local space)
-    vec3 bondDirFromA = normalize(posB - posA);
-    vec3 bondDirLocalA = rotateVectorByQuaternion(bondDirFromA, quatInverse(cellA.orientation));
-    uint zoneA = classifyBondDirection(bondDirLocalA, modeA.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
-
-    // Classify zone for cell B (direction from B to A in B's local space)
-    vec3 bondDirFromB = normalize(posA - posB);
-    vec3 bondDirLocalB = rotateVectorByQuaternion(bondDirFromB, quatInverse(cellB.orientation));
-    uint zoneB = classifyBondDirection(bondDirLocalB, modeB.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
+    // Zone classification using genome-based anchors
+    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 10.0);
+    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 10.0);
 
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
@@ -602,15 +628,13 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         1, // isActive
         zoneA,
         zoneB,
-        0u, // sourceChildNumA (0 = not from child, direct adhesion)
-        0u, // sourceChildNumB (0 = not from child, direct adhesion)
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
         0.0, // paddingB
         twistReferenceA,
         twistReferenceB,
-        uint[2](0u, 0u) // padding to ensure 16-byte alignment
+        uint[4](0u, 0u, 0u, 0u) // padding to ensure 16-byte alignment
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
@@ -764,19 +788,10 @@ void main() {
     // we need to subtract the excess age beyond the split interval
     float startAge = cell.age - mode.splitInterval;
 
-    // Apply rotation deltas to parent orientation
+    // Apply rotation deltas to parent orientation (deterministic, no random variation)
     vec4 q_parent = cell.orientation;
     vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
     vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
-
-    // Add a tiny random variance to each child orientation (0.001 degree = 0.001 * PI / 180 radians)
-    float tinyAngle = 0.001 * 0.017453292519943295; // radians
-
-    // Use child indices to generate different seeds for each child
-    vec4 q_varA = smallRandomQuat(tinyAngle, childAIndex);
-    vec4 q_varB = smallRandomQuat(tinyAngle, childBIndex);
-    q_childA = normalize(quatMultiply(q_childA, q_varA));
-    q_childB = normalize(quatMultiply(q_childB, q_varB));
 
     ComputeCell childA = cell;
     childA.positionAndMass.xyz += offset;
@@ -929,68 +944,80 @@ void main() {
         // The original connection already has the correct zone classification
         uint parentZone = isParentCellA ? oldConnection.zoneA : oldConnection.zoneB;
 
-        // Apply inheritance logic
+        // Apply inheritance logic - simple zone-based rules
         bool childAInherits = false;
         bool childBInherits = false;
         
-        // Get source child number from the connection metadata
-        uint neighborSourceChildNum = isParentCellA ? oldConnection.sourceChildNumB : oldConnection.sourceChildNumA;
-        
-        // Zone classification determines base inheritance
+        // Zone classification determines inheritance
         if (parentZone == 2u) {
-            // Zone C (equatorial) - use metadata for child-type matching if available
-            if (neighborSourceChildNum > 0u) {
-                // We have metadata - match child types to prevent diagonal connections
-                if (neighborSourceChildNum == 1u && mode.childAKeepAdhesion == 1) {
-                    childAInherits = true;  // Child A (child 1) connects to neighbor child 1
-                } else if (neighborSourceChildNum == 2u && mode.childBKeepAdhesion == 1) {
-                    childBInherits = true;  // Child B (child 2) connects to neighbor child 2
-                }
-            } else {
-                // No metadata - both children inherit (standard Zone C behavior)
-                childAInherits = (mode.childAKeepAdhesion == 1);
-                childBInherits = (mode.childBKeepAdhesion == 1);
-            }
+            // Zone C (equatorial) - both children inherit
+            childAInherits = (mode.childAKeepAdhesion == 1);
+            childBInherits = (mode.childBKeepAdhesion == 1);
         } else if (parentZone == 1u) {
-            // Zone B - goes to Child A (normal logic, no metadata)
+            // Zone B - Child A inherits
             childAInherits = (mode.childAKeepAdhesion == 1);
         } else {
-            // Zone A - goes to Child B (normal logic, no metadata)
+            // Zone A - Child B inherits
             childBInherits = (mode.childBKeepAdhesion == 1);
         }
         
         // Determine neighbor's role in the original connection
         bool neighborWasCellA = (oldConnection.cellAIndex == neighborIndex);
-        vec3 neighborAnchorDirection = neighborWasCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
+        
+        // Get the neighbor's original anchor direction from the bond
+        vec3 neighborOriginalAnchor = neighborWasCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
 
         // Create new adhesion connections for inheriting children
         // Zone C bonds can create connections for both children, polar bonds create connections for specific children
 
         // Child A inheritance
         if (childAInherits) {
-            // Genome-only transform: rotate parent's local anchor into child A's local space via inverse of delta quat
+            // Pure geometric calculation using ONLY genome data
+            // Work in parent's local frame, then transform to each cell's local frame
+            
+            // Split offset in parent's local frame (genome parameter)
+            vec3 offsetLocal = mode.splitDirection.xyz * 0.5;
+            
+            // Neighbor is at: localAnchorDirection * restLength (in parent's local frame)
+            // Child A is at: offsetLocal (in parent's local frame)
+            // Direction from child A to neighbor:
+            vec3 neighborRelativeToChildA_parentLocal = localAnchorDirection * mode.adhesionSettings.restLength - offsetLocal;
+            
+            // Transform to child A's local space using genome delta
             vec4 invDeltaA = quatInverse(mode.orientationA);
-            vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaA);
-
-            // Determine what to store for neighbor's source child num
-            // Zone C: Store metadata (1 or 2) to match child types
-            // Zones A and B: Don't store metadata (use 0)
-            uint neighborSourceToStore = neighborSourceChildNum; // Propagate existing metadata
-            if (neighborSourceChildNum == 0u && parentZone == 2u) {
-                // Zone C with no metadata: store child number for future matching
-                neighborSourceToStore = 1u;
-            }
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(neighborRelativeToChildA_parentLocal, invDeltaA));
+            
+            // Calculate neighbor's anchor direction
+            // The neighbor's anchor should point from neighbor toward child A
+            // 
+            // In parent's local frame:
+            // - Neighbor is at: localAnchorDirection * restLength  
+            // - Child A is at: offsetLocal
+            // - Direction from neighbor to child A: offsetLocal - localAnchorDirection * restLength
+            
+            vec3 neighborToChildA_parentLocal = offsetLocal - localAnchorDirection * mode.adhesionSettings.restLength;
+            
+            // Transform to neighbor's local frame using the original bond relationship
+            // The original bond had: parent anchor = localAnchorDirection, neighbor anchor = neighborOriginalAnchor
+            // These pointed opposite, so: neighborOriginalAnchor ≈ rotate(-localAnchorDirection, parentToNeighborRot)
+            // We derive parentToNeighborRot from these stored genome-based directions
+            
+            // Build rotation quaternion using deterministic method
+            vec3 fromDir = normalize(-localAnchorDirection);
+            vec3 toDir = normalize(neighborOriginalAnchor);
+            vec4 parentToNeighborRot = quatFromTwoVectors(fromDir, toDir);
+            
+            // Transform the direction to neighbor's local frame
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildA_parentLocal, parentToNeighborRot));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
             if (neighborWasCellA) {
                 // Neighbor was cellA, child becomes cellB
-                // Store source child number: neighbor gets propagated metadata or 1, child stores 1 (childA)
-                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childAIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection, neighborSourceToStore, 1u);
+                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childAIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection);
             } else {
                 // Neighbor was cellB, child becomes cellA
-                // Store source child number: child stores 1 (childA), neighbor gets propagated metadata or 1
-                newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection, 1u, neighborSourceToStore);
+                newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
             }
             if (newConnectionIndex < 0) return;
 
@@ -1010,29 +1037,41 @@ void main() {
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
-            // Genome-only transform: rotate parent's local anchor into child B's local space via inverse of delta quat
+            // Pure geometric calculation using ONLY genome data
+            // Work in parent's local frame, then transform to each cell's local frame
+            
+            // Split offset in parent's local frame (genome parameter)
+            vec3 offsetLocal = mode.splitDirection.xyz * 0.5;
+            
+            // Neighbor is at: localAnchorDirection * restLength (in parent's local frame)
+            // Child B is at: -offsetLocal (in parent's local frame)
+            // Direction from child B to neighbor:
+            vec3 neighborRelativeToChildB_parentLocal = localAnchorDirection * mode.adhesionSettings.restLength + offsetLocal;
+            
+            // Transform to child B's local space using genome delta
             vec4 invDeltaB = quatInverse(mode.orientationB);
-            vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaB);
-
-            // Determine what to store for neighbor's source child num
-            // Zone C: Store metadata (1 or 2) to match child types
-            // Zones A and B: Don't store metadata (use 0)
-            uint neighborSourceToStore = neighborSourceChildNum; // Propagate existing metadata
-            if (neighborSourceChildNum == 0u && parentZone == 2u) {
-                // Zone C with no metadata: store child number for future matching
-                neighborSourceToStore = 2u;
-            }
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(neighborRelativeToChildB_parentLocal, invDeltaB));
+            
+            // Calculate neighbor's anchor direction
+            // Direction from neighbor to child B (in parent's local frame):
+            vec3 neighborToChildB_parentLocal = -offsetLocal - localAnchorDirection * mode.adhesionSettings.restLength;
+            
+            // Derive rotation from parent to neighbor using deterministic method
+            vec3 fromDir = normalize(-localAnchorDirection);
+            vec3 toDir = normalize(neighborOriginalAnchor);
+            vec4 parentToNeighborRot = quatFromTwoVectors(fromDir, toDir);
+            
+            // Transform to neighbor's local frame
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildB_parentLocal, parentToNeighborRot));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
             if (neighborWasCellA) {
                 // Neighbor was cellA, child becomes cellB
-                // Store source child number: neighbor gets propagated metadata or 2, child stores 2 (childB)
-                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childBIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection, neighborSourceToStore, 2u);
+                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childBIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection);
             } else {
                 // Neighbor was cellB, child becomes cellA
-                // Store source child number: child stores 2 (childB), neighbor gets propagated metadata or 2
-                newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection, 2u, neighborSourceToStore);
+                newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
             }
             if (newConnectionIndex < 0) return;
 
@@ -1054,18 +1093,23 @@ void main() {
     // Now we need to add the adhesion connection between the children
     if (mode.parentMakeAdhesion == 0)  return;
 
-    // Create a new adhesion connection between the two children
-    vec3 posA = outputCells[childAIndex].positionAndMass.xyz;
-    vec3 posB = outputCells[childBIndex].positionAndMass.xyz;
+    // Create a new adhesion connection between the two children using ONLY genome data
+    // Split direction in parent's local frame
+    vec3 splitDirLocal = mode.splitDirection.xyz;
+    
+    // Direction vectors in parent's local frame
+    // Child A is at +offset, child B is at -offset
+    vec3 directionAtoB_parentLocal = -splitDirLocal;  // A points toward B (at -offset)
+    vec3 directionBtoA_parentLocal = splitDirLocal;   // B points toward A (at +offset)
+    
+    // Transform to each child's local space using genome-derived orientation deltas
+    vec4 invDeltaA = quatInverse(mode.orientationA);
+    vec3 anchorDirectionA = normalize(rotateVectorByQuaternion(directionAtoB_parentLocal, invDeltaA));
+    
+    vec4 invDeltaB = quatInverse(mode.orientationB);
+    vec3 anchorDirectionB = normalize(rotateVectorByQuaternion(directionBtoA_parentLocal, invDeltaB));
 
-    // Calculate initial anchor directions in local cell space
-    vec3 directionAtoB = normalize(posB - posA);
-    vec3 anchorDirectionA = rotateVectorByQuaternion(directionAtoB, quatInverse(outputCells[childAIndex].orientation));
-
-    vec3 directionBtoA = normalize(posA - posB);
-    vec3 anchorDirectionB = rotateVectorByQuaternion(directionBtoA, quatInverse(outputCells[childBIndex].orientation));
-
-    // Classify zones for child-to-child connection based on actual bond direction
+    // Classify zones using genome-derived anchors
     uint childZoneA = classifyBondDirection(anchorDirectionA, mode.splitDirection.xyz, 10.0);
     uint childZoneB = classifyBondDirection(anchorDirectionB, mode.splitDirection.xyz, 10.0);
 
@@ -1080,15 +1124,13 @@ void main() {
         1, // isActive
         childZoneA, // zoneA: Properly classified based on bond direction
         childZoneB, // zoneB: Properly classified based on bond direction
-        0u, // sourceChildNumA (0 = sibling bond, not inherited)
-        0u, // sourceChildNumB (0 = sibling bond, not inherited)
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
         0.0, // paddingB
         outputCells[childAIndex].orientation,
         outputCells[childBIndex].orientation,
-        uint[2](0u, 0u) // padding to ensure 16-byte alignment
+        uint[4](0u, 0u, 0u, 0u) // padding to ensure 16-byte alignment
     );
 
     // Assign to cell adhesion slots (find available slots)
