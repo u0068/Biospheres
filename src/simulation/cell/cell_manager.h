@@ -379,7 +379,7 @@ struct CellManager
     void logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cellA, uint32_t cellB = UINT32_MAX, 
                            uint32_t connectionIndex = UINT32_MAX, float eventValue1 = 0.0f, float eventValue2 = 0.0f);
     void updateGenomeTracking(uint32_t cellIndex, const ModeSettings& currentMode);
-    void writeEnhancedDiagnosticLog();
+    void writeEnhancedDiagnosticLog(); // Now outputs Python-style format
     void clearDiagnosticData();
     std::vector<GenomeDifference> calculateGenomeDifferences(const ModeSettings& current, const ModeSettings& defaultMode);
     

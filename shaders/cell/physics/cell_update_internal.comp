@@ -68,6 +68,8 @@ struct AdhesionConnection {
     uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
     uint zoneA;           // Zone classification for cell A (0=ZoneA, 1=ZoneB, 2=ZoneC)
     uint zoneB;           // Zone classification for cell B (0=ZoneA, 1=ZoneB, 2=ZoneC)
+    uint sourceChildNumA; // Child number that created this bond for cell A (1 or 2, 0 if not from child)
+    uint sourceChildNumB; // Child number that created this bond for cell B (1 or 2, 0 if not from child)
     vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
     float paddingA;       // Padding to ensure 16-byte alignment
     vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
@@ -435,7 +437,7 @@ uint getNewAdhesionIndex() {
 
 // Add adhesion with preserved anchor directions (for inheritance)
 // Returns the connection index on success, -1 on failure
-int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB) {
+int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB, uint sourceChildA, uint sourceChildB) {
     uint newAdhesionIndex = getNewAdhesionIndex();
     if (newAdhesionIndex == uint(-1)) {
         // Failed to reserve an adhesion index
@@ -496,7 +498,7 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     vec3 bondDirLocalB = rotateVectorByQuaternion(bondDirFromB, quatInverse(cellB.orientation));
     uint zoneB = classifyBondDirection(bondDirLocalB, modeB.splitDirection.xyz, 10.0); // Use 10° inheritance angle as default
 
-    // Write connection and assign indices
+    // Write connection and assign indices with source child metadata
     connections[newAdhesionIndex] = AdhesionConnection(
         cellAIndex,
         cellBIndex,
@@ -504,6 +506,8 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
         1, // isActive
         zoneA,
         zoneB,
+        sourceChildA, // sourceChildNumA - which child created this for cell A
+        sourceChildB, // sourceChildNumB - which child created this for cell B
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
@@ -598,6 +602,8 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
         1, // isActive
         zoneA,
         zoneB,
+        0u, // sourceChildNumA (0 = not from child, direct adhesion)
+        0u, // sourceChildNumB (0 = not from child, direct adhesion)
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,
@@ -923,16 +929,33 @@ void main() {
         // The original connection already has the correct zone classification
         uint parentZone = isParentCellA ? oldConnection.zoneA : oldConnection.zoneB;
 
-        // Apply Zone C inheritance logic: Zone C bonds can go to both children, polar bonds go to specific children
+        // Apply inheritance logic
         bool childAInherits = false;
         bool childBInherits = false;
-
-        if (parentZone == 2u) { // Zone C - can go to both children if they both want to keep adhesion
+        
+        // Get source child number from the connection metadata
+        uint neighborSourceChildNum = isParentCellA ? oldConnection.sourceChildNumB : oldConnection.sourceChildNumA;
+        
+        // Zone classification determines base inheritance
+        if (parentZone == 2u) {
+            // Zone C (equatorial) - use metadata for child-type matching if available
+            if (neighborSourceChildNum > 0u) {
+                // We have metadata - match child types to prevent diagonal connections
+                if (neighborSourceChildNum == 1u && mode.childAKeepAdhesion == 1) {
+                    childAInherits = true;  // Child A (child 1) connects to neighbor child 1
+                } else if (neighborSourceChildNum == 2u && mode.childBKeepAdhesion == 1) {
+                    childBInherits = true;  // Child B (child 2) connects to neighbor child 2
+                }
+            } else {
+                // No metadata - both children inherit (standard Zone C behavior)
+                childAInherits = (mode.childAKeepAdhesion == 1);
+                childBInherits = (mode.childBKeepAdhesion == 1);
+            }
+        } else if (parentZone == 1u) {
+            // Zone B - goes to Child A (normal logic, no metadata)
             childAInherits = (mode.childAKeepAdhesion == 1);
-            childBInherits = (mode.childBKeepAdhesion == 1);
-        } else if (parentZone == 1u) { // Zone B - goes to Child A if it wants to keep adhesion
-            childAInherits = (mode.childAKeepAdhesion == 1);
-        } else { // Zone A - goes to Child B if it wants to keep adhesion
+        } else {
+            // Zone A - goes to Child B (normal logic, no metadata)
             childBInherits = (mode.childBKeepAdhesion == 1);
         }
         
@@ -949,14 +972,25 @@ void main() {
             vec4 invDeltaA = quatInverse(mode.orientationA);
             vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaA);
 
+            // Determine what to store for neighbor's source child num
+            // Zone C: Store metadata (1 or 2) to match child types
+            // Zones A and B: Don't store metadata (use 0)
+            uint neighborSourceToStore = neighborSourceChildNum; // Propagate existing metadata
+            if (neighborSourceChildNum == 0u && parentZone == 2u) {
+                // Zone C with no metadata: store child number for future matching
+                neighborSourceToStore = 1u;
+            }
+
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
             if (neighborWasCellA) {
                 // Neighbor was cellA, child becomes cellB
-                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childAIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection);
+                // Store source child number: neighbor gets propagated metadata or 1, child stores 1 (childA)
+                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childAIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection, neighborSourceToStore, 1u);
             } else {
                 // Neighbor was cellB, child becomes cellA
-                newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
+                // Store source child number: child stores 1 (childA), neighbor gets propagated metadata or 1
+                newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection, 1u, neighborSourceToStore);
             }
             if (newConnectionIndex < 0) return;
 
@@ -980,14 +1014,25 @@ void main() {
             vec4 invDeltaB = quatInverse(mode.orientationB);
             vec3 childAnchorDirection = rotateVectorByQuaternion(localAnchorDirection, invDeltaB);
 
+            // Determine what to store for neighbor's source child num
+            // Zone C: Store metadata (1 or 2) to match child types
+            // Zones A and B: Don't store metadata (use 0)
+            uint neighborSourceToStore = neighborSourceChildNum; // Propagate existing metadata
+            if (neighborSourceChildNum == 0u && parentZone == 2u) {
+                // Zone C with no metadata: store child number for future matching
+                neighborSourceToStore = 2u;
+            }
+
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
             if (neighborWasCellA) {
                 // Neighbor was cellA, child becomes cellB
-                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childBIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection);
+                // Store source child number: neighbor gets propagated metadata or 2, child stores 2 (childB)
+                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childBIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection, neighborSourceToStore, 2u);
             } else {
                 // Neighbor was cellB, child becomes cellA
-                newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
+                // Store source child number: child stores 2 (childB), neighbor gets propagated metadata or 2
+                newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection, 2u, neighborSourceToStore);
             }
             if (newConnectionIndex < 0) return;
 
@@ -1035,6 +1080,8 @@ void main() {
         1, // isActive
         childZoneA, // zoneA: Properly classified based on bond direction
         childZoneB, // zoneB: Properly classified based on bond direction
+        0u, // sourceChildNumA (0 = sibling bond, not inherited)
+        0u, // sourceChildNumB (0 = sibling bond, not inherited)
         anchorDirectionA,
         0.0, // paddingA
         anchorDirectionB,

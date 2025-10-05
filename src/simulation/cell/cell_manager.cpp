@@ -1754,97 +1754,13 @@ void CellManager::writeEnhancedDiagnosticLog()
 
     std::ofstream ofs(logPath);
     
-    // Write comprehensive header with legend
+    // Write minimal header
     ofs << "# ============================================================================\n";
-    ofs << "# BIOSPHERES ENHANCED DIAGNOSTIC LOG\n";
+    ofs << "# BIOSPHERES DIAGNOSTIC LOG (Python-style format)\n";
     ofs << "# ============================================================================\n";
     ofs << "# Timestamp: " << oss.str() << "\n";
     ofs << "# Total Entries: " << count << "\n";
-    ofs << "# Buffer Overflow: " << (diagnosticState.bufferOverflowOccurred ? "YES" : "NO") << "\n";
-    ofs << "# \n";
-    ofs << "# DIAGNOSTIC SYSTEM SETTINGS:\n";
-    ofs << "# - Adhesion Events: " << (diagnosticState.adhesionEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
-    ofs << "# - Cell Lifecycle Events: " << (diagnosticState.cellLifecycleEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
-    ofs << "# - Physics Events: " << (diagnosticState.physicsEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
-    ofs << "# - System Events: " << (diagnosticState.systemEventsEnabled ? "ENABLED" : "DISABLED") << "\n";
-    ofs << "# - Genome Tracking: " << (diagnosticState.genomeTrackingEnabled ? "ENABLED" : "DISABLED") << "\n";
-     ofs << "# - Lineage Tracking: " << (diagnosticState.lineageTrackingEnabled ? "ENABLED" : "DISABLED") << "\n";
-     ofs << "# \n";
-     ofs << "# LINEAGE ID FORMAT:\n";
-     ofs << "# - Format: A.B.C where:\n";
-     ofs << "#   • A = parent unique ID (unique ID of the cell's parent, 0 for root cells)\n";
-     ofs << "#   • B = cell unique ID (unique ID assigned to this specific cell)\n";
-     ofs << "#   • C = child number (1 or 2 for split children, 0 for root cells)\n";
-     ofs << "# \n";
-     ofs << "# - Root cells: A=0, B=unique ID, C=0 (e.g., \"0.1.0\" = first root cell)\n";
-     ofs << "# - Child cells: A=parent's unique ID, B=cell unique ID, C=child number\n";
-     ofs << "#   Example: \"1.2.1\" = child 1 of cell with unique ID 1\n";
-     ofs << "# \n";
-     ofs << "# - Lineage Evolution Examples:\n";
-     ofs << "#   • Root cell \"0.1.0\" splits → produces \"1.2.1\" and \"1.3.2\"\n";
-     ofs << "#   • Cell \"1.2.1\" splits → produces \"2.4.1\" and \"2.5.2\"\n";
-     ofs << "#   • Cell \"1.3.2\" splits → produces \"3.6.1\" and \"3.7.2\"\n";
-     ofs << "# \n";
-     ofs << "# - This system allows complete lineage tracing while maintaining unique cell identification.\n";
-     ofs << "# \n";
-     ofs << "# EVENT TYPE LEGEND:\n";
-    ofs << "# === ADHESION EVENTS (0-29) ===\n";
-    ofs << "# 0  = ADHESION_INHERITED       - Child inherits parent's connection during split\n";
-    ofs << "# 1  = ADHESION_DIRECT          - Normal new connection between cells\n";
-    ofs << "# 2  = ADHESION_BROKEN          - Connection broken due to force/distance\n";
-    ofs << "# 3  = ADHESION_SPLIT_EVENT     - Original connection removed due to parent split\n";
-    ofs << "# 4  = ADHESION_CELL_DEATH      - Connection removed due to cell death\n";
-    ofs << "# 5  = ADHESION_FORCE_BREAK     - Connection broken by excessive force\n";
-    ofs << "# 6  = ADHESION_DISTANCE_BREAK  - Connection broken by excessive distance\n";
-    ofs << "# 7  = ADHESION_MODE_CHANGE     - Connection removed due to mode change\n";
-    ofs << "# 8  = ADHESION_CAPACITY_FULL   - Connection failed due to cell adhesion capacity\n";
-    ofs << "# 9  = ADHESION_INVALID_CELLS   - Connection failed due to invalid cell indices\n";
-    ofs << "# 10 = ADHESION_DUPLICATE       - Connection failed due to duplicate connection\n";
-    ofs << "# 11 = ADHESION_SELF_CONNECTION - Connection failed due to self-connection attempt\n";
-    ofs << "# 12 = ADHESION_OUT_OF_BOUNDS   - Connection failed due to out of bounds\n";
-    ofs << "# 13 = ADHESION_LIMIT           - Connection failed due to global adhesion limit\n";
-    ofs << "# 14 = ADHESION_RESTORE         - Connection restored from keyframe/save\n";
-    ofs << "# 15 = ADHESION_MANUAL_REMOVE   - Connection manually removed by user\n";
-    ofs << "# 16 = ADHESION_COLLISION_BREAK - Connection broken due to collision\n";
-    ofs << "# 17 = ADHESION_AGE_BREAK       - Connection broken due to cell age\n";
-    ofs << "# 18 = ADHESION_TOXIN_BREAK     - Connection broken due to high toxins\n";
-    ofs << "# 19 = ADHESION_SIGNALING_BREAK - Connection broken due to signaling\n";
-    ofs << "# 20 = ADHESION_UNKNOWN_ERROR   - Connection failed for unknown reason\n";
-    ofs << "# \n";
-    ofs << "# === CELL LIFECYCLE EVENTS (30-59) ===\n";
-    ofs << "# 30 = CELL_BIRTH               - New cell created\n";
-    ofs << "# 31 = CELL_DEATH               - Cell died\n";
-    ofs << "# 32 = CELL_SPLIT_START         - Cell begins splitting process\n";
-    ofs << "# 33 = CELL_SPLIT_COMPLETE      - Cell split completed\n";
-    ofs << "# 34 = CELL_REPLACED            - Parent cell replaced by children during split\n";
-    ofs << "# 35 = CELL_MODE_CHANGE         - Cell changed mode\n";
-    ofs << "# 36 = CELL_GENOME_MUTATION     - Cell genome mutated\n";
-    ofs << "# 37 = CELL_COLLISION           - Cell collision detected\n";
-    ofs << "# 38 = CELL_OUT_OF_BOUNDS       - Cell moved out of world bounds\n";
-    ofs << "# 39 = CELL_SELECTED            - Cell selected by user\n";
-    ofs << "# 40 = CELL_DRAGGED             - Cell being dragged by user\n";
-    ofs << "# \n";
-    ofs << "# === PHYSICS EVENTS (60-89) ===\n";
-    ofs << "# 60 = PHYSICS_HIGH_VELOCITY    - Cell exceeded velocity threshold\n";
-    ofs << "# 61 = PHYSICS_HIGH_ACCELERATION- Cell exceeded acceleration threshold\n";
-    ofs << "# 62 = PHYSICS_CONSTRAINT_VIOLATION - Physics constraint violated\n";
-    ofs << "# 63 = PHYSICS_INSTABILITY      - Physics instability detected\n";
-    ofs << "# \n";
-    ofs << "# === SYSTEM EVENTS (90-99) ===\n";
-    ofs << "# 90 = SYSTEM_BUFFER_OVERFLOW   - Diagnostic buffer overflow\n";
-    ofs << "# 91 = SYSTEM_PERFORMANCE_WARNING - Performance threshold exceeded\n";
-    ofs << "# 99 = SYSTEM_ERROR             - General system error\n";
     ofs << "# ============================================================================\n\n";
-    
-    // Write CSV header for main data (simplified format focusing on lineage tracking)
-    ofs << "EventType,EventName,Frame,CellA_Lineage,CellB_Lineage,";
-    ofs << "ConnectionIndex,ModeIndex,SplitEventID,ParentCellID,";
-    ofs << "PosA_X,PosA_Y,PosA_Z,PosB_X,PosB_Y,PosB_Z,";
-    ofs << "VelA_X,VelA_Y,VelA_Z,VelB_X,VelB_Y,VelB_Z,";
-    ofs << "MassA,MassB,AgeA,AgeB,ToxinsA,ToxinsB,NitratesA,NitratesB,";
-    ofs << "SignalA1,SignalA2,SignalA3,SignalA4,SignalB1,SignalB2,SignalB3,SignalB4,";
-    ofs << "AnchorA_X,AnchorA_Y,AnchorA_Z,AnchorB_X,AnchorB_Y,AnchorB_Z,";
-    ofs << "EventValue1,EventValue2,EventFlags\n";
     
     // Helper function to get event name
     auto getEventName = [](uint32_t eventType) -> std::string {
@@ -1891,151 +1807,73 @@ void CellManager::writeEnhancedDiagnosticLog()
             // System events
             case 90: return "SYSTEM_BUFFER_OVERFLOW";
             case 91: return "SYSTEM_PERFORMANCE_WARNING";
+            case 92: return "SYSTEM_GPU_ERROR";
             case 99: return "SYSTEM_ERROR";
             default: return "UNKNOWN_EVENT_" + std::to_string(eventType);
         }
     };
     
-    // Write all entries
-    for (const auto& e : entries) {
-        ofs << e.eventType << "," << getEventName(e.eventType) << "," << e.frameIndex << ",";
-        
-        // Generate lineage strings for both cells using the stored A.B.C data
-        std::string lineageA = "";
-        std::string lineageB = "";
-
-        // Use stored lineage data from when the event occurred
-        if (e.lineageA_parentId != UINT32_MAX) {
-            if (e.lineageA_parentId == 0) {
-                // Root cell: A=0, B=unique ID, C=0
-                lineageA = std::to_string(0) + "." +
-                          std::to_string(e.lineageA_uniqueId) + "." +
-                          std::to_string(0);
-            } else {
-                // Child cell: A=parent ID, B=unique ID, C=child number
-                lineageA = std::to_string(e.lineageA_parentId) + "." +
-                          std::to_string(e.lineageA_uniqueId) + "." +
-                          std::to_string(e.lineageA_childNum);
-            }
+    // Helper to format lineage ID
+    auto formatLineage = [](uint32_t parentId, uint32_t uniqueId, uint32_t childNum) -> std::string {
+        if (parentId == UINT32_MAX) return "NONE";
+        if (parentId == 0) {
+            return std::to_string(0) + "." + std::to_string(uniqueId) + "." + std::to_string(0);
         }
-
-        if (e.lineageB_parentId != UINT32_MAX) {
-            if (e.lineageB_parentId == 0) {
-                // Root cell: A=0, B=unique ID, C=0
-                lineageB = std::to_string(0) + "." +
-                          std::to_string(e.lineageB_uniqueId) + "." +
-                          std::to_string(0);
-            } else {
-                // Child cell: A=parent ID, B=unique ID, C=child number
-                lineageB = std::to_string(e.lineageB_parentId) + "." +
-                          std::to_string(e.lineageB_uniqueId) + "." +
-                          std::to_string(e.lineageB_childNum);
-            }
-        }
-
-        ofs << lineageA << "," << lineageB << ",";
-        ofs << e.connectionIndex << "," << e.modeIndex << ",";
-        ofs << e.splitEventID << "," << e.parentCellID << ",";
-        
-        // Positions
-        ofs << e.positionA[0] << "," << e.positionA[1] << "," << e.positionA[2] << ",";
-        ofs << e.positionB[0] << "," << e.positionB[1] << "," << e.positionB[2] << ",";
-        
-        // Velocities
-        ofs << e.velocityA[0] << "," << e.velocityA[1] << "," << e.velocityA[2] << ",";
-        ofs << e.velocityB[0] << "," << e.velocityB[1] << "," << e.velocityB[2] << ",";
-        
-        // Masses and ages
-        ofs << e.massA << "," << e.massB << "," << e.ageA << "," << e.ageB << ",";
-        
-        // Toxins and nitrates
-        ofs << e.toxinsA << "," << e.toxinsB << "," << e.nitratesA << "," << e.nitratesB << ",";
-        
-        // Signaling substances
-        ofs << e.signallingA[0] << "," << e.signallingA[1] << "," << e.signallingA[2] << "," << e.signallingA[3] << ",";
-        ofs << e.signallingB[0] << "," << e.signallingB[1] << "," << e.signallingB[2] << "," << e.signallingB[3] << ",";
-        
-        // Anchor directions
-        ofs << e.anchorDirA[0] << "," << e.anchorDirA[1] << "," << e.anchorDirA[2] << ",";
-        ofs << e.anchorDirB[0] << "," << e.anchorDirB[1] << "," << e.anchorDirB[2] << ",";
-        
-        // Event values and flags
-        ofs << e.eventValue1 << "," << e.eventValue2 << "," << e.eventFlags << "\n";
-    }
+        return std::to_string(parentId) + "." + std::to_string(uniqueId) + "." + std::to_string(childNum);
+    };
     
-    // Write genome differences section if enabled
-    if (diagnosticState.genomeTrackingEnabled && !cellGenomeDifferences.empty()) {
-        ofs << "\n# ============================================================================\n";
-        ofs << "# GENOME DIFFERENCES FROM DEFAULT\n";
-        ofs << "# ============================================================================\n";
-        ofs << "# This section shows genome settings that differ from default values for each cell\n";
-        ofs << "# Format: PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
-        ofs << "# ============================================================================\n\n";
-
-        ofs << "PropertyName,DefaultValue,CurrentValue,NumericDifference\n";
-        
-        for (const auto& cellPair : cellGenomeDifferences) {
-            const auto& differences = cellPair.second;
-
-            if (!differences.empty()) {
-                for (const auto& diff : differences) {
-                    ofs << diff.propertyName << ",";
-                    ofs << "\"" << diff.defaultValue << "\",\"" << diff.currentValue << "\",";
-                    ofs << diff.numericDifference << "\n";
+    // Write all entries in Python style
+    for (const auto& e : entries) {
+        // Only log adhesion inheritance events (eventType == 0)
+        if (e.eventType == 0) {
+            std::string parentCell = formatLineage(e.parentCellID >> 16, (e.parentCellID >> 8) & 0xFF, e.parentCellID & 0xFF);
+            std::string neighborCell = formatLineage(e.lineageB_parentId, e.lineageB_uniqueId, e.lineageB_childNum);
+            std::string childCell = formatLineage(e.lineageA_parentId, e.lineageA_uniqueId, e.lineageA_childNum);
+            
+            // Extract zone from eventValue1 (stored as adhesionZone)
+            float zoneFloat = e.eventValue1;
+            uint32_t zone = static_cast<uint32_t>(zoneFloat);
+            std::string zoneStr = (zone == 0) ? "A" : (zone == 1) ? "B" : "C";
+            
+            // Extract inheritance type from eventValue2
+            uint32_t inheritanceType = static_cast<uint32_t>(e.eventValue2);
+            
+            // Extract source child num from eventFlags (lower 16 bits)
+            uint32_t sourceChildNum = e.eventFlags & 0xFFFF;
+            
+            ofs << "\n=== Inheritance: " << parentCell << " -> " << neighborCell << " ===\n";
+            ofs << "Cell position: (" << std::fixed << std::setprecision(1) 
+                << e.positionA[0] << ", " << e.positionA[1] << ", " << e.positionA[2] << ")\n";
+            ofs << "Neighbor position: (" << std::fixed << std::setprecision(1)
+                << e.positionB[0] << ", " << e.positionB[1] << ", " << e.positionB[2] << ")\n";
+            ofs << "Bond direction: (" << std::fixed << std::setprecision(2)
+                << e.anchorDirA[0] << ", " << e.anchorDirA[1] << ", " << e.anchorDirA[2] << ")\n";
+            ofs << "Split direction: (" << std::fixed << std::setprecision(2)
+                << e.anchorDirB[0] << ", " << e.anchorDirB[1] << ", " << e.anchorDirB[2] << ")\n";
+            ofs << "Bond angle from split: " << std::fixed << std::setprecision(1) << zoneFloat << "°\n";
+            ofs << "Neighbor has children: " << (sourceChildNum > 0 ? "True" : "False") << "\n";
+            ofs << "Source child num from bond: " << (sourceChildNum > 0 ? std::to_string(sourceChildNum) : "None") << "\n";
+            
+            // Determine zone and output
+            if (sourceChildNum > 0) {
+                ofs << "Using metadata: source_child_num=" << sourceChildNum << "\n";
+                ofs << "  CREATING BOND: " << childCell << " -> " << neighborCell << " (matched by metadata)\n";
+            } else {
+                ofs << "Zone " << zoneStr;
+                if (zoneStr == "C") {
+                    ofs << " (perpendicular) - same child type connections\n";
+                } else if (zoneStr == "B") {
+                    ofs << " (aligned) - child1 inherits\n";
+                } else {
+                    ofs << " (opposite) - child2 inherits\n";
                 }
             }
         }
     }
     
-    // Write lineage statistics section if enabled
-    if (diagnosticState.lineageTrackingEnabled) {
-        // Sync lineage tracking data from GPU before generating statistics
-        syncLineageTrackingFromGPU();
-        
-        ofs << "\n# ============================================================================\n";
-        ofs << "# LINEAGE STATISTICS\n";
-        ofs << "# ============================================================================\n";
-        ofs << "# This section shows lineage tracking statistics and relationships\n";
-        ofs << "# ============================================================================\n\n";
-        
-        std::string lineageStats = getLineageStatistics();
-        std::istringstream lineageStream(lineageStats);
-        std::string line;
-        while (std::getline(lineageStream, line)) {
-            ofs << "# " << line << "\n";
-        }
-        ofs << "\n";
-    }
-    
-    // Write summary statistics
-    ofs << "\n# ============================================================================\n";
-    ofs << "# SUMMARY STATISTICS\n";
-    ofs << "# ============================================================================\n";
-    
-    // Count events by type
-    std::map<uint32_t, uint32_t> eventCounts;
-    for (const auto& e : entries) {
-        eventCounts[e.eventType]++;
-    }
-    
-    ofs << "# Event Type Counts:\n";
-    for (const auto& countPair : eventCounts) {
-        ofs << "# " << getEventName(countPair.first) << ": " << countPair.second << " events\n";
-    }
-    
-    ofs << "# \n";
-    ofs << "# Total unique cells with genome differences: " << cellGenomeDifferences.size() << "\n";
-    ofs << "# Diagnostic system performance:\n";
-    ofs << "#   - Buffer utilization: " << (100.0f * count / diagnosticState.maxEntries) << "%\n";
-    ofs << "#   - Buffer overflow occurred: " << (diagnosticState.bufferOverflowOccurred ? "YES" : "NO") << "\n";
-    ofs << "# ============================================================================\n";
-    
     ofs.close();
 
-    std::cout << "[Enhanced Diagnostics] Comprehensive log written to " << logPath.string() << " (" << count << " entries)\n";
-    std::cout << "  - Event types recorded: " << eventCounts.size() << "\n";
-    std::cout << "  - Cells with genome differences: " << cellGenomeDifferences.size() << "\n";
-    std::cout << "  - Buffer utilization: " << (100.0f * count / diagnosticState.maxEntries) << "%\n";
+    std::cout << "[Diagnostics] Python-style log written to " << logPath.string() << " (" << count << " entries)\n";
 }
 
 void CellManager::updateRealTimeMonitoring()
@@ -2126,20 +1964,15 @@ void CellManager::checkPerformanceThresholds()
         
         // Check toxin threshold
         if (cell.toxins > diagnosticState.toxinThreshold) {
-            logDiagnosticEvent(DiagnosticEventType::PHYSICS_INSTABILITY, i, UINT32_MAX, UINT32_MAX, cell.toxins);
+            logDiagnosticEvent(DiagnosticEventType::PHYSICS_HIGH_ACCELERATION, i, UINT32_MAX, UINT32_MAX, cell.toxins);
         }
     }
 }
 
-// Legacy method for backward compatibility - redirect to enhanced version
 void CellManager::writeAdhesionDiagnosticLog()
 {
     writeEnhancedDiagnosticLog();
 }
-
-// ============================================================================
-// LINEAGE TRACKING SYSTEM
-// ============================================================================
 
 void CellManager::updateLineageTracking(uint32_t cellIndex)
 {
