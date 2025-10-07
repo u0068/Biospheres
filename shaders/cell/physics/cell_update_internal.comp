@@ -227,6 +227,44 @@ vec4 quatInverse(vec4 q) {
     return vec4(0.0, 0.0, 0.0, 1.0); // Identity quaternion
 }
 
+// Snap anchor direction to nearest angle increment
+// Snaps spherical angles (theta, phi) to the nearest increment defined by the genome orientation
+vec3 snapAnchorToAngleIncrement(vec3 anchorDir, vec4 orientationDelta) {
+    // Convert anchor direction to spherical coordinates
+    float r = length(anchorDir);
+    if (r < 0.001) return vec3(1.0, 0.0, 0.0); // Fallback for zero vector
+    
+    vec3 dir = anchorDir / r;
+    
+    // Calculate spherical angles
+    float theta = atan(dir.y, dir.x); // Azimuthal angle [-π, π]
+    float phi = acos(clamp(dir.z, -1.0, 1.0)); // Polar angle [0, π]
+    
+    // Determine angle increment from genome orientation
+    // Extract rotation angle from the quaternion
+    float qw = orientationDelta.w;
+    float angleIncrement = 2.0 * acos(clamp(abs(qw), 0.0, 1.0)); // Angle in radians
+    
+    // If angle is too small, default to 90 degrees (π/2)
+    if (angleIncrement < 0.1) {
+        angleIncrement = 3.14159265359 / 2.0; // 90 degrees
+    }
+    
+    // Snap theta and phi to nearest increment
+    float thetaSnapped = round(theta / angleIncrement) * angleIncrement;
+    float phiSnapped = round(phi / angleIncrement) * angleIncrement;
+    
+    // Convert back to Cartesian coordinates
+    float sinPhi = sin(phiSnapped);
+    vec3 snapped = vec3(
+        sinPhi * cos(thetaSnapped),
+        sinPhi * sin(thetaSnapped),
+        cos(phiSnapped)
+    );
+    
+    return normalize(snapped);
+}
+
 // Deterministic quaternion rotation from one vector to another
 // Uses a consistent method that avoids cross product ambiguity
 vec4 quatFromTwoVectors(vec3 from, vec3 to) {
@@ -482,19 +520,25 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
         return -1;
     }
 
-    // Check for available slot in cell A
+    // Check for available slot in cell A using atomic compare-exchange to prevent races
     int slotA = -1;
     for (int j = 0; j < 20; ++j) {
-        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
+        // Atomically try to claim this slot
+        int expected = -1;
+        int newValue = -2; // Temporary marker to claim the slot
+        if (atomicCompSwap(outputCells[cellAIndex].adhesionIndices[j], expected, newValue) == expected) {
             slotA = j;
             break;
         }
     }
 
-    // Check for available slot in cell B
+    // Check for available slot in cell B using atomic compare-exchange to prevent races
     int slotB = -1;
     for (int j = 0; j < 20; ++j) {
-        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
+        // Atomically try to claim this slot
+        int expected = -1;
+        int newValue = -2; // Temporary marker to claim the slot
+        if (atomicCompSwap(outputCells[cellBIndex].adhesionIndices[j], expected, newValue) == expected) {
             slotB = j;
             break;
         }
@@ -502,6 +546,13 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
 
     if (slotA == -1 || slotB == -1) {
         // Roll back the reservation if any cell has no free slot
+        // Also release any claimed slots
+        if (slotA != -1) {
+            outputCells[cellAIndex].adhesionIndices[slotA] = -1;
+        }
+        if (slotB != -1) {
+            outputCells[cellBIndex].adhesionIndices[slotB] = -1;
+        }
         int reservation = atomicAdd(freeAdhesionTop, 1);
         int topIndex = reservation;
         freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
@@ -544,6 +595,9 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     );
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
+    
+    // Memory barrier to ensure writes are visible to subsequent slot searches
+    memoryBarrierBuffer();
 
     return int(newAdhesionIndex);
 }
@@ -921,8 +975,16 @@ void main() {
         int oldAdhesionIndex = cell.adhesionIndices[i];
         if (oldAdhesionIndex < 0) continue;
 
+        // Read connection data BEFORE checking isActive, because the neighbor might have already
+        // split and marked it inactive. We need the connection data regardless.
         AdhesionConnection oldConnection = connections[oldAdhesionIndex];
-        if (oldConnection.isActive == 0) continue;
+        
+        // Skip if this connection was already processed (not from a split)
+        // But allow processing if it was marked inactive by a simultaneous split
+        bool wasAlreadyProcessed = (oldConnection.isActive == 0 && 
+                                     oldConnection.cellAIndex != childAIndex && 
+                                     oldConnection.cellBIndex != childAIndex);
+        if (wasAlreadyProcessed) continue;
 
         // CRITICAL FIX: Add memory barrier before modifying adhesion connections
         memoryBarrierBuffer();
@@ -932,7 +994,8 @@ void main() {
             ? oldConnection.cellBIndex
             : oldConnection.cellAIndex;
 
-        // Remove the old connection
+        // Remove the old connection (this marks it inactive, but we already have the data)
+        // Note: If neighbor also splits, it will have already read this connection data
         removeAdhesion(oldAdhesionIndex);
 
         // Use stored anchor direction instead of spatial calculation
@@ -985,30 +1048,38 @@ void main() {
             
             // Transform to child A's local space using genome delta
             vec4 invDeltaA = quatInverse(mode.orientationA);
-            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(neighborRelativeToChildA_parentLocal, invDeltaA));
+            vec3 childAnchorDirection_raw = normalize(rotateVectorByQuaternion(neighborRelativeToChildA_parentLocal, invDeltaA));
             
-            // Calculate neighbor's anchor direction
-            // The neighbor's anchor should point from neighbor toward child A
-            // 
-            // In parent's local frame:
-            // - Neighbor is at: localAnchorDirection * restLength  
-            // - Child A is at: offsetLocal
-            // - Direction from neighbor to child A: offsetLocal - localAnchorDirection * restLength
+            // Snap to nearest angle increment for child A (skip for Zone C to preserve intermediate geometry)
+            GPUMode childAMode = modes[mode.childModes.x];
+            vec3 childAnchorDirection = (parentZone == 2u) ? childAnchorDirection_raw : snapAnchorToAngleIncrement(childAnchorDirection_raw, childAMode.orientationA);
             
+            // Calculate neighbor's anchor direction pointing toward Child A
+            // Direction from neighbor to Child A in parent's local frame:
             vec3 neighborToChildA_parentLocal = offsetLocal - localAnchorDirection * mode.adhesionSettings.restLength;
             
-            // Transform to neighbor's local frame using the original bond relationship
-            // The original bond had: parent anchor = localAnchorDirection, neighbor anchor = neighborOriginalAnchor
-            // These pointed opposite, so: neighborOriginalAnchor ≈ rotate(-localAnchorDirection, parentToNeighborRot)
-            // We derive parentToNeighborRot from these stored genome-based directions
+            // Transform to neighbor's local frame using the bond axis relationship
+            // localAnchorDirection (parent→neighbor) and neighborOriginalAnchor (neighbor→parent) define the bond axis
+            vec3 bondAxis_parent = normalize(localAnchorDirection);
+            vec3 bondAxis_neighbor = normalize(-neighborOriginalAnchor);
             
-            // Build rotation quaternion using deterministic method
-            vec3 fromDir = normalize(-localAnchorDirection);
-            vec3 toDir = normalize(neighborOriginalAnchor);
-            vec4 parentToNeighborRot = quatFromTwoVectors(fromDir, toDir);
+            // Component along bond axis (scalar, frame-independent)
+            float alongBond = dot(neighborToChildA_parentLocal, bondAxis_parent);
             
-            // Transform the direction to neighbor's local frame
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildA_parentLocal, parentToNeighborRot));
+            // Component perpendicular to bond axis (in parent's frame)
+            vec3 perpComponent_parent = neighborToChildA_parentLocal - alongBond * bondAxis_parent;
+            
+            // Transform perpendicular component: assume aligned (genome-only approximation)
+            vec3 perpComponent_neighbor = perpComponent_parent;
+            
+            // Reconstruct in neighbor's frame
+            vec3 neighborToChildA_neighborLocal = alongBond * bondAxis_neighbor + perpComponent_neighbor;
+            vec3 neighborAnchorDirection_raw = normalize(neighborToChildA_neighborLocal);
+            
+            // Snap to nearest angle increment for the neighbor (skip for Zone C to preserve intermediate geometry)
+            ComputeCell neighborCell = inputCells[neighborIndex];
+            GPUMode neighborMode = modes[neighborCell.modeIndex];
+            vec3 neighborAnchorDirection = (parentZone == 2u) ? neighborAnchorDirection_raw : snapAnchorToAngleIncrement(neighborAnchorDirection_raw, neighborMode.orientationA);
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -1019,9 +1090,11 @@ void main() {
                 // Neighbor was cellB, child becomes cellA
                 newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
             }
-            if (newConnectionIndex < 0) return;
-
-            // Log diagnostic entry for inherited connection (Child A)
+            
+            // If connection creation failed for Child A, skip logging but continue to allow Child B to inherit
+            // Failure can occur if: no free adhesion indices, Child A has no free slots, or neighbor has no free slots
+            if (newConnectionIndex >= 0) {
+                // Log diagnostic entry for inherited connection (Child A)
             // Use the actual cellA/cellB assignment from the connection structure
             uint actualCellA = neighborWasCellA ? neighborIndex : childAIndex;
             uint actualCellB = neighborWasCellA ? childAIndex : neighborIndex;
@@ -1033,7 +1106,12 @@ void main() {
                 uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
                 getLineageIdFromIndex(index), 1u, uint(oldAdhesionIndex), float(parentZone) // original parentCellID, inheritanceType (1=childA_keeps), originalConnectionIndex, adhesionZone
             );
+            }
         }
+        
+        // Memory barrier to ensure Child A's connection writes are visible before Child B tries to allocate slots
+        // This is critical for Zone C where both children connect to the same neighbor
+        memoryBarrierBuffer();
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
@@ -1050,19 +1128,38 @@ void main() {
             
             // Transform to child B's local space using genome delta
             vec4 invDeltaB = quatInverse(mode.orientationB);
-            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(neighborRelativeToChildB_parentLocal, invDeltaB));
+            vec3 childAnchorDirection_raw = normalize(rotateVectorByQuaternion(neighborRelativeToChildB_parentLocal, invDeltaB));
             
-            // Calculate neighbor's anchor direction
-            // Direction from neighbor to child B (in parent's local frame):
+            // Snap to nearest angle increment for child B (skip for Zone C to preserve intermediate geometry)
+            GPUMode childBMode = modes[mode.childModes.y];
+            vec3 childAnchorDirection = (parentZone == 2u) ? childAnchorDirection_raw : snapAnchorToAngleIncrement(childAnchorDirection_raw, childBMode.orientationA);
+            
+            // Calculate neighbor's anchor direction pointing toward Child B
+            // Direction from neighbor to Child B in parent's local frame:
             vec3 neighborToChildB_parentLocal = -offsetLocal - localAnchorDirection * mode.adhesionSettings.restLength;
             
-            // Derive rotation from parent to neighbor using deterministic method
-            vec3 fromDir = normalize(-localAnchorDirection);
-            vec3 toDir = normalize(neighborOriginalAnchor);
-            vec4 parentToNeighborRot = quatFromTwoVectors(fromDir, toDir);
+            // Transform to neighbor's local frame using the bond axis relationship
+            // localAnchorDirection (parent→neighbor) and neighborOriginalAnchor (neighbor→parent) define the bond axis
+            vec3 bondAxis_parent = normalize(localAnchorDirection);
+            vec3 bondAxis_neighbor = normalize(-neighborOriginalAnchor);
             
-            // Transform to neighbor's local frame
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildB_parentLocal, parentToNeighborRot));
+            // Component along bond axis (scalar, frame-independent)
+            float alongBond = dot(neighborToChildB_parentLocal, bondAxis_parent);
+            
+            // Component perpendicular to bond axis (in parent's frame)
+            vec3 perpComponent_parent = neighborToChildB_parentLocal - alongBond * bondAxis_parent;
+            
+            // Transform perpendicular component: assume aligned (genome-only approximation)
+            vec3 perpComponent_neighbor = perpComponent_parent;
+            
+            // Reconstruct in neighbor's frame
+            vec3 neighborToChildB_neighborLocal = alongBond * bondAxis_neighbor + perpComponent_neighbor;
+            vec3 neighborAnchorDirection_raw = normalize(neighborToChildB_neighborLocal);
+            
+            // Snap to nearest angle increment for the neighbor (skip for Zone C to preserve intermediate geometry)
+            ComputeCell neighborCell = inputCells[neighborIndex];
+            GPUMode neighborMode = modes[neighborCell.modeIndex];
+            vec3 neighborAnchorDirection = (parentZone == 2u) ? neighborAnchorDirection_raw : snapAnchorToAngleIncrement(neighborAnchorDirection_raw, neighborMode.orientationA);
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -1073,9 +1170,10 @@ void main() {
                 // Neighbor was cellB, child becomes cellA
                 newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
             }
-            if (newConnectionIndex < 0) return;
-
-            // Log diagnostic entry for inherited connection (Child B)
+            
+            // If connection creation failed, skip logging but continue processing
+            if (newConnectionIndex >= 0) {
+                // Log diagnostic entry for inherited connection (Child B)
             // Use the actual cellA/cellB assignment from the connection structure
             uint actualCellA_B = neighborWasCellA ? neighborIndex : childBIndex;
             uint actualCellB_B = neighborWasCellA ? childBIndex : neighborIndex;
@@ -1087,6 +1185,7 @@ void main() {
                 uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
                 getLineageIdFromIndex(index), 2u, uint(oldAdhesionIndex), float(parentZone) // original parentCellID, inheritanceType (2=childB_keeps), originalConnectionIndex, adhesionZone
             );
+            }
         }
     }
 
