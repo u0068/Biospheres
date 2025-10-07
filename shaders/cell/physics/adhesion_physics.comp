@@ -329,15 +329,13 @@ void computeAdhesionForces(
         torqueB += twistTorqueB + twistDampingB;
     }
 
-    // Apply tangential forces derived from torques in a zero-sum fashion for conservation
-    vec3 tangentialForce = 0.5 * (cross(-deltaPos, torqueB) - cross(deltaPos, torqueA));
-    forceA += tangentialForce;
-    forceB -= tangentialForce;
+    // Apply a tangential force from the torque
+    forceA += cross(-deltaPos, torqueB);
+    forceB += cross(deltaPos, torqueA);
 
-    // Symmetrize torques to be equal-and-opposite (conserve angular momentum across the pair)
-    vec3 pairTorque = 0.5 * (torqueA - torqueB);
-    torqueA = pairTorque;
-    torqueB = -pairTorque;
+    // This conserves angular momentum but makes cells look less natural, maybe better to comment it out
+    torqueA -= torqueB;
+    torqueB -= torqueA;
 }
 
 void main() {
@@ -391,37 +389,6 @@ void main() {
             thisCell.acceleration.xyz += fB / thisCell.positionAndMass.w;
             thisCell.angularAcceleration.xyz += tB / momentOfInertia;
         }
-        
-        // ANTI-DRIFT: Apply immediate momentum correction for this connection
-        // This ensures each adhesion connection doesn't contribute to net system momentum
-        float connectionDamping = 0.1;
-        thisCell.acceleration.xyz -= thisCell.velocity.xyz * connectionDamping;
-    }
-
-    // ANTI-DRIFT CORRECTION: Apply center-of-mass stabilization
-    // This prevents the entire connected system from drifting by applying
-    // forces that counteract any net momentum accumulation
-    bool hasConnections = false;
-    for (int i = 0; i < 20; ++i) {
-        if (thisCell.adhesionIndices[i] >= 0) {
-            hasConnections = true;
-            break;
-        }
-    }
-    
-    if (hasConnections) {
-        // Apply strong velocity damping to prevent drift accumulation
-        float driftDamping = 0.5; // Much stronger damping for connected systems
-        vec3 driftCorrectionForce = -thisCell.velocity.xyz * driftDamping;
-        
-        // Apply the correction force
-        thisCell.acceleration.xyz += driftCorrectionForce;
-        
-        // Additional position-based correction to prevent center-of-mass drift
-        // This applies a restoring force toward the origin for connected systems
-        float comRestoreStrength = 0.1;
-        vec3 comRestoreForce = -thisCell.positionAndMass.xyz * comRestoreStrength;
-        thisCell.acceleration.xyz += comRestoreForce;
     }
 
     // Write the updated cell back to output buffer
