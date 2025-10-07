@@ -2,20 +2,40 @@
 #include "../simulation/cell/cell_manager.h"
 #include "../core/config.h"
 #include "../scene/scene_manager.h"
+#include "imgui.h"
 #include <algorithm>
 #include <iostream>
 
-// Handle debounced genome resimulation to prevent overshooting during rapid adjustments
+// Handle debounced genome resimulation with immediate update on mouse release
 void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, SceneManager& sceneManager, float deltaTime)
 {
-    // If we have a pending resimulation, update the debounce timer
+    // Detect mouse release
+    bool isMouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    bool mouseJustReleased = wasMouseDownLastFrame && !isMouseDown;
+    wasMouseDownLastFrame = isMouseDown;
+    
+    // If we have a pending resimulation, update timers
     if (pendingGenomeResimulation)
     {
         genomeChangeDebounceTimer += deltaTime;
+        periodicUpdateTimer += deltaTime;
         
-        // Once the debounce delay has passed, perform the resimulation
-        if (genomeChangeDebounceTimer >= GENOME_CHANGE_DEBOUNCE_DELAY)
+        // Periodic genome buffer updates during slider dragging (for instant color/visual updates)
+        if (periodicUpdateTimer >= GENOME_PERIODIC_UPDATE_INTERVAL && !isResimulating)
         {
+            // Update genome buffer only (fast operation, updates colors immediately)
+            cellManager.addGenomeToBuffer(currentGenome);
+            periodicUpdateTimer = 0.0f;
+        }
+        
+        // Trigger resimulation on mouse release OR after debounce delay
+        bool shouldResimulate = (mouseJustReleased || genomeChangeDebounceTimer >= GENOME_CHANGE_DEBOUNCE_DELAY) && !isResimulating;
+        
+        if (shouldResimulate)
+        {
+            isResimulating = true;
+            resimulationProgress = 0.0f;
+            
             // Reset the simulation with the new genome
             cellManager.resetSimulation();
             cellManager.addGenomeToBuffer(currentGenome);
@@ -37,19 +57,19 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
                 bool wasPaused = sceneManager.isPaused();
                 sceneManager.setPaused(true);
                 
-                // Use larger time step for fast resimulation
-                float scrubTimeStep = config::fastForwardTimeStep;
-                float timeRemaining = currentTime;
-                int maxSteps = (int)(currentTime / scrubTimeStep) + 1;
+                // Use optimized frame-skipping resimulation with progress tracking
+                int framesSkipped = cellManager.updateCellsFastForwardOptimized(
+                    currentTime, 
+                    config::resimulationTimeStep
+                );
                 
-                for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
-                {
-                    float stepTime = (timeRemaining > scrubTimeStep) ? scrubTimeStep : timeRemaining;
-                    cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
-                    timeRemaining -= stepTime;
-                    
-                    // Update simulation time manually during fast-forward
-                    sceneManager.setPreviewSimulationTime(currentTime - timeRemaining);
+                // Update simulation time to final time
+                sceneManager.setPreviewSimulationTime(currentTime);
+                
+                // Log performance improvement if any frames were skipped
+                if (framesSkipped > 0) {
+                    std::cout << "Frame skipping saved " << framesSkipped 
+                              << " frames during resimulation\n";
                 }
                 
                 // Restore original pause state after fast-forward
@@ -58,12 +78,16 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
             else
             {
                 // If at time 0, just advance simulation by one frame after reset
-                cellManager.updateCellsFastForward(config::fastForwardTimeStep); // Use optimized fast-forward
+                cellManager.updateCellsFastForward(config::resimulationTimeStep);
+                sceneManager.setPreviewSimulationTime(0.0f);
             }
             
-            // Clear the pending flag and reset timer
+            // Clear the pending flag and reset timers
             pendingGenomeResimulation = false;
             genomeChangeDebounceTimer = 0.0f;
+            periodicUpdateTimer = 0.0f;
+            isResimulating = false;
+            resimulationProgress = 1.0f;
         }
     }
 }

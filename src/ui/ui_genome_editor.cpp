@@ -33,6 +33,29 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     {
         // Validate and fix any colors that might be in the wrong range
         validateGenomeColors();
+        
+        // Show resimulation status indicator
+        if (isResimulating) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.0f, 1.0f)); // Orange
+            ImGui::Text("⚡ Resimulating...");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::ProgressBar(resimulationProgress, ImVec2(100.0f, 0.0f));
+        } else if (pendingGenomeResimulation) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Gray
+            ImGui::Text("⏱ Pending resimulation...");
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            float ratio = genomeChangeDebounceTimer / GENOME_CHANGE_DEBOUNCE_DELAY;
+            ImGui::ProgressBar(ratio, ImVec2(100.0f, 0.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 1.0f, 0.0f, 1.0f)); // Green
+            ImGui::Text("✓ Ready");
+            ImGui::PopStyleColor();
+        }
+        
+        ImGui::Separator();
+        
     ImGui::Text("Genome Name:");
     addTooltip("The name identifier for this genome configuration");
     

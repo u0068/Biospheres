@@ -125,10 +125,15 @@ private:    // Helper to get window flags based on lock state
     bool isColorBright(const glm::vec3 &color); // Helper to determine if color is bright    // Genome Editor Data
     int selectedModeIndex = 0;
     
-    // Debouncing for genome changes to prevent overshooting during rapid adjustments
+    // Debouncing for genome changes with immediate update on mouse release
     float genomeChangeDebounceTimer = 0.0f;
-    static constexpr float GENOME_CHANGE_DEBOUNCE_DELAY = 0.15f; // 150ms delay before resimulation
-    bool pendingGenomeResimulation = false;    // Time Scrubber Data
+    static constexpr float GENOME_CHANGE_DEBOUNCE_DELAY = 0.3f; // 300ms delay if mouse not released
+    static constexpr float GENOME_PERIODIC_UPDATE_INTERVAL = 0.05f; // Update genome buffer every 50ms during slider drag
+    float periodicUpdateTimer = 0.0f;
+    bool pendingGenomeResimulation = false;
+    bool isResimulating = false;  // Flag to indicate resimulation in progress
+    float resimulationProgress = 0.0f;  // Progress of resimulation (0.0 to 1.0)
+    bool wasMouseDownLastFrame = false; // Track mouse state to detect release    // Time Scrubber Data
     float currentTime = 0.0f;
     float maxTime = 50.0f;
     char timeInputBuffer[32] = "0.00";
@@ -148,7 +153,7 @@ private:    // Helper to get window flags based on lock state
         bool isValid = false;
     };
     
-    static constexpr int MAX_KEYFRAMES = 50;
+    static constexpr int MAX_KEYFRAMES = 400;
     std::vector<SimulationKeyframe> keyframes;
     bool keyframesInitialized = false;
     

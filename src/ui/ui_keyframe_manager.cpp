@@ -33,7 +33,7 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
     // Calculate time interval between keyframes
     float timeInterval = maxTime / (MAX_KEYFRAMES - 1);
     
-    // Simulate and capture keyframes (keeping your original time step logic)
+    // Simulate and capture keyframes with frame-skipping optimization
     for (int i = 1; i < MAX_KEYFRAMES; i++)
     {
         float targetTime = i * timeInterval;
@@ -41,14 +41,12 @@ void UIManager::initializeKeyframes(CellManager& cellManager)
         
         // Simulate from previous keyframe to current keyframe
         float timeToSimulate = targetTime - currentSimTime;
-        float scrubTimeStep = config::fastForwardTimeStep;
         
-        while (timeToSimulate > 0.0f)
-        {
-            float stepTime = (timeToSimulate > scrubTimeStep) ? scrubTimeStep : timeToSimulate;
-            cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
-            timeToSimulate -= stepTime;
-        }
+        // Use optimized frame-skipping resimulation
+        cellManager.updateCellsFastForwardOptimized(
+            timeToSimulate, 
+            config::resimulationTimeStep
+        );
         
         // Capture keyframe
         captureKeyframe(cellManager, targetTime, i);

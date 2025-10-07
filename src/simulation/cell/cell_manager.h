@@ -635,6 +635,36 @@ struct CellManager
     std::vector<AdhesionConnection> getAdhesionConnections() const; // Get current adhesion connections
     void restoreAdhesionConnections(const std::vector<AdhesionConnection> &connections, int count); // Restore adhesion connections
 
+    // Frame skipping system for resimulation optimization
+    struct SimulationState {
+        int cellCount = 0;
+        int adhesionCount = 0;
+        float totalAge = 0.0f;           // Sum of all cell ages
+        glm::vec3 centerOfMass{0, 0, 0}; // Center of mass
+        float totalVelocity = 0.0f;      // Sum of velocity magnitudes
+        bool isValid = false;
+        
+        bool operator==(const SimulationState& other) const {
+            return cellCount == other.cellCount &&
+                   adhesionCount == other.adhesionCount &&
+                   std::abs(totalAge - other.totalAge) < 0.001f &&
+                   glm::length(centerOfMass - other.centerOfMass) < 0.001f &&
+                   std::abs(totalVelocity - other.totalVelocity) < 0.001f;
+        }
+        
+        bool operator!=(const SimulationState& other) const {
+            return !(*this == other);
+        }
+    };
+    
+    SimulationState previousSimState;
+    int consecutiveIdenticalFrames = 0;
+    bool enableFrameSkipping = true;  // Can be toggled on/off
+    
+    SimulationState captureSimulationState();
+    bool canSkipFrame(const SimulationState& newState);
+    int updateCellsFastForwardOptimized(float timeToSimulate, float timeStep); // Returns frames skipped
+
 private:
     void applyForces(float deltaTime);
     void verletIntegration(float deltaTime);

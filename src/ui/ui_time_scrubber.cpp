@@ -52,35 +52,93 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         }
           // Make the slider take almost all available width
         ImGui::SetNextItemWidth(slider_width);
-        if (ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f"))
+        
+        // Check if slider is being actively dragged
+        bool sliderChanged = ImGui::SliderFloat("##TimeSlider", &currentTime, 0.0f, maxTime, "%.2f");
+        bool sliderActive = ImGui::IsItemActive(); // True while dragging
+        
+        if (sliderChanged)
         {
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             targetTime = currentTime;
-            needsSimulationReset = true;
+            
+            // Mark as scrubbing
             isScrubbingTime = true;
+            
+            // Pause simulation while actively dragging
+            if (sliderActive)
+            {
+                sceneManager.setPaused(true);
+                
+                // If keyframes are available, do REAL-TIME scrubbing (update immediately)
+                if (keyframesInitialized)
+                {
+                    needsSimulationReset = true; // Trigger immediate update
+                }
+                else
+                {
+                    needsSimulationReset = false; // Wait for release if no keyframes
+                }
+            }
         }
         
-        // Draw keyframe indicators on the slider
-        if (keyframesInitialized)
+        // Trigger resimulation when slider is released (if not already done)
+        if (!sliderActive && isScrubbingTime && !keyframesInitialized)
+        {
+            // Slider was just released and no keyframes, trigger resimulation now
+            needsSimulationReset = true;
+        }
+        
+        // Draw hover marker on the slider
         {
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             ImVec2 slider_min = ImGui::GetItemRectMin();
             ImVec2 slider_max = ImGui::GetItemRectMax();
             
-            // Draw keyframe markers
-            for (int i = 0; i < MAX_KEYFRAMES && i < keyframes.size(); i++)
+            // Draw hover marker with time reference
+            if (ImGui::IsItemHovered())
             {
-                if (keyframes[i].isValid)
+                ImVec2 mouse_pos = ImGui::GetMousePos();
+                
+                // Calculate the time at mouse position
+                float slider_width = slider_max.x - slider_min.x;
+                float mouse_x = mouse_pos.x - slider_min.x;
+                float hover_ratio = std::max(0.0f, std::min(1.0f, mouse_x / slider_width));
+                float hover_time = hover_ratio * maxTime;
+                
+                // Draw vertical line at mouse position
+                ImU32 marker_color = IM_COL32(0, 255, 255, 200); // Cyan
+                float marker_x = slider_min.x + hover_ratio * slider_width;
+                draw_list->AddLine(
+                    ImVec2(marker_x, slider_min.y - 5.0f), 
+                    ImVec2(marker_x, slider_max.y + 5.0f), 
+                    marker_color, 
+                    3.0f
+                );
+                
+                // Draw time reference tooltip
+                ImGui::BeginTooltip();
+                ImGui::Text("Time: %.3f s", hover_time);
+                
+                // Show nearest keyframe info if available
+                if (keyframesInitialized)
                 {
-                    float keyframe_time = keyframes[i].time;
-                    float t = (keyframe_time / maxTime);
-                    float x = slider_min.x + t * (slider_max.x - slider_min.x);
-                    
-                    // Draw a small vertical line to indicate keyframe position
-                    ImU32 color = IM_COL32(255, 255, 0, 180); // Yellow with transparency
-                    draw_list->AddLine(ImVec2(x, slider_min.y), ImVec2(x, slider_max.y), color, 2.0f);
+                    int nearestIdx = findNearestKeyframe(hover_time);
+                    if (nearestIdx >= 0 && nearestIdx < keyframes.size() && keyframes[nearestIdx].isValid)
+                    {
+                        float keyframe_time = keyframes[nearestIdx].time;
+                        float time_diff = hover_time - keyframe_time;
+                        ImGui::Separator();
+                        ImGui::Text("Nearest keyframe: %.2f s", keyframe_time);
+                        if (time_diff >= 0.0f) {
+                            ImGui::Text("  +%.3f s from keyframe", time_diff);
+                        } else {
+                            ImGui::Text("  %.3f s before keyframe", -time_diff);
+                        }
+                    }
                 }
+                ImGui::EndTooltip();
             }
         }
         
@@ -133,14 +191,19 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         }
         
         // Show keyframe status
-        ImGui::Text("Keyframes: %s (%d/50)", 
+        ImGui::Text("Keyframes: %s (%d/%d)", 
                    keyframesInitialized ? "Ready" : "Not Ready", 
-                   keyframesInitialized ? MAX_KEYFRAMES : 0);
+                   keyframesInitialized ? MAX_KEYFRAMES : 0,
+                   MAX_KEYFRAMES);
         
         // Initialize keyframes if not done yet
         if (!keyframesInitialized)
         {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Click 'Rebuild Keyframes' to enable efficient scrubbing");
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Click 'Rebuild Keyframes' to enable real-time scrubbing");
+        }
+        else
+        {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Real-time scrubbing enabled");
         }        // Handle time scrubbing
         if (needsSimulationReset && isScrubbingTime)
         {
@@ -164,35 +227,16 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     bool wasPaused = sceneManager.isPaused();
                     sceneManager.setPaused(true);
                     
-                    float timeRemaining = targetTime - nearestKeyframe.time;
-                    float fastForwardStep = config::fastForwardTimeStep;
-                    int maxSteps = (int)(timeRemaining / fastForwardStep) + 1;
+                    float timeToSimulate = targetTime - nearestKeyframe.time;
                     
-
+                    // Use optimized frame-skipping resimulation
+                    int framesSkipped = cellManager.updateCellsFastForwardOptimized(
+                        timeToSimulate, 
+                        config::resimulationTimeStep
+                    );
                     
-                    for (int i = 0; i < maxSteps && timeRemaining > 0.0f; ++i)
-                    {
-                        float stepTime = (timeRemaining > fastForwardStep) ? fastForwardStep : timeRemaining;
-                        cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
-                        timeRemaining -= stepTime;
-                        
-                        // Update simulation time manually during fast-forward
-                        sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
-                    }
-                    
-                    // CRITICAL FIX: Verify timing accuracy after fast-forward
-                    if (nearestKeyframeIndex < keyframes.size() && keyframes[nearestKeyframeIndex].cellCount > 0) {
-                        cellManager.syncCellPositionsFromGPU();
-                        ComputeCell currentCell = cellManager.getCellData(0);
-                        float expectedAge = keyframes[nearestKeyframeIndex].cellStates[0].age + (targetTime - nearestKeyframe.time);
-                        float ageDiff = abs(currentCell.age - expectedAge);
-                        
-                        if (ageDiff > 0.01f) {
-                            std::cout << "WARNING: Cell age timing drift detected after fast-forward!\n";
-                            std::cout << "Expected age: " << expectedAge << ", Actual age: " << currentCell.age 
-                                      << ", Difference: " << ageDiff << "s\n";
-                        }
-                    }
+                    // Update simulation time to target
+                    sceneManager.setPreviewSimulationTime(targetTime);
                     
                     // Restore original pause state after fast-forward
                     sceneManager.setPaused(wasPaused);
@@ -218,20 +262,15 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     // Temporarily pause to prevent normal time updates during fast-forward
                     bool wasPaused = sceneManager.isPaused();
                     sceneManager.setPaused(true);
-                	// Use a coarser time step for scrubbing to make it more responsive
-                    float scrubTimeStep = config::fastForwardTimeStep;
-                    float timeRemaining = targetTime;
-                    int maxSteps = (int)(targetTime / scrubTimeStep) + 1;
                     
-                    for (int i = 0; i < maxSteps && timeRemaining > scrubTimeStep; ++i)
-                    {
-                        float stepTime = scrubTimeStep;
-                        cellManager.updateCellsFastForward(stepTime); // Use optimized fast-forward
-                        timeRemaining -= stepTime;
-                        
-                        // Update simulation time manually during fast-forward
-                        sceneManager.setPreviewSimulationTime(targetTime - timeRemaining);
-                    }
+                    // Use optimized frame-skipping resimulation
+                    int framesSkipped = cellManager.updateCellsFastForwardOptimized(
+                        targetTime, 
+                        config::resimulationTimeStep
+                    );
+                    
+                    // Update simulation time to target
+                    sceneManager.setPreviewSimulationTime(targetTime);
                     
                     // Restore original pause state after fast-forward
                     sceneManager.setPaused(wasPaused);
@@ -239,8 +278,18 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             }
             
             needsSimulationReset = false;
-            isScrubbingTime = false;
+            
+            // Only mark scrubbing as complete if slider is not active (released)
+            // This allows real-time scrubbing to continue while dragging
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                isScrubbingTime = false;
+            }
+            
+            // Keep simulation paused after scrubbing to prevent immediate drift
+            sceneManager.setPaused(true);
         }
     }
+    
     ImGui::End();
 }

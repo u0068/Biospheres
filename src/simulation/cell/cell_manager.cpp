@@ -796,6 +796,114 @@ void CellManager::updateCellsFastForward(float deltaTime)
 }
 
 // ============================================================================
+// FRAME SKIPPING OPTIMIZATION FOR RESIMULATION
+// ============================================================================
+
+CellManager::SimulationState CellManager::captureSimulationState()
+{
+    SimulationState state;
+    state.cellCount = totalCellCount;
+    state.adhesionCount = totalAdhesionCount;
+    state.isValid = true;
+    
+    if (totalCellCount == 0) {
+        return state;
+    }
+    
+    // Sync cell data from GPU (lightweight operation)
+    syncCellPositionsFromGPU();
+    
+    // Calculate aggregate metrics
+    state.totalAge = 0.0f;
+    state.centerOfMass = glm::vec3(0.0f);
+    state.totalVelocity = 0.0f;
+    
+    for (int i = 0; i < totalCellCount && i < cpuCells.size(); i++) {
+        const ComputeCell& cell = cpuCells[i];
+        state.totalAge += cell.age;
+        state.centerOfMass += glm::vec3(cell.positionAndMass);
+        state.totalVelocity += glm::length(glm::vec3(cell.velocity));
+    }
+    
+    if (totalCellCount > 0) {
+        state.centerOfMass /= static_cast<float>(totalCellCount);
+    }
+    
+    return state;
+}
+
+bool CellManager::canSkipFrame(const SimulationState& newState)
+{
+    if (!enableFrameSkipping || !previousSimState.isValid) {
+        return false;
+    }
+    
+    // Check if states are identical
+    return newState == previousSimState;
+}
+
+int CellManager::updateCellsFastForwardOptimized(float timeToSimulate, float timeStep)
+{
+    int totalFrames = static_cast<int>(timeToSimulate / timeStep);
+    int framesSkipped = 0;
+    float timeRemaining = timeToSimulate;
+    
+    // Reset frame skipping state
+    consecutiveIdenticalFrames = 0;
+    previousSimState.isValid = false;
+    
+    while (timeRemaining > 0.0f) {
+        float stepTime = (timeRemaining > timeStep) ? timeStep : timeRemaining;
+        
+        // Simulate one frame
+        updateCellsFastForward(stepTime);
+        
+        // Capture new simulation state
+        SimulationState newState = captureSimulationState();
+        
+        // Check if we can skip frames
+        if (canSkipFrame(newState)) {
+            consecutiveIdenticalFrames++;
+            
+            // If we've detected multiple identical frames, skip ahead
+            if (consecutiveIdenticalFrames >= 3) {
+                // Calculate how much time we can skip
+                // Skip in chunks, checking periodically in case something changes
+                int maxSkipFrames = std::min(50, static_cast<int>(timeRemaining / timeStep));
+                
+                if (maxSkipFrames > 0) {
+                    float skipTime = maxSkipFrames * timeStep;
+                    timeRemaining -= skipTime;
+                    framesSkipped += maxSkipFrames;
+                    
+                    // Update cell ages during skip (cells are aging even when static)
+                    for (int i = 0; i < totalCellCount && i < cpuCells.size(); i++) {
+                        cpuCells[i].age += skipTime;
+                    }
+                    
+                    // Sync updated ages back to GPU
+                    if (totalCellCount > 0) {
+                        glNamedBufferSubData(cellBuffer[bufferRotation], 0, 
+                                           totalCellCount * sizeof(ComputeCell), 
+                                           cpuCells.data());
+                    }
+                    
+                    // Recapture state after age update
+                    newState = captureSimulationState();
+                }
+            }
+        } else {
+            consecutiveIdenticalFrames = 0;
+        }
+        
+        previousSimState = newState;
+        timeRemaining -= stepTime;
+    }
+    
+    return framesSkipped;
+}
+
+// ============================================================================
 // COMPUTE SHADER DISPATCH
 // ============================================================================
 
