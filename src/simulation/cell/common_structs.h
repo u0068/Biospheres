@@ -138,6 +138,22 @@ struct AnchorInstance
 static_assert(sizeof(AnchorInstance) == 48, "AnchorInstance must be 48 bytes for GPU compatibility");
 static_assert(sizeof(AnchorInstance) % 16 == 0, "AnchorInstance must be 16-byte aligned for GPU usage");
 
+enum class CellType : uint8_t
+{
+    Phagocyte = 0,
+    COUNT
+};
+
+// Helper function to get cell type name
+inline const char* getCellTypeName(CellType type)
+{
+    switch (type)
+    {
+        case CellType::Phagocyte: return "Phagocyte";
+        default: return "Unknown";
+    }
+}
+
 struct ChildSettings
 {
     int modeNumber = 0;
@@ -148,6 +164,7 @@ struct ChildSettings
 struct ModeSettings
 {
     std::string name = "Untitled Mode";
+    CellType cellType = CellType::Phagocyte; // Cell type for this mode
     glm::vec3 color = { 1.0f, 1.0f, 1.0f }; // RGB color    // Parent Settings
     bool parentMakeAdhesion = true;
     float splitMass = 1.0f;

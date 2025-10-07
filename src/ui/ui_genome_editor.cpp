@@ -492,6 +492,25 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         mode.name = std::string(nameBuffer);
         genomeChanged = true;
     }
+    
+    // Cell Type Dropdown
+    ImGui::Text("Cell Type:");
+    addTooltip("The functional type of this cell (determines behavior and capabilities)");
+    
+    int currentCellType = static_cast<int>(mode.cellType);
+    if (ImGui::Combo("##CellType", &currentCellType, [](void* data, int idx, const char** out_text) -> bool
+    {
+        if (idx >= 0 && idx < static_cast<int>(CellType::COUNT))
+        {
+            *out_text = getCellTypeName(static_cast<CellType>(idx));
+            return true;
+        }
+        return false;
+    }, nullptr, static_cast<int>(CellType::COUNT)))
+    {
+        mode.cellType = static_cast<CellType>(currentCellType);
+        genomeChanged = true;
+    }
 
     // Add divider before color picker
     ImGui::Spacing();
