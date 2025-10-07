@@ -39,6 +39,18 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         // Title and main slider on one line
         ImGui::Text("Time Scrubber - Current Time: %.2fs", simulatedTime);
         
+        // Show resimulation status indicator (fixed height to prevent layout shift)
+        if (needsSimulationReset && isScrubbingTime) {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.0f, 1.0f)); // Orange
+            ImGui::Text("⚡ Resimulating...");
+            ImGui::PopStyleColor();
+        } else {
+            // Reserve space to prevent layout shift
+            ImGui::SameLine();
+            ImGui::Dummy(ImVec2(120.0f, ImGui::GetFrameHeight()));
+        }
+        
         // Calculate available width for slider (reserve space for input field)
         float input_width = 80.0f;
         float spacing = ImGui::GetStyle().ItemSpacing.x;
