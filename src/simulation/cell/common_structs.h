@@ -59,16 +59,16 @@ struct alignas(4) AdhesionSettings
 {
     bool canBreak = true;
     float breakForce = 10.0f;
-    float restLength = 2.0f;
-    float linearSpringStiffness = 5.0f;
-    float linearSpringDamping = 0.5f;
-    float orientationSpringStiffness = 2.0f;
-    float orientationSpringDamping = 0.5f;
+    float restLength = 1.0f;
+    float linearSpringStiffness = 150.0f;
+    float linearSpringDamping = 5.0f;
+    float orientationSpringStiffness = 10.0f;
+    float orientationSpringDamping = 2.0f;
     float maxAngularDeviation = 0.0f; // degrees - 0 = strict orientation locking, >0 = flexible with max deviation
     
     // Twist constraint parameters
-    float twistConstraintStiffness = 0.5f; // Stiffness of twist constraint around adhesion axis (increased for snake body alignment)
-    float twistConstraintDamping = 0.8f;   // Damping of twist constraint (high for stable snake body)
+    float twistConstraintStiffness = 2.0f; // Stiffness of twist constraint around adhesion axis (increased for snake body alignment)
+    float twistConstraintDamping = 0.5f;   // Damping of twist constraint (high for stable snake body)
     bool enableTwistConstraint = true;     // Whether to apply twist constraints
     
     // Padding to ensure proper alignment - compiler will add as needed
@@ -80,14 +80,14 @@ struct alignas(16) GPUModeAdhesionSettings
 {
     int canBreak = 1;                 // bool -> int
     float breakForce = 10.0f;
-    float restLength = 2.0f;
-    float linearSpringStiffness = 5.0f;
-    float linearSpringDamping = 0.5f;
-    float orientationSpringStiffness = 2.0f;
-    float orientationSpringDamping = 0.5f;
+    float restLength = 1.0f;
+    float linearSpringStiffness = 150.0f;
+    float linearSpringDamping = 5.0f;
+    float orientationSpringStiffness = 10.0f;
+    float orientationSpringDamping = 2.0f;
     float maxAngularDeviation = 0.0f;
-    float twistConstraintStiffness = 0.5f;
-    float twistConstraintDamping = 0.8f;
+    float twistConstraintStiffness = 2.0f;
+    float twistConstraintDamping = 0.5f;
     int enableTwistConstraint = 1;    // bool -> int
     int _padding = 0;                 // pad to 48 bytes
 };
