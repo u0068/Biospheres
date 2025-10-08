@@ -42,18 +42,22 @@ struct GPUModeAdhesionSettings
 
 // GPU Mode structure
 struct GPUMode {
-    vec4 color;           // R, G, B, padding
-    vec4 orientationA;    // Quaternion
-    vec4 orientationB;    // Quaternion
-    vec4 splitDirection;  // x, y, z, padding
-    ivec2 childModes;     // mode indices for children
-    float splitInterval;
-    int genomeOffset;
-    GPUModeAdhesionSettings adhesionSettings;
-    int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
-    int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
-    int maxAdhesions;       // Max number of adhesions
+    vec4 color;           // 16 bytes
+    vec4 orientationA;    // 16 bytes
+    vec4 orientationB;    // 16 bytes
+    vec4 splitDirection;  // 16 bytes
+    ivec2 childModes;     // 8 bytes
+    float splitInterval;  // 4 bytes
+    int genomeOffset;     // 4 bytes (total 16 bytes)
+    GPUModeAdhesionSettings adhesionSettings; // 48 bytes
+    int parentMakeAdhesion; // 4 bytes
+    int childAKeepAdhesion; // 4 bytes
+    int childBKeepAdhesion; // 4 bytes
+    int maxAdhesions;       // 4 bytes (total 16 bytes)
+    float flagellocyteThrustForce; // 4 bytes
+    float _padding1;      // 4 bytes
+    float _padding2;      // 4 bytes
+    float _padding3;      // 4 bytes (total 16 bytes)
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells

@@ -94,18 +94,22 @@ struct alignas(16) GPUModeAdhesionSettings
 static_assert(sizeof(GPUModeAdhesionSettings) % 16 == 0, "GPUModeAdhesionSettings must be 16-byte aligned for GPU usage");
 
 struct alignas(16) GPUMode {
-    glm::vec4 color{ 1.};  // R, G, B padding
-    glm::quat orientationA{1., 0., 0., 0.};  // quaternion
-    glm::quat orientationB{1., 0., 0., 0.};  // quaternion
-    glm::vec4 splitDirection{ 1., 0. ,0. ,0. };// x, y, z, padding
-    glm::ivec2 childModes{ 0 };
-    float splitInterval{ 5. };
-    int genomeOffset{ 0 };  // Offset into global buffer where this genome starts
-	GPUModeAdhesionSettings adhesionSettings{}; // Packed GPU adhesion settings
-    int parentMakeAdhesion{ 0 };  // Boolean flag for adhesionSettings creation (0 = false, 1 = true) + padding
-    int childAKeepAdhesion{ 1 };
-	int childBKeepAdhesion{ 1 };
-	int maxAdhesions{ config::MAX_ADHESIONS_PER_CELL }; // Maximum number of adhesions for this mode
+    glm::vec4 color{ 1.};  // 16 bytes
+    glm::quat orientationA{1., 0., 0., 0.};  // 16 bytes
+    glm::quat orientationB{1., 0., 0., 0.};  // 16 bytes
+    glm::vec4 splitDirection{ 1., 0. ,0. ,0. };// 16 bytes
+    glm::ivec2 childModes{ 0 };  // 8 bytes
+    float splitInterval{ 5. };   // 4 bytes
+    int genomeOffset{ 0 };       // 4 bytes (total 16 bytes for this line)
+	GPUModeAdhesionSettings adhesionSettings{}; // 48 bytes
+    int parentMakeAdhesion{ 0 };  // 4 bytes
+    int childAKeepAdhesion{ 1 };  // 4 bytes
+	int childBKeepAdhesion{ 1 };  // 4 bytes
+	int maxAdhesions{ config::MAX_ADHESIONS_PER_CELL }; // 4 bytes (total 16 bytes)
+    float flagellocyteThrustForce{ 0.0f }; // 4 bytes
+    float _padding1{ 0.0f };      // 4 bytes
+    float _padding2{ 0.0f };      // 4 bytes
+    float _padding3{ 0.0f };      // 4 bytes (total 16 bytes)
 };
 
 struct AdhesionConnection
@@ -141,6 +145,7 @@ static_assert(sizeof(AnchorInstance) % 16 == 0, "AnchorInstance must be 16-byte 
 enum class CellType : uint8_t
 {
     Phagocyte = 0,
+    Flagellocyte = 1,
     COUNT
 };
 
@@ -150,9 +155,24 @@ inline const char* getCellTypeName(CellType type)
     switch (type)
     {
         case CellType::Phagocyte: return "Phagocyte";
+        case CellType::Flagellocyte: return "Flagellocyte";
         default: return "Unknown";
     }
 }
+
+    // Flagellocyte tail settings
+    struct FlagellocyteSettings
+    {
+        float tailLength = 5.0f;          // Length of the spiral tail
+        float tailThickness = 0.15f;      // Thickness of the tail
+        float spiralTightness = 2.0f;     // Number of complete spirals per unit length
+        float spiralRadius = 0.3f;        // Radius of the spiral
+        float rotationSpeed = 2.0f;       // Rotation speed in radians per second
+        float tailTaper = 1.0f;           // Amount of taper from base to tip (0=no taper, 1=full taper to point)
+        int segments = 32;                // Number of segments in the tail
+        glm::vec3 tailColor = { 0.8f, 0.9f, 1.0f }; // Tail color (can differ from body)
+        float thrustForce = 5.0f;         // Forward thrust force applied continuously
+    };
 
 struct ChildSettings
 {
@@ -166,7 +186,7 @@ struct ModeSettings
     std::string name = "Untitled Mode";
     CellType cellType = CellType::Phagocyte; // Cell type for this mode
     glm::vec3 color = { 1.0f, 1.0f, 1.0f }; // RGB color    // Parent Settings
-    bool parentMakeAdhesion = true;
+    bool parentMakeAdhesion = false;
     float splitMass = 1.0f;
     float splitInterval = 5.0f;
     glm::vec2 parentSplitDirection = { 0.0f, 0.0f}; // pitch, yaw in degrees
@@ -178,6 +198,9 @@ struct ModeSettings
 
     // Adhesion Settings
     AdhesionSettings adhesionSettings;
+    
+    // Flagellocyte Settings (only used when cellType == Flagellocyte)
+    FlagellocyteSettings flagellocyteSettings;
 };
 
 struct GenomeData

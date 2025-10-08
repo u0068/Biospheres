@@ -511,6 +511,18 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         mode.cellType = static_cast<CellType>(currentCellType);
         genomeChanged = true;
     }
+    
+    // Flagellocyte-specific settings
+    if (mode.cellType == CellType::Flagellocyte) {
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Flagellocyte Settings");
+        
+        drawSliderWithInput("Thrust Force", &mode.flagellocyteSettings.thrustForce, 0.0f, 20.0f, "%.1f");
+        addTooltip("Continuous forward thrust force applied to propel the cell");
+    }
 
     // Add divider before color picker
     ImGui::Spacing();

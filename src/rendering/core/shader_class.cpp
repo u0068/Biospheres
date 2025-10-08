@@ -97,6 +97,77 @@ Shader::Shader(const char* vertexFile, const char* fragmentFile)
 
 }
 
+// Constructor that builds the Shader Program from vertex, fragment, and geometry shaders
+Shader::Shader(const char* vertexFile, const char* fragmentFile, const char* geometryFile)
+{
+	int success;
+	char infoLog[512];
+
+	// Read shader files and store the strings
+	std::string vertexCode = get_file_contents(vertexFile);
+	std::string fragmentCode = get_file_contents(fragmentFile);
+	std::string geometryCode = get_file_contents(geometryFile);
+
+	// Convert the shader source strings into character arrays
+	const char* vertexSource = vertexCode.c_str();
+	const char* fragmentSource = fragmentCode.c_str();
+	const char* geometrySource = geometryCode.c_str();
+
+	// Create Vertex Shader Object and get its reference
+	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertexShader, 1, &vertexSource, NULL);
+	glCompileShader(vertexShader);
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << "\n";
+	}
+
+	// Create Fragment Shader Object and get its reference
+	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+	glCompileShader(fragmentShader);
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << "\n";
+	}
+
+	// Create Geometry Shader Object and get its reference
+	GLuint geometryShader = glCreateShader(GL_GEOMETRY_SHADER);
+	glShaderSource(geometryShader, 1, &geometrySource, NULL);
+	glCompileShader(geometryShader);
+	glGetShaderiv(geometryShader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		glGetShaderInfoLog(geometryShader, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::GEOMETRY::COMPILATION_FAILED\n" << infoLog << "\n";
+	}
+
+	// Create Shader Program Object and get its reference
+	ID = glCreateProgram();
+	// Attach all shaders to the Shader Program
+	glAttachShader(ID, vertexShader);
+	glAttachShader(ID, fragmentShader);
+	glAttachShader(ID, geometryShader);
+	// Link all the shaders together into the Shader Program
+	glLinkProgram(ID);
+	// Print linking errors if any
+	glGetProgramiv(ID, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		glGetProgramInfoLog(ID, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << "\n";
+	}
+
+	// Destroy the now useless shader objects
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
+	glDeleteShader(geometryShader);
+}
+
 // Constructor for compute shader
 Shader::Shader(const char* computeFile)
 {

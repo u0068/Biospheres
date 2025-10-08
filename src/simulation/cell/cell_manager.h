@@ -97,8 +97,21 @@ struct CellManager
     // Unified culling system
     Shader* unifiedCullShader = nullptr;      // Unified compute shader for all culling modes
     Shader* distanceFadeShader = nullptr;     // Vertex/fragment shaders for distance-based fading
+    Shader* flagellocyteShader = nullptr;     // Vertex/fragment shaders for flagellocyte cells
+    Shader* tailGenerateShader = nullptr;     // Compute shader for generating tail geometry
+    Shader* tailRenderShader = nullptr;       // Vertex/fragment shaders for rendering tails
     GLuint unifiedOutputBuffers[4]{};         // Output buffers for each LOD level
     GLuint unifiedCountBuffer{};              // Buffer for LOD counts
+    GLuint flagellocyteOutputBuffers[4]{};    // Separate output buffers for flagellocyte cells
+    GLuint flagellocyteCountBuffer{};         // Buffer for flagellocyte cell counts
+    int flagellocyteInstanceCounts[4]{};      // CPU-side copy of flagellocyte instance counts
+    
+    // Tail rendering buffers
+    GLuint tailVertexBuffer{};                // Buffer for tail vertices
+    GLuint tailIndexBuffer{};                 // Buffer for tail indices
+    GLuint tailVAO{};                         // VAO for tail rendering
+    int tailVertexCount{};                    // Number of tail vertices
+    int tailIndexCount{};                     // Number of tail indices
     bool useFrustumCulling = config::defaultUseFrustumCulling;            // Enable/disable frustum culling
     bool useDistanceCulling = config::defaultUseDistanceCulling;          // Enable/disable distance-based culling
     Frustum currentFrustum;                   // Current camera frustum
@@ -123,6 +136,9 @@ struct CellManager
     
     // Distance culling parameters
     glm::vec3 fogColor = config::defaultFogColor; // Atmospheric/fog color for distant cells
+    
+    // Preview simulation flag (disables thrust force for genome preview)
+    bool isPreviewSimulation = false;
 
     // Compute shaders
     Shader* physicsShader = nullptr;
@@ -178,6 +194,10 @@ struct CellManager
     void resetSimulation();
     void spawnCells(int count = DEFAULT_CELL_COUNT);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera, bool wireframe = false);
+    
+    // Global flagellocyte settings management
+    void loadGlobalFlagellocyteSettings();
+    void saveGlobalFlagellocyteSettings();
     // Gizmo orientation visualization
     GLuint gizmoBuffer{};           // Buffer for gizmo line vertices
     GLuint gizmoVAO{};              // VAO for gizmo rendering
@@ -368,6 +388,9 @@ struct CellManager
     GenomeData currentGenome; // Current genome data
     uint32_t currentFrame = 0; // Current simulation frame
     
+    // Global flagellocyte settings (not per-genome)
+    FlagellocyteSettings globalFlagellocyteSettings;
+    
     // Lineage tracking data
     std::unordered_map<uint32_t, uint32_t> cellIdToIndex; // Map unique ID to cell index
     std::unordered_map<uint32_t, std::vector<uint32_t>> lineageChildren; // Parent ID -> children IDs
@@ -440,7 +463,7 @@ struct CellManager
     void addCellsToQueueBuffer(const std::vector<ComputeCell> &cells);
     void addCellToStagingBuffer(const ComputeCell &newCell);
     void addStagedCellsToQueueBuffer();
-    void addGenomeToBuffer(GenomeData& genomeData) const;
+    void addGenomeToBuffer(GenomeData& genomeData);
     void updateCells(float deltaTime);
     void updateCellsFastForward(float deltaTime); // Optimized update for resimulation
     void cleanup();

@@ -119,6 +119,10 @@ private:    // Helper to get window flags based on lock state
     void drawSliderWithInput(const char *label, float *value, float min, float max, const char *format = "%.2f", float step = 0.0f);
     void drawSliderWithInput(const char* label, int* value, int min, int max, int step = 1);
     void drawColorPicker(const char *label, glm::vec3 *color);
+    
+    // Flagellocyte settings helpers
+    void saveFlagellocyteSettings(const FlagellocyteSettings& settings, const std::string& modeName);
+    bool loadFlagellocyteSettings(FlagellocyteSettings& settings, const std::string& modeName);
     glm::vec3 normalizeColor(const glm::vec3& color); // Helper to normalize color values
     void validateGenomeColors(); // Validate and fix color values in genome
     void addTooltip(const char* tooltip); // Helper to add question mark tooltips

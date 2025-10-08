@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -30,10 +30,14 @@ struct GPUMode {
     float splitInterval;
     int genomeOffset;
     GPUModeAdhesionSettings adhesionSettings;
-    int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
-    int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
-    int maxAdhesions;       // Max number of adhesions
+    int parentMakeAdhesion;
+    int childAKeepAdhesion;
+    int childBKeepAdhesion;
+    int maxAdhesions;
+    float flagellocyteThrustForce;
+    float _padding1;
+    float _padding2;
+    float _padding3;
 };
 
 // Cell data structure for compute shader

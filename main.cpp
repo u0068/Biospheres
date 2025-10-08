@@ -309,8 +309,9 @@ int main()
 	GLFWwindow *window = createWindow();
 	initGLAD(window);
 	setupGLFWDebugFlags();
-	// Load the sphere shader for instanced rendering
-    Shader sphereShader("shaders/rendering/sphere/sphere.vert", "shaders/rendering/sphere/sphere.frag");
+	// Load the sphere shader for instanced rendering (Phagocyte)
+    Shader sphereShader("shaders/rendering/cell_types/phagocyte/sphere.vert", 
+                        "shaders/rendering/cell_types/phagocyte/sphere.frag");
 
 	const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
 	Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene
@@ -321,6 +322,9 @@ int main()
 	UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
 	CellManager previewCellManager;
 	CellManager mainCellManager;
+	
+	// Mark preview simulation (disables thrust force for genome editing)
+	previewCellManager.isPreviewSimulation = true;
 	
 	// Initialize Preview Simulation
 	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);

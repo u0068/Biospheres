@@ -264,6 +264,9 @@
     <None Include="shaders\rendering\sphere\sphere_lod.frag" />
     <None Include="shaders\rendering\sphere\sphere_lod.vert" />
     <None Include="shaders\rendering\sphere\sphere_lod.comp" />
+    <None Include="shaders\rendering\flagella\flagellocyte.vert" />
+    <None Include="shaders\rendering\flagella\flagellocyte.frag" />
+    <None Include="shaders\rendering\flagella\flagellocyte.geom" />
     <None Include="tools\sync_structs.ps1" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

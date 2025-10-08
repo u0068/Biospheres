@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 // Optimized work group size for better GPU utilization with 100k cells
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -29,6 +29,42 @@ struct ComputeCell {
     uint _lineagePadding;       // Padding to maintain 16-byte alignment
 };
 
+struct GPUModeAdhesionSettings
+{
+    int canBreak;                 // bool -> int (4 bytes)
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation;
+    float twistConstraintStiffness;
+    float twistConstraintDamping;
+    int enableTwistConstraint;    // bool -> int (4 bytes)
+    int _padding;                 // pad to 48 bytes
+};
+
+// GPU Mode structure
+struct GPUMode {
+    vec4 color;
+    vec4 orientationA;
+    vec4 orientationB;
+    vec4 splitDirection;
+    ivec2 childModes;
+    float splitInterval;
+    int genomeOffset;
+    GPUModeAdhesionSettings adhesionSettings;
+    int parentMakeAdhesion;
+    int childAKeepAdhesion;
+    int childBKeepAdhesion;
+    int maxAdhesions;
+    float flagellocyteThrustForce;
+    float _padding1;
+    float _padding2;
+    float _padding3;
+};
+
 // Shader storage buffer objects
 layout(std430, binding = 0) restrict buffer CellInputBuffer {
     ComputeCell inputCells[];  // Previous frame cell data (read-only)
@@ -53,6 +89,10 @@ layout(std430, binding = 4) coherent buffer CellCountBuffer {
     uint freeAdhesionTop;
 };
 
+layout(std430, binding = 5) restrict readonly buffer ModeBuffer {
+    GPUMode modes[];
+};
+
 // Uniforms
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 uniform float u_accelerationDamping; // Damping factor for small accelerations
@@ -60,6 +100,7 @@ uniform int u_gridResolution;
 uniform float u_gridCellSize;
 uniform float u_worldSize;
 uniform int u_maxCellsPerGrid;
+uniform int u_enableThrustForce = 1; // Enable/disable flagellocyte thrust force (0=disabled, 1=enabled)
 
 // Function to convert world position to grid coordinates
 ivec3 worldToGrid(vec3 worldPos) {
@@ -175,6 +216,26 @@ void main() {
     
     // Calculate acceleration (F = ma, so a = F/m)
     vec3 acceleration = totalForce / myMass;
+    
+    // Add flagellocyte thrust force (continuous forward movement)
+    if (u_enableThrustForce != 0) {
+        int modeIndex = inputCells[index].modeIndex;
+        if (modeIndex >= 0 && modeIndex < modes.length()) {
+            float thrustForce = modes[modeIndex].flagellocyteThrustForce;
+            if (thrustForce > 0.0) {
+                // Apply thrust in the forward direction (negative Z in local space)
+                vec4 orientation = inputCells[index].orientation;
+                // Convert quaternion to forward direction
+                vec3 forward = vec3(
+                    2.0 * (orientation.x * orientation.z + orientation.w * orientation.y),
+                    2.0 * (orientation.y * orientation.z - orientation.w * orientation.x),
+                    1.0 - 2.0 * (orientation.x * orientation.x + orientation.y * orientation.y)
+                );
+                acceleration += forward * thrustForce / myMass;
+            }
+        }
+    }
+    
     float accMagnitude = length(acceleration);
     
     // Multi-tier acceleration damping to prevent drift

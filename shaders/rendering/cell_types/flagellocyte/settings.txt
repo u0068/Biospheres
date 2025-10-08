@@ -1,0 +1,8 @@
+tailLength 2.5
+tailThickness 0.25
+spiralTightness 1.0
+spiralRadius 0.2
+rotationSpeed 2.0
+tailTaper 0.8
+segments 20
+tailColor 0.8 0.9 1.0

@@ -87,6 +87,9 @@ CellManager::CellManager()
 
     // Initialize enhanced diagnostic system
     initializeEnhancedDiagnostics();
+    
+    // Load global flagellocyte settings
+    loadGlobalFlagellocyteSettings();
 }
 
 CellManager::~CellManager()
@@ -507,12 +510,13 @@ glm::vec3 pitchYawToVec3(float pitch, float yaw) {
         cos(pitch) * cos(yaw)
     );
 }
-
-// ============================================================================
 // GENOME & MODE MANAGEMENT
 // ============================================================================
 
-void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
+void CellManager::addGenomeToBuffer(GenomeData& genomeData) {
+    // Update the cell manager's copy of the genome for rendering
+    currentGenome = genomeData;
+    
     int genomeBaseOffset = 0; // Later make it add to the end of the buffer
     int modeCount = static_cast<int>(genomeData.modes.size());
 
@@ -558,6 +562,10 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) const {
         gmode.childAKeepAdhesion = mode.childA.keepAdhesion;
         gmode.childBKeepAdhesion = mode.childB.keepAdhesion;
         gmode.maxAdhesions = mode.maxAdhesions;
+        
+        // Store flagellocyte thrust force
+        gmode.flagellocyteThrustForce = (mode.cellType == CellType::Flagellocyte) ? 
+            mode.flagellocyteSettings.thrustForce : 0.0f;
 
         // Store adhesion settings (convert bools to ints and pack for GPU)
         gmode.adhesionSettings.canBreak = mode.adhesionSettings.canBreak ? 1 : 0;
@@ -1047,6 +1055,9 @@ void CellManager::runCollisionCompute()
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
     physicsShader->setInt("u_draggedCellIndex", draggedIndex);
+    
+    // Disable thrust force for preview simulation
+    physicsShader->setInt("u_enableThrustForce", isPreviewSimulation ? 0 : 1);
 
     // Set spatial grid uniforms
     physicsShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
@@ -1060,6 +1071,7 @@ void CellManager::runCollisionCompute()
     // Also bind current buffer as output for physics results
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCellWriteBuffer()); // Write to current frame
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, gpuCellCountBuffer); // Bind GPU cell count buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, modeBuffer); // Bind mode buffer for thrust force
 
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
@@ -2225,4 +2237,79 @@ std::string CellManager::getLineageStatistics() const
     }
     
     return stats.str();
+}
+
+// ============================================================================
+// GLOBAL FLAGELLOCYTE SETTINGS
+// ============================================================================
+
+void CellManager::loadGlobalFlagellocyteSettings()
+{
+    const std::string filename = "../../shaders/rendering/cell_types/flagellocyte/settings.txt";
+    std::ifstream file(filename);
+    
+    if (!file.is_open()) {
+        std::cout << "No saved flagellocyte settings found at " << filename << ", using defaults\n";
+        // Don't try to save - just use defaults
+        return;
+    }
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string key;
+        iss >> key;
+        
+        if (key == "tailLength") {
+            iss >> globalFlagellocyteSettings.tailLength;
+        } else if (key == "tailThickness") {
+            iss >> globalFlagellocyteSettings.tailThickness;
+        } else if (key == "spiralTightness") {
+            iss >> globalFlagellocyteSettings.spiralTightness;
+        } else if (key == "spiralRadius") {
+            iss >> globalFlagellocyteSettings.spiralRadius;
+        } else if (key == "rotationSpeed") {
+            iss >> globalFlagellocyteSettings.rotationSpeed;
+        } else if (key == "tailTaper") {
+            iss >> globalFlagellocyteSettings.tailTaper;
+        } else if (key == "segments") {
+            iss >> globalFlagellocyteSettings.segments;
+        } else if (key == "tailColor") {
+            iss >> globalFlagellocyteSettings.tailColor.r 
+                >> globalFlagellocyteSettings.tailColor.g 
+                >> globalFlagellocyteSettings.tailColor.b;
+        }
+    }
+    
+    file.close();
+    std::cout << "Loaded global flagellocyte settings from " << filename << "\n";
+    std::cout << "  tailLength: " << globalFlagellocyteSettings.tailLength << "\n";
+    std::cout << "  tailThickness: " << globalFlagellocyteSettings.tailThickness << "\n";
+    std::cout << "  spiralTightness: " << globalFlagellocyteSettings.spiralTightness << "\n";
+    std::cout << "  segments: " << globalFlagellocyteSettings.segments << "\n";
+}
+
+void CellManager::saveGlobalFlagellocyteSettings()
+{
+    const std::string filename = "../../shaders/rendering/cell_types/flagellocyte/settings.txt";
+    std::ofstream file(filename);
+    
+    if (!file.is_open()) {
+        std::cerr << "Failed to save global flagellocyte settings to " << filename << "\n";
+        return;
+    }
+    
+    file << "tailLength " << globalFlagellocyteSettings.tailLength << "\n";
+    file << "tailThickness " << globalFlagellocyteSettings.tailThickness << "\n";
+    file << "spiralTightness " << globalFlagellocyteSettings.spiralTightness << "\n";
+    file << "spiralRadius " << globalFlagellocyteSettings.spiralRadius << "\n";
+    file << "rotationSpeed " << globalFlagellocyteSettings.rotationSpeed << "\n";
+    file << "tailTaper " << globalFlagellocyteSettings.tailTaper << "\n";
+    file << "segments " << globalFlagellocyteSettings.segments << "\n";
+    file << "tailColor " << globalFlagellocyteSettings.tailColor.r << " " 
+         << globalFlagellocyteSettings.tailColor.g << " " 
+         << globalFlagellocyteSettings.tailColor.b << "\n";
+    
+    file.close();
+    std::cout << "Saved global flagellocyte settings to " << filename << "\n";
 }

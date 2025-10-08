@@ -22,9 +22,18 @@ void CellManager::initializeUnifiedCulling()
     // Initialize unified culling compute shader
     unifiedCullShader = new Shader("shaders/rendering/culling/unified_cull.comp");
     
-    // Initialize distance fade rendering shaders
-    distanceFadeShader = new Shader("shaders/rendering/sphere/sphere_distance_fade.vert", 
-                                   "shaders/rendering/sphere/sphere_distance_fade.frag");
+    // Initialize distance fade rendering shaders (Phagocyte)
+    distanceFadeShader = new Shader("shaders/rendering/cell_types/phagocyte/sphere_distance_fade.vert", 
+                                   "shaders/rendering/cell_types/phagocyte/sphere_distance_fade.frag");
+    
+    // Initialize flagellocyte shader (no geometry shader)
+    flagellocyteShader = new Shader("shaders/rendering/cell_types/flagellocyte/flagellocyte.vert",
+                                    "shaders/rendering/cell_types/flagellocyte/flagellocyte.frag");
+    
+    // Initialize tail generation compute shader and rendering shader
+    tailGenerateShader = new Shader("shaders/rendering/cell_types/flagellocyte/tail_generate.comp");
+    tailRenderShader = new Shader("shaders/rendering/cell_types/flagellocyte/tail.vert",
+                                  "shaders/rendering/cell_types/flagellocyte/tail.frag");
     
     // Create output buffers for each LOD level
     for (int i = 0; i < 4; i++) {
@@ -32,6 +41,15 @@ void CellManager::initializeUnifiedCulling()
         glNamedBufferStorage(
             unifiedOutputBuffers[i],
             cellLimit * sizeof(float) * 16, // 4 vec4s per instance (positionAndRadius, color, orientation, fadeFactor)
+            nullptr,
+            GL_DYNAMIC_STORAGE_BIT
+        );
+        
+        // Create separate buffers for flagellocyte cells
+        glCreateBuffers(1, &flagellocyteOutputBuffers[i]);
+        glNamedBufferStorage(
+            flagellocyteOutputBuffers[i],
+            cellLimit * sizeof(float) * 16,
             nullptr,
             GL_DYNAMIC_STORAGE_BIT
         );
@@ -46,7 +64,137 @@ void CellManager::initializeUnifiedCulling()
         GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT
     );
     
+    // Create buffer for flagellocyte counts
+    glCreateBuffers(1, &flagellocyteCountBuffer);
+    glNamedBufferStorage(
+        flagellocyteCountBuffer,
+        sizeof(uint32_t) * 4,
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT
+    );
+    
+    // Initialize tail rendering buffers (allocate for maximum segments)
+    const int MAX_TAIL_SEGMENTS = 64;
+    const int RADIAL_SEGMENTS = 8;
+    const int CAP_SEGMENTS = 4;
+    const int VERTICES_PER_CELL = (MAX_TAIL_SEGMENTS + 1) * RADIAL_SEGMENTS + (CAP_SEGMENTS * RADIAL_SEGMENTS) + 1; // +1 for tip
+    const int BODY_INDICES = MAX_TAIL_SEGMENTS * RADIAL_SEGMENTS * 6; // 2 triangles per quad
+    const int CAP_INDICES = (CAP_SEGMENTS - 1) * RADIAL_SEGMENTS * 6 + RADIAL_SEGMENTS * 3; // Quads + tip triangles
+    const int INDICES_PER_CELL = BODY_INDICES + CAP_INDICES;
+    
+    tailVertexCount = cellLimit * VERTICES_PER_CELL;
+    tailIndexCount = cellLimit * INDICES_PER_CELL;
+    
+    // Create tail vertex buffer
+    glCreateBuffers(1, &tailVertexBuffer);
+    glNamedBufferStorage(
+        tailVertexBuffer,
+        tailVertexCount * sizeof(float) * 12, // 3 vec4s per vertex (position, normal, color)
+        nullptr,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+    
+    // Generate tail indices (once, reused for all cells)
+    std::vector<uint32_t> tailIndices;
+    tailIndices.reserve(INDICES_PER_CELL);
+    
+    // Body indices (generate for maximum segments)
+    for (int seg = 0; seg < MAX_TAIL_SEGMENTS; seg++) {
+        for (int rad = 0; rad < RADIAL_SEGMENTS; rad++) {
+            int nextRad = (rad + 1) % RADIAL_SEGMENTS;
+            int baseIdx = seg * RADIAL_SEGMENTS;
+            int nextSegIdx = (seg + 1) * RADIAL_SEGMENTS;
+            
+            // First triangle
+            tailIndices.push_back(baseIdx + rad);
+            tailIndices.push_back(nextSegIdx + rad);
+            tailIndices.push_back(baseIdx + nextRad);
+            
+            // Second triangle
+            tailIndices.push_back(baseIdx + nextRad);
+            tailIndices.push_back(nextSegIdx + rad);
+            tailIndices.push_back(nextSegIdx + nextRad);
+        }
+    }
+    
+    // Cap indices
+    int capBaseIndex = (MAX_TAIL_SEGMENTS + 1) * RADIAL_SEGMENTS;
+    int lastBodyRingIndex = MAX_TAIL_SEGMENTS * RADIAL_SEGMENTS;
+    
+    // Connect last body ring to first cap ring
+    for (int rad = 0; rad < RADIAL_SEGMENTS; rad++) {
+        int nextRad = (rad + 1) % RADIAL_SEGMENTS;
+        
+        tailIndices.push_back(lastBodyRingIndex + rad);
+        tailIndices.push_back(capBaseIndex + rad);
+        tailIndices.push_back(lastBodyRingIndex + nextRad);
+        
+        tailIndices.push_back(lastBodyRingIndex + nextRad);
+        tailIndices.push_back(capBaseIndex + rad);
+        tailIndices.push_back(capBaseIndex + nextRad);
+    }
+    
+    // Cap rings
+    for (int capSeg = 0; capSeg < CAP_SEGMENTS - 1; capSeg++) {
+        for (int rad = 0; rad < RADIAL_SEGMENTS; rad++) {
+            int nextRad = (rad + 1) % RADIAL_SEGMENTS;
+            int baseIdx = capBaseIndex + capSeg * RADIAL_SEGMENTS;
+            int nextSegIdx = capBaseIndex + (capSeg + 1) * RADIAL_SEGMENTS;
+            
+            tailIndices.push_back(baseIdx + rad);
+            tailIndices.push_back(nextSegIdx + rad);
+            tailIndices.push_back(baseIdx + nextRad);
+            
+            tailIndices.push_back(baseIdx + nextRad);
+            tailIndices.push_back(nextSegIdx + rad);
+            tailIndices.push_back(nextSegIdx + nextRad);
+        }
+    }
+    
+    // Connect last cap ring to tip vertex
+    int tipIndex = capBaseIndex + CAP_SEGMENTS * RADIAL_SEGMENTS;
+    int lastCapRingIndex = capBaseIndex + (CAP_SEGMENTS - 1) * RADIAL_SEGMENTS;
+    
+    for (int rad = 0; rad < RADIAL_SEGMENTS; rad++) {
+        int nextRad = (rad + 1) % RADIAL_SEGMENTS;
+        
+        tailIndices.push_back(lastCapRingIndex + rad);
+        tailIndices.push_back(tipIndex);
+        tailIndices.push_back(lastCapRingIndex + nextRad);
+    }
+    
+    // Create tail index buffer (single pattern, repeated per cell using base vertex)
+    glCreateBuffers(1, &tailIndexBuffer);
+    glNamedBufferStorage(
+        tailIndexBuffer,
+        tailIndices.size() * sizeof(uint32_t),
+        tailIndices.data(),
+        0
+    );
+    
+    // Create tail VAO
+    glCreateVertexArrays(1, &tailVAO);
+    glBindVertexArray(tailVAO);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, tailVertexBuffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tailIndexBuffer);
+    
+    // Position (vec4)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 48, (void*)0);
+    
+    // Normal (vec4)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 48, (void*)16);
+    
+    // Color (vec4)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 48, (void*)32);
+    
+    glBindVertexArray(0);
+    
     std::cout << "Unified culling system initialized\n";
+    std::cout << "Tail rendering system initialized with " << VERTICES_PER_CELL << " vertices per cell\n";
 }
 
 void CellManager::cleanupUnifiedCulling()
@@ -63,16 +211,59 @@ void CellManager::cleanupUnifiedCulling()
         distanceFadeShader = nullptr;
     }
     
+    if (flagellocyteShader) {
+        flagellocyteShader->destroy();
+        delete flagellocyteShader;
+        flagellocyteShader = nullptr;
+    }
+    
+    if (tailGenerateShader) {
+        tailGenerateShader->destroy();
+        delete tailGenerateShader;
+        tailGenerateShader = nullptr;
+    }
+    
+    if (tailRenderShader) {
+        tailRenderShader->destroy();
+        delete tailRenderShader;
+        tailRenderShader = nullptr;
+    }
+    
     for (int i = 0; i < 4; i++) {
         if (unifiedOutputBuffers[i] != 0) {
             glDeleteBuffers(1, &unifiedOutputBuffers[i]);
             unifiedOutputBuffers[i] = 0;
+        }
+        if (flagellocyteOutputBuffers[i] != 0) {
+            glDeleteBuffers(1, &flagellocyteOutputBuffers[i]);
+            flagellocyteOutputBuffers[i] = 0;
         }
     }
     
     if (unifiedCountBuffer != 0) {
         glDeleteBuffers(1, &unifiedCountBuffer);
         unifiedCountBuffer = 0;
+    }
+    
+    if (flagellocyteCountBuffer != 0) {
+        glDeleteBuffers(1, &flagellocyteCountBuffer);
+        flagellocyteCountBuffer = 0;
+    }
+    
+    // Cleanup tail buffers
+    if (tailVertexBuffer != 0) {
+        glDeleteBuffers(1, &tailVertexBuffer);
+        tailVertexBuffer = 0;
+    }
+    
+    if (tailIndexBuffer != 0) {
+        glDeleteBuffers(1, &tailIndexBuffer);
+        tailIndexBuffer = 0;
+    }
+    
+    if (tailVAO != 0) {
+        glDeleteVertexArrays(1, &tailVAO);
+        tailVAO = 0;
     }
 }
 
@@ -171,31 +362,57 @@ void CellManager::renderCellsUnified(glm::vec2 resolution, const Camera& camera,
         
         TimerGPU timer("Unified Cell Rendering");
         
-        // Use distance fade shader
-        distanceFadeShader->use();
+        // Check if we need to render tails (check if any mode in genome is flagellocyte)
+        bool hasFlagellocyte = false;
+        if (!currentGenome.modes.empty()) {
+            for (const auto& mode : currentGenome.modes) {
+                if (mode.cellType == CellType::Flagellocyte) {
+                    hasFlagellocyte = true;
+                    break;
+                }
+            }
+        }
+        
+        // Debug output (only print once)
+        static bool printedOnce = false;
+        if (!printedOnce) {
+            std::cout << "[DEBUG] Using standard shader\n";
+            std::cout << "[DEBUG] Genome has " << currentGenome.modes.size() << " modes\n";
+            if (!currentGenome.modes.empty()) {
+                std::cout << "[DEBUG] Mode 0 type: " << static_cast<int>(currentGenome.modes[0].cellType) << " (0=Phagocyte, 1=Flagellocyte)\n";
+                std::cout << "[DEBUG] Mode 0 color: (" << currentGenome.modes[0].color.r << ", " << currentGenome.modes[0].color.g << ", " << currentGenome.modes[0].color.b << ")\n";
+            }
+            printedOnce = true;
+        }
+        
+        // Always use standard shader for cell bodies (both phagocytes and flagellocytes)
+        Shader* activeShader = distanceFadeShader;
+        activeShader->use();
         
         // Set up camera matrices
         glm::mat4 view = camera.getViewMatrix();
         glm::mat4 projection = glm::perspective(glm::radians(config::defaultFrustumFov), aspectRatio, config::defaultFrustumNearPlane, config::defaultFrustumFarPlane);
         
         // Set uniforms
-        distanceFadeShader->setMat4("uProjection", projection);
-        distanceFadeShader->setMat4("uView", view);
-        distanceFadeShader->setVec3("uCameraPos", camera.getPosition());
-        distanceFadeShader->setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
-        distanceFadeShader->setVec3("uFogColor", fogColor);
+        activeShader->setMat4("uProjection", projection);
+        activeShader->setMat4("uView", view);
+        activeShader->setVec3("uCameraPos", camera.getPosition());
+        activeShader->setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
+        
+        // Set fog color for both shaders
+        activeShader->setVec3("uFogColor", fogColor);
         
         // Selection highlighting uniforms
         if (selectedCell.isValid) {
             glm::vec3 selectedPos = glm::vec3(selectedCell.cellData.positionAndMass);
             float selectedRadius = selectedCell.cellData.getRadius();
-            distanceFadeShader->setVec3("uSelectedCellPos", selectedPos);
-            distanceFadeShader->setFloat("uSelectedCellRadius", selectedRadius);
+            activeShader->setVec3("uSelectedCellPos", selectedPos);
+            activeShader->setFloat("uSelectedCellRadius", selectedRadius);
         } else {
-            distanceFadeShader->setVec3("uSelectedCellPos", glm::vec3(-9999.0f));
-            distanceFadeShader->setFloat("uSelectedCellRadius", 0.0f);
+            activeShader->setVec3("uSelectedCellPos", glm::vec3(-9999.0f));
+            activeShader->setFloat("uSelectedCellRadius", 0.0f);
         }
-        distanceFadeShader->setFloat("uTime", static_cast<float>(glfwGetTime()));
+        activeShader->setFloat("uTime", static_cast<float>(glfwGetTime()));
         
         // Enable depth testing (no blending needed since we're not using transparency)
         glEnable(GL_DEPTH_TEST);
@@ -221,6 +438,62 @@ void CellManager::renderCellsUnified(glm::vec2 resolution, const Camera& camera,
                 // Render this LOD level with its specific mesh detail and instance count
                 sphereMesh.renderLOD(lodLevel, lodInstanceCounts[lodLevel], 0);
             }
+        }
+        
+        // Generate and render tails for flagellocyte cells
+        if (hasFlagellocyte && tailGenerateShader && tailRenderShader && totalCellCount > 0) {
+            // Use global settings
+            const FlagellocyteSettings& settings = globalFlagellocyteSettings;
+            
+            // Run tail generation compute shader
+            tailGenerateShader->use();
+            tailGenerateShader->setInt("uCellCount", totalCellCount);
+            tailGenerateShader->setFloat("uTime", static_cast<float>(glfwGetTime()));
+            tailGenerateShader->setVec3("uCameraPos", camera.getPosition());
+            tailGenerateShader->setFloat("uFadeStartDistance", fadeStartDistance);
+            tailGenerateShader->setFloat("uFadeEndDistance", fadeEndDistance);
+            
+            // Bind cell buffer, tail vertex buffer, and mode buffer (for colors)
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, tailVertexBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, modeBuffer);
+            
+            // Dispatch compute shader
+            int workGroups = (totalCellCount + 63) / 64;
+            glDispatchCompute(workGroups, 1, 1);
+            glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+            
+            // Render tails
+            tailRenderShader->use();
+            tailRenderShader->setMat4("uProjection", projection);
+            tailRenderShader->setMat4("uView", view);
+            tailRenderShader->setVec3("uCameraPos", camera.getPosition());
+            tailRenderShader->setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
+            tailRenderShader->setVec3("uFogColor", fogColor);
+            
+            glBindVertexArray(tailVAO);
+            
+            const int RADIAL_SEGMENTS = 8;
+            const int CAP_SEGMENTS = 4;
+            const int MAX_TAIL_SEGMENTS = 64;
+            const int HARDCODED_SEGMENTS = 20; // Must match shader constant
+            
+            // Calculate indices to draw based on hardcoded segment count
+            int actualSegments = HARDCODED_SEGMENTS;
+            int actualVerticesPerCell = (actualSegments + 1) * RADIAL_SEGMENTS + (CAP_SEGMENTS * RADIAL_SEGMENTS) + 1;
+            int actualBodyIndices = actualSegments * RADIAL_SEGMENTS * 6;
+            int actualCapIndices = (CAP_SEGMENTS - 1) * RADIAL_SEGMENTS * 6 + RADIAL_SEGMENTS * 3;
+            int actualIndicesPerCell = actualBodyIndices + actualCapIndices;
+            
+            // Maximum vertices per cell for base vertex offset
+            int maxVerticesPerCell = (MAX_TAIL_SEGMENTS + 1) * RADIAL_SEGMENTS + (CAP_SEGMENTS * RADIAL_SEGMENTS) + 1;
+            
+            // Draw all tails (one draw call using base vertex for each cell)
+            for (int i = 0; i < totalCellCount; i++) {
+                glDrawElementsBaseVertex(GL_TRIANGLES, actualIndicesPerCell, GL_UNSIGNED_INT, 0, i * maxVerticesPerCell);
+            }
+            
+            glBindVertexArray(0);
         }
         
         // Restore OpenGL state

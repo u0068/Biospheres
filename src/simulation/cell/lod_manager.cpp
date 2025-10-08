@@ -19,9 +19,10 @@
 
 void CellManager::initializeLODSystem()
 {
-    // Initialize LOD shaders
-    lodComputeShader = new Shader("shaders/rendering/sphere/sphere_lod.comp");
-    lodVertexShader = new Shader("shaders/rendering/sphere/sphere_lod.vert", "shaders/rendering/sphere/sphere_lod.frag");
+    // Initialize LOD shaders (Phagocyte)
+    lodComputeShader = new Shader("shaders/rendering/cell_types/phagocyte/sphere_lod.comp");
+    lodVertexShader = new Shader("shaders/rendering/cell_types/phagocyte/sphere_lod.vert", 
+                                 "shaders/rendering/cell_types/phagocyte/sphere_lod.frag");
     
     // Generate LOD sphere meshes
     sphereMesh.generateLODSpheres(1.0f);

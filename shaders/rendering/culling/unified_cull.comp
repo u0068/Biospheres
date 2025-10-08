@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -54,18 +54,22 @@ struct GPUModeAdhesionSettings
 
 // GPU Mode structure (matches GPUMode in common_structs.h)
 struct GPUMode {
-    vec4 color;           // R, G, B, padding
-    vec4 orientationA;    // Quaternion
-    vec4 orientationB;    // Quaternion
-    vec4 splitDirection;  // x, y, z, padding
-    ivec2 childModes;     // mode indices for children
+    vec4 color;
+    vec4 orientationA;
+    vec4 orientationB;
+    vec4 splitDirection;
+    ivec2 childModes;
     float splitInterval;
     int genomeOffset;
     GPUModeAdhesionSettings adhesionSettings;
-    int parentMakeAdhesion; // Boolean flag for adhesion creation
-    int childAKeepAdhesion; // Boolean flag for child A to keep adhesion
-    int childBKeepAdhesion; // Boolean flag for child B to keep adhesion
-    int maxAdhesions;       // Max number of adhesions
+    int parentMakeAdhesion;
+    int childAKeepAdhesion;
+    int childBKeepAdhesion;
+    int maxAdhesions;
+    float flagellocyteThrustForce;
+    float _padding1;
+    float _padding2;
+    float _padding3;
 };
 
 // Frustum plane structure
