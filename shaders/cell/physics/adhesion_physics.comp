@@ -222,7 +222,8 @@ void computeAdhesionForces(
     if (dist < 0.0001) return;
     
     vec3 adhesionDir = deltaPos / dist;
-    float restLength = settings.restLength;// + getRadius(A) + getRadius(B);
+    // Calculate rest length as the distance between cell surfaces (sum of radii) plus the settings offset
+    float restLength = settings.restLength + getRadius(A) + getRadius(B);
     
     // Linear spring
     float forceMag = settings.linearSpringStiffness * (dist - restLength);

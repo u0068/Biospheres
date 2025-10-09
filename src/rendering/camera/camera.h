@@ -10,7 +10,7 @@ public:
            float pitch = 0.0f);
 
     // Main input processing
-    void processInput(class Input& input, float deltaTime);
+    void processInput(class Input& input, float deltaTime, bool allowScroll = true);
     void processMouseMovement(float xOffset, float yOffset);
     void processMouseScroll(float yOffset);
 

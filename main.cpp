@@ -147,18 +147,23 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 		activeCellManager = &mainCellManager;
 	}
 	
-	if (!ImGui::GetIO().WantCaptureMouse && activeCamera && activeCellManager)
+	if (activeCamera && activeCellManager)
 	{
 		TimerCPU cpuTimer("Input Processing");
-		activeCamera->processInput(input, deltaTime);
+		bool allowScroll = !ImGui::GetIO().WantCaptureMouse;
+		activeCamera->processInput(input, deltaTime, allowScroll);
 		
-		glm::vec2 mousePos = input.getMousePosition(false);
-		bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
-		bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
-		float scrollDelta = input.getScrollDelta();
+		// Only handle mouse input for cell selection/dragging when ImGui doesn't want the mouse
+		if (!ImGui::GetIO().WantCaptureMouse)
+		{
+			glm::vec2 mousePos = input.getMousePosition(false);
+			bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
+			bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
+			float scrollDelta = input.getScrollDelta();
 
-		activeCellManager->handleMouseInput(mousePos, glm::vec2(width, height), *activeCamera,
-											isLeftMousePressed, isLeftMouseDown, scrollDelta);
+			activeCellManager->handleMouseInput(mousePos, glm::vec2(width, height), *activeCamera,
+												isLeftMousePressed, isLeftMouseDown, scrollDelta);
+		}
 	}
 	
 	synthEngine.generateSample();

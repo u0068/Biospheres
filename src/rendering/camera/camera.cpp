@@ -17,7 +17,7 @@ Camera::Camera(glm::vec3 position, glm::vec3 worldUp, float yaw, float pitch)
     up = glm::normalize(glm::cross(right, front));
 }
 
-void Camera::processInput(Input &input, float deltaTime)
+void Camera::processInput(Input &input, float deltaTime, bool allowScroll)
 {
     // Calculate movement speed (with sprint modifier)
     float velocity = moveSpeed * deltaTime;
@@ -80,8 +80,8 @@ void Camera::processInput(Input &input, float deltaTime)
         up = up * cosRoll - oldRight * sinRoll;
     }
 
-    // Handle mouse scroll for zoom (Space Engineers style)
-    if (input.hasScrollInput())
+    // Handle mouse scroll for zoom (only if allowed - prevents conflict with ImGui scrolling)
+    if (allowScroll && input.hasScrollInput())
     {
         float scrollDelta = input.getScrollDelta();
         processMouseScroll(scrollDelta);

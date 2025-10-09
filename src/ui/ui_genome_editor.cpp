@@ -632,8 +632,8 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     drawSliderWithInput("Adhesion Break Force", &adhesion.breakForce, 0.1f, 100.0f);
     addTooltip("The force threshold required to break an adhesive connection");
     
-    drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, 0.5f, 5.0f);
-    addTooltip("The natural resting distance of the adhesive connection");
+    drawSliderWithInput("Adhesion Rest Length", &adhesion.restLength, -2.0f, 5.0f);
+    addTooltip("The natural resting distance offset of the adhesive connection (negative values allow cell overlap)");
     
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 500.0f);
     addTooltip("How strongly the adhesionSettings resists stretching or compression");
