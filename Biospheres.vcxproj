@@ -179,6 +179,7 @@
     <ClCompile Include="src\rendering\core\glfw_helpers.cpp" />
     <ClCompile Include="src\audio\synthesizer.cpp" />
     <ClCompile Include="src\utils\timer.cpp" />
+    <ClCompile Include="src\utils\genome_io.cpp" />
     <ClCompile Include="src\ui\ui_manager.cpp" />
     <ClCompile Include="src\ui\ui_simulation_settings.cpp" />
     <ClCompile Include="src\ui\ui_performance_monitor.cpp" />
@@ -216,6 +217,7 @@
     <ClInclude Include="src\scene\scene_manager.h" />
     <ClInclude Include="src\audio\synthesizer.h" />
     <ClInclude Include="src\utils\timer.h" />
+    <ClInclude Include="src\utils\genome_io.h" />
     <ClInclude Include="src\ui\ui_manager.h" />
     <ClInclude Include="src\ui\imgui_helpers.h" />
     <ClInclude Include="third_party\imgui\imconfig.h" />

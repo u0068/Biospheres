@@ -110,6 +110,10 @@ struct alignas(16) GPUMode {
     float flagellocyteNutrientConsumption{ 0.0f }; // 4 bytes - Nutrient consumption rate
     float nutrientPriority{ 1.0f };                // 4 bytes - Priority for nutrient distribution
     int cellType{ 0 };                             // 4 bytes - Cell type (0=Phagocyte, 1=Flagellocyte)
+    float splitMass{ 1.0f };                       // 4 bytes - Mass threshold for cell splitting
+    float _padding{ 0.0f };                        // 4 bytes - Padding for alignment
+    int _padding2{ 0 };                            // 4 bytes - Padding for alignment
+    int _padding3{ 0 };                            // 4 bytes - Padding for alignment (total 16 bytes)
 };
 
 struct AdhesionConnection

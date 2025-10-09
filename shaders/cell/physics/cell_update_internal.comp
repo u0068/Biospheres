@@ -62,6 +62,10 @@ struct GPUMode {
     float flagellocyteNutrientConsumption;
     float nutrientPriority;
     int cellType;
+    float splitMass;
+    float _padding;
+    int _padding2;
+    int _padding3;
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells
@@ -764,10 +768,11 @@ void main() {
 
     outputCells[index] = cell; // Default output is the same cell
 
-    // Check split conditions: age AND nutrient level
+    // Check split conditions: age AND nutrient level AND mass threshold
     const float SPLIT_NUTRIENT_THRESHOLD = 50.0;
     if (cell.age < mode.splitInterval) return;
     if (cell.nitrates < SPLIT_NUTRIENT_THRESHOLD) return; // Need 50 nutrients to split
+    if (cell.positionAndMass.w < mode.splitMass) return; // Need to reach split mass threshold
 
     int adhesionCount = 0;
     for (int i = 0; i < 20; ++i) {

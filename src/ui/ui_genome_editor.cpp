@@ -11,6 +11,7 @@
 
 #include "../audio/audio_engine.h"
 #include "../scene/scene_manager.h"
+#include "../utils/genome_io.h"
 
 // Ensure std::min and std::max are available
 #ifdef min
@@ -75,33 +76,76 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     ImGui::SameLine();
     if (ImGui::Button("Save Genome"))
     {
-        // TODO: Implement genome saving functionality
-        ImGui::OpenPopup("Save Confirmation");
+        std::string filepath = GenomeIO::openSaveDialog(currentGenome.name);
+        if (!filepath.empty())
+        {
+            if (GenomeIO::saveGenome(currentGenome, filepath))
+            {
+                ImGui::OpenPopup("Save Success");
+            }
+            else
+            {
+                ImGui::OpenPopup("Save Failed");
+            }
+        }
     }
     addTooltip("Save the current genome configuration to file");
 
     ImGui::SameLine();
     if (ImGui::Button("Load Genome"))
     {
-        // TODO: Implement genome loading functionality
-        ImGui::OpenPopup("Load Confirmation");
+        std::string filepath = GenomeIO::openLoadDialog();
+        if (!filepath.empty())
+        {
+            GenomeData loadedGenome;
+            if (GenomeIO::loadGenome(loadedGenome, filepath))
+            {
+                currentGenome = loadedGenome;
+                selectedModeIndex = 0;
+                genomeChanged = true;
+                ImGui::OpenPopup("Load Success");
+            }
+            else
+            {
+                ImGui::OpenPopup("Load Failed");
+            }
+        }
     }
     addTooltip("Load a previously saved genome configuration");
 
-    // Save confirmation popup
-    if (ImGui::BeginPopupModal("Save Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    // Save success popup
+    if (ImGui::BeginPopupModal("Save Success", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
         ImGui::Text("Genome '%s' saved successfully!", currentGenome.name.c_str());
-        ImGui::Text("(Save functionality not yet implemented)");
         if (ImGui::Button("OK"))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 
-    // Load confirmation popup
-    if (ImGui::BeginPopupModal("Load Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    // Save failed popup
+    if (ImGui::BeginPopupModal("Save Failed", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("Load genome functionality not yet implemented.");
+        ImGui::Text("Failed to save genome!");
+        ImGui::Text("Check the console for error details.");
+        if (ImGui::Button("OK"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // Load success popup
+    if (ImGui::BeginPopupModal("Load Success", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Genome '%s' loaded successfully!", currentGenome.name.c_str());
+        if (ImGui::Button("OK"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // Load failed popup
+    if (ImGui::BeginPopupModal("Load Failed", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Failed to load genome!");
+        ImGui::Text("Check the console for error details.");
         if (ImGui::Button("OK"))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();

@@ -603,6 +603,9 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) {
         
         // Store cell type
         gmode.cellType = static_cast<int>(mode.cellType);
+        
+        // Store split mass
+        gmode.splitMass = mode.splitMass;
 
         // Store adhesion settings (convert bools to ints and pack for GPU)
         gmode.adhesionSettings.canBreak = mode.adhesionSettings.canBreak ? 1 : 0;
