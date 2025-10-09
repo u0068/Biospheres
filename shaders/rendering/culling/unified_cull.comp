@@ -177,6 +177,11 @@ void main() {
     
     if (index >= totalCellCount) return;
     
+    // Skip dead cells (mass = 0)
+    if (cellData[index].positionAndMass.w <= 0.0) {
+        return;
+    }
+    
     // Calculate cell radius from mass (assuming sphere volume formula)
     vec3 cellPos = cellData[index].positionAndMass.xyz;
     float cellRadius = pow(cellData[index].positionAndMass.w, 1.0/3.0);

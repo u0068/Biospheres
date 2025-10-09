@@ -520,8 +520,11 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         
         ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Flagellocyte Settings");
         
-        drawSliderWithInput("Thrust Force", &mode.flagellocyteSettings.thrustForce, 0.0f, 20.0f, "%.1f");
-        addTooltip("Continuous forward thrust force applied to propel the cell");
+        drawSliderWithInput("Swim Speed", &mode.flagellocyteSettings.swimSpeed, 0.0f, 2.0f, "%.2f");
+        addTooltip("Swim speed multiplier (0.0 = no thrust, 1.0 = normal, 2.0 = double speed)\nHigher speed consumes more nutrients");
+        
+        drawSliderWithInput("Nutrient Consumption", &mode.flagellocyteSettings.nutrientConsumptionRate, 0.0f, 5.0f, "%.2f");
+        addTooltip("Nutrients consumed per second at full swim speed\nTotal consumption = base metabolism (1.0) + swimSpeed × this value");
     }
 
     // Add divider before color picker
@@ -543,7 +546,19 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     addTooltip("The mass threshold at which the cell will split into two child cells");
     
     drawSliderWithInput("Split Interval", &mode.splitInterval, 1.0f, 30.0f, "%.1f");
-    addTooltip("Time interval (in seconds) between cell splits");    // Add divider before Parent Split Angle
+    addTooltip("Time interval (in seconds) between cell splits");
+    
+    // Add divider before nutrient settings
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    
+    ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Nutrient Distribution");
+    
+    drawSliderWithInput("Nutrient Priority", &mode.nutrientPriority, 0.0f, 2.0f, "%.2f");
+    addTooltip("Priority for receiving nutrients from connected cells\nHigher values receive proportionally more nutrients\n0.0 = lowest priority, 1.0 = normal, 2.0 = highest priority");
+    
+    // Add divider before Parent Split Angle
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();

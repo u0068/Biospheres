@@ -72,6 +72,7 @@ public:
     void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager);
     void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager); // New time scrubber window
     void renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager); // Scene switcher window
+    void renderSimulationSettings(CellManager& cellManager); // Simulation settings window (voxel grid, etc.)
 
     // Preview simulation time control
     void updatePreviewSimulation(CellManager& previewCellManager);
@@ -105,6 +106,10 @@ public:
     
     // Distance-based culling and fading toggle
     bool enableDistanceCulling = true;   // Toggle for distance-based culling and fading
+    
+    // Voxel grid visualization toggles
+    bool showVoxelGrid = false;          // Toggle for showing voxel grid lines
+    bool showVoxelCubes = false;         // Toggle for showing nutrient voxel cubes
 
 private:    // Helper to get window flags based on lock state
     int getWindowFlags(int baseFlags = 0) const;

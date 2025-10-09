@@ -59,10 +59,10 @@ struct GPUMode {
     int childAKeepAdhesion;
     int childBKeepAdhesion;
     int maxAdhesions;
-    float flagellocyteThrustForce;
-    float _padding1;
-    float _padding2;
-    float _padding3;
+    float flagellocyteSwimSpeed;
+    float flagellocyteNutrientConsumption;
+    float nutrientPriority;
+    int cellType;
 };
 
 // Shader storage buffer objects
@@ -101,6 +101,8 @@ uniform float u_gridCellSize;
 uniform float u_worldSize;
 uniform int u_maxCellsPerGrid;
 uniform int u_enableThrustForce = 1; // Enable/disable flagellocyte thrust force (0=disabled, 1=enabled)
+uniform float u_rollingFriction = 0.3; // Rolling friction coefficient (0=no friction, 1=high friction)
+uniform vec3 u_gravity = vec3(0.0, 0.0, 0.0); // Global gravity acceleration (units/s²)
 
 // Function to convert world position to grid coordinates
 ivec3 worldToGrid(vec3 worldPos) {
@@ -139,17 +141,22 @@ void main() {
         outputCells[index] = inputCells[index];
         outputCells[index].velocity.xyz = vec3(0.0);
         outputCells[index].acceleration = vec4(0.0);
+        outputCells[index].angularAcceleration = vec4(0.0);
         return;
     }    
-    // Copy input cell data to output and reset acceleration
+    // Copy input cell data to output and reset accelerations
     outputCells[index] = inputCells[index];
     outputCells[index].acceleration = vec4(0.0);
+    outputCells[index].angularAcceleration = vec4(0.0);
     
     // Calculate forces from nearby cells using spatial partitioning
     vec3 totalForce = vec3(0.0);
+    vec3 totalTorque = vec3(0.0);
     vec3 myPos = inputCells[index].positionAndMass.xyz;
     float myMass = inputCells[index].positionAndMass.w;
     float myRadius = pow(myMass, 1./3.);
+    vec3 myVelocity = inputCells[index].velocity.xyz;
+    vec3 myAngularVelocity = inputCells[index].angularVelocity.xyz;
     
     // Get the grid cell this cell belongs to
     ivec3 myGridPos = worldToGrid(myPos);
@@ -207,7 +214,65 @@ void main() {
                         vec3 direction = normalize(delta);
                         float overlap = minDistance - distance;
                         float hardness = 10.0;
-                        totalForce += direction * overlap * hardness; // Force strength
+                        totalForce += direction * overlap * hardness;
+                        
+                        // === GEAR-LIKE MESHING CONTACT MECHANICS ===
+                        // Calculate contact point (on surface of this cell)
+                        vec3 contactPoint = myPos - direction * myRadius;
+                        vec3 contactOffset = contactPoint - myPos;
+                        
+                        // Get other cell's velocity and angular velocity
+                        vec3 otherVelocity = inputCells[otherIndex].velocity.xyz;
+                        vec3 otherAngularVelocity = inputCells[otherIndex].angularVelocity.xyz;
+                        
+                        // Calculate velocity at contact point for both cells
+                        // v_contact = v_linear + ω × r
+                        vec3 myContactVelocity = myVelocity + cross(myAngularVelocity, contactOffset);
+                        vec3 otherContactOffset = contactPoint - otherPos;
+                        vec3 otherContactVelocity = otherVelocity + cross(otherAngularVelocity, otherContactOffset);
+                        
+                        // Relative velocity at contact point
+                        vec3 relativeVelocity = myContactVelocity - otherContactVelocity;
+                        
+                        // Decompose into normal and tangential components
+                        vec3 normalVelocity = dot(relativeVelocity, direction) * direction;
+                        vec3 tangentialVelocity = relativeVelocity - normalVelocity;
+                        
+                        // Calculate normal force (used for both friction types)
+                        float normalForce = hardness * overlap;
+                        
+                        // GEAR MESHING: Surfaces should have zero relative tangential velocity
+                        // Apply strong constraint force to eliminate sliding
+                        float tangentialSpeed = length(tangentialVelocity);
+                        if (tangentialSpeed > 0.001) {
+                            vec3 frictionDirection = -normalize(tangentialVelocity);
+                            
+                            // Use high friction multiplier to simulate gear teeth engagement
+                            float gearFriction = u_rollingFriction * 3.0; // 3x stronger for gear-like behavior
+                            vec3 frictionForce = frictionDirection * normalForce * gearFriction;
+                            
+                            // Apply friction force to linear motion
+                            totalForce += frictionForce;
+                            
+                            // Calculate torque from friction: τ = r × F
+                            // This causes cells to rotate like meshing gears
+                            vec3 torque = cross(contactOffset, frictionForce);
+                            totalTorque += torque;
+                        }
+                        
+                        // ADDITIONAL GEAR COUPLING: Direct angular velocity coupling
+                        // For perfect gear meshing, angular velocities should be related by radius ratio
+                        // ω1 * r1 = -ω2 * r2 (opposite rotation directions)
+                        vec3 relativeAngularVel = myAngularVelocity - otherAngularVelocity;
+                        float angularMismatch = length(relativeAngularVel);
+                        
+                        if (angularMismatch > 0.001) {
+                            // Apply torque to synchronize rotation like gears
+                            // The torque should be proportional to the angular velocity mismatch
+                            float couplingStrength = normalForce * u_rollingFriction * 0.5;
+                            vec3 couplingTorque = -relativeAngularVel * couplingStrength;
+                            totalTorque += couplingTorque;
+                        }
                     }
                 }
             }
@@ -217,12 +282,22 @@ void main() {
     // Calculate acceleration (F = ma, so a = F/m)
     vec3 acceleration = totalForce / myMass;
     
+    // Add global gravity
+    acceleration += u_gravity;
+    
     // Add flagellocyte thrust force (continuous forward movement)
+    // Force is proportional to swim speed and inversely proportional to total mass being pushed
     if (u_enableThrustForce != 0) {
         int modeIndex = inputCells[index].modeIndex;
         if (modeIndex >= 0 && modeIndex < modes.length()) {
-            float thrustForce = modes[modeIndex].flagellocyteThrustForce;
-            if (thrustForce > 0.0) {
+            float swimSpeed = modes[modeIndex].flagellocyteSwimSpeed;
+            if (swimSpeed > 0.0) {
+                // Base thrust force (can be adjusted)
+                const float BASE_THRUST = 5.0;
+                
+                // Calculate effective thrust based on swim speed
+                float thrustForce = BASE_THRUST * swimSpeed;
+                
                 // Apply thrust in the forward direction (negative Z in local space)
                 vec4 orientation = inputCells[index].orientation;
                 // Convert quaternion to forward direction
@@ -231,6 +306,9 @@ void main() {
                     2.0 * (orientation.y * orientation.z - orientation.w * orientation.x),
                     1.0 - 2.0 * (orientation.x * orientation.x + orientation.y * orientation.y)
                 );
+                
+                // Thrust is divided by mass - heavier cells (or structures) move slower
+                // Multiple flagellocytes can cooperate by each contributing thrust
                 acceleration += forward * thrustForce / myMass;
             }
         }
@@ -252,5 +330,23 @@ void main() {
     
     // Store acceleration in output buffer
     outputCells[index].acceleration.xyz = acceleration;
+    
+    // Calculate angular acceleration from torque: α = τ / I
+    // For a sphere: I = (2/5) * m * r^2
+    float momentOfInertia = 0.4 * myMass * myRadius * myRadius;
+    vec3 angularAcceleration = totalTorque / momentOfInertia;
+    
+    // Apply damping to angular acceleration to prevent drift
+    float angularAccMagnitude = length(angularAcceleration);
+    if (angularAccMagnitude < 0.001) {
+        angularAcceleration = vec3(0.0);
+    } else if (angularAccMagnitude < 0.01) {
+        angularAcceleration *= 0.1;
+    } else if (angularAccMagnitude < 0.05) {
+        angularAcceleration *= u_accelerationDamping;
+    }
+    
+    // Store angular acceleration in output buffer
+    outputCells[index].angularAcceleration.xyz = angularAcceleration;
 }
 

@@ -25,7 +25,7 @@ struct ComputeCell {
     int modeIndex{ 0 };
     float age{ 0 };                     // also used for split timer
     float toxins{ 0 };
-    float nitrates{ 1 };
+    float nitrates{ 150 };              // Start with full nutrients
     int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1 };
 
     // Lineage tracking (AA.BB.C format)
@@ -106,10 +106,10 @@ struct alignas(16) GPUMode {
     int childAKeepAdhesion{ 1 };  // 4 bytes
 	int childBKeepAdhesion{ 1 };  // 4 bytes
 	int maxAdhesions{ config::MAX_ADHESIONS_PER_CELL }; // 4 bytes (total 16 bytes)
-    float flagellocyteThrustForce{ 0.0f }; // 4 bytes
-    float _padding1{ 0.0f };      // 4 bytes
-    float _padding2{ 0.0f };      // 4 bytes
-    float _padding3{ 0.0f };      // 4 bytes (total 16 bytes)
+    float flagellocyteSwimSpeed{ 0.0f };           // 4 bytes - Swim speed multiplier
+    float flagellocyteNutrientConsumption{ 0.0f }; // 4 bytes - Nutrient consumption rate
+    float nutrientPriority{ 1.0f };                // 4 bytes - Priority for nutrient distribution
+    int cellType{ 0 };                             // 4 bytes - Cell type (0=Phagocyte, 1=Flagellocyte)
 };
 
 struct AdhesionConnection
@@ -171,7 +171,8 @@ inline const char* getCellTypeName(CellType type)
         float tailTaper = 1.0f;           // Amount of taper from base to tip (0=no taper, 1=full taper to point)
         int segments = 32;                // Number of segments in the tail
         glm::vec3 tailColor = { 0.8f, 0.9f, 1.0f }; // Tail color (can differ from body)
-        float thrustForce = 5.0f;         // Forward thrust force applied continuously
+        float swimSpeed = 1.0f;           // Swim speed multiplier (0.0 = no thrust, 2.0 = double thrust)
+        float nutrientConsumptionRate = 1.0f; // Nutrients consumed per second at full swim speed
     };
 
 struct ChildSettings
@@ -201,6 +202,9 @@ struct ModeSettings
     
     // Flagellocyte Settings (only used when cellType == Flagellocyte)
     FlagellocyteSettings flagellocyteSettings;
+    
+    // Nutrient Distribution Settings
+    float nutrientPriority = 1.0f; // Priority for receiving nutrients from connected cells (0.0 = lowest, higher = more priority)
 };
 
 struct GenomeData

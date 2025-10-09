@@ -1,0 +1,62 @@
+#version 460 core
+
+layout(local_size_x = 256) in;
+
+// Cell data structure
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;
+    vec4 acceleration;
+    vec4 prevAcceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 prevAngularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+    uint parentLineageId;
+    uint uniqueId;
+    uint childNumber;
+    uint _lineagePadding;
+};
+
+// Input buffer (contains dead cells)
+layout(std430, binding = 0) buffer InputCellBuffer {
+    ComputeCell inputCells[];
+};
+
+// Output buffer (compacted, no dead cells)
+layout(std430, binding = 1) buffer OutputCellBuffer {
+    ComputeCell outputCells[];
+};
+
+// Cell count buffer
+layout(std430, binding = 2) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
+};
+
+// Atomic counter for compacted index
+layout(binding = 0, offset = 0) uniform atomic_uint compactedCount;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    // Check bounds
+    if (index >= totalCellCount) return;
+    
+    ComputeCell cell = inputCells[index];
+    
+    // Check if cell is alive (mass > 0)
+    if (cell.positionAndMass.w > 0.0) {
+        // Cell is alive, add it to compacted buffer
+        uint compactedIndex = atomicCounterIncrement(compactedCount);
+        outputCells[compactedIndex] = cell;
+    }
+}

@@ -1,0 +1,219 @@
+#version 460 core
+
+layout(local_size_x = 256) in;
+
+// GPU Mode adhesion settings structure
+struct GPUModeAdhesionSettings
+{
+    int canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation;
+    float twistConstraintStiffness;
+    float twistConstraintDamping;
+    int enableTwistConstraint;
+    int _padding;
+};
+
+// GPU Mode structure
+struct GPUMode {
+    vec4 color;
+    vec4 orientationA;
+    vec4 orientationB;
+    vec4 splitDirection;
+    ivec2 childModes;
+    float splitInterval;
+    int genomeOffset;
+    GPUModeAdhesionSettings adhesionSettings;
+    int parentMakeAdhesion;
+    int childAKeepAdhesion;
+    int childBKeepAdhesion;
+    int maxAdhesions;
+    float flagellocyteSwimSpeed;
+    float flagellocyteNutrientConsumption;
+    float nutrientPriority;
+    int cellType;
+};
+
+// Cell data structure
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;
+    vec4 acceleration;
+    vec4 prevAcceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 prevAngularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+    uint parentLineageId;
+    uint uniqueId;
+    uint childNumber;
+    uint _lineagePadding;
+};
+
+// Adhesion connection structure
+struct AdhesionConnection {
+    uint cellAIndex;
+    uint cellBIndex;
+    uint modeIndex;
+    uint isActive;
+    vec4 anchorDirectionA;
+    vec4 anchorDirectionB;
+    uint _padding1;
+    uint _padding2;
+};
+
+// Buffers
+layout(std430, binding = 0) buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+layout(std430, binding = 1) buffer ModeBuffer {
+    GPUMode modes[];
+};
+
+layout(std430, binding = 2) buffer AdhesionBuffer {
+    AdhesionConnection adhesions[];
+};
+
+layout(std430, binding = 3) buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform float u_distributionRate; // How fast nutrients are distributed (nutrients per second)
+
+// Constants
+const float MIN_NUTRIENTS_TO_KEEP = 25.0; // Cells never give away their last 25 nutrients
+const float LOW_NUTRIENT_THRESHOLD = 30.0; // Below this, cells get priority boost
+const float CRITICAL_NUTRIENT_THRESHOLD = 15.0; // Below this, cells get maximum boost
+const float MAX_PRIORITY_BOOST = 3.0; // Maximum priority multiplier for starving cells
+
+// Calculate dynamic priority based on nutrient level
+// Cells running low on nutrients get a temporary priority boost
+float calculateEffectivePriority(float basePriority, float nutrients) {
+    if (nutrients >= LOW_NUTRIENT_THRESHOLD) {
+        return basePriority; // Normal priority
+    }
+    
+    if (nutrients <= CRITICAL_NUTRIENT_THRESHOLD) {
+        return basePriority * MAX_PRIORITY_BOOST; // Maximum boost
+    }
+    
+    // Linear interpolation between normal and max boost
+    float t = (LOW_NUTRIENT_THRESHOLD - nutrients) / (LOW_NUTRIENT_THRESHOLD - CRITICAL_NUTRIENT_THRESHOLD);
+    float boost = 1.0 + (MAX_PRIORITY_BOOST - 1.0) * t;
+    return basePriority * boost;
+}
+
+void main() {
+    uint cellIndex = gl_GlobalInvocationID.x;
+    if (cellIndex >= totalCellCount) return;
+    
+    ComputeCell cell = cells[cellIndex];
+    
+    // Skip dead cells
+    if (cell.positionAndMass.w <= 0.0) return;
+    
+    // Get this cell's mode and priority
+    GPUMode myMode = modes[cell.modeIndex];
+    float basePriority = myMode.nutrientPriority;
+    float myNutrients = cell.nitrates;
+    
+    // Calculate effective priority with starvation boost
+    float myPriority = calculateEffectivePriority(basePriority, myNutrients);
+    
+    // Calculate how much this cell can give away
+    float availableToGive = max(0.0, myNutrients - MIN_NUTRIENTS_TO_KEEP);
+    
+    // Track total priority of neighbors that need nutrients
+    float totalNeighborPriority = 0.0;
+    int needyNeighborCount = 0;
+    
+    // First pass: Calculate total priority of neighbors that need nutrients
+    for (int i = 0; i < 20; i++) {
+        int adhesionIndex = cell.adhesionIndices[i];
+        if (adhesionIndex < 0) continue; // No adhesion in this slot
+        
+        AdhesionConnection adhesion = adhesions[adhesionIndex];
+        if (adhesion.isActive == 0) continue;
+        
+        // Find the other cell in this adhesion
+        uint otherCellIndex = (adhesion.cellAIndex == cellIndex) ? adhesion.cellBIndex : adhesion.cellAIndex;
+        if (otherCellIndex >= totalCellCount) continue;
+        
+        ComputeCell otherCell = cells[otherCellIndex];
+        if (otherCell.positionAndMass.w <= 0.0) continue; // Skip dead cells
+        
+        // Check if neighbor needs nutrients (has less than us)
+        if (otherCell.nitrates < myNutrients) {
+            GPUMode otherMode = modes[otherCell.modeIndex];
+            // Apply starvation boost to neighbor's priority
+            float neighborPriority = calculateEffectivePriority(otherMode.nutrientPriority, otherCell.nitrates);
+            totalNeighborPriority += neighborPriority;
+            needyNeighborCount++;
+        }
+    }
+    
+    // If no neighbors need nutrients, we're done
+    if (needyNeighborCount == 0 || totalNeighborPriority <= 0.0) {
+        return;
+    }
+    
+    // Calculate maximum nutrients to distribute this frame
+    float maxDistribution = u_distributionRate * u_deltaTime;
+    float actualDistribution = min(availableToGive, maxDistribution);
+    
+    // Second pass: Distribute nutrients proportionally based on priority
+    float totalGiven = 0.0;
+    
+    for (int i = 0; i < 20; i++) {
+        int adhesionIndex = cell.adhesionIndices[i];
+        if (adhesionIndex < 0) continue;
+        
+        AdhesionConnection adhesion = adhesions[adhesionIndex];
+        if (adhesion.isActive == 0) continue;
+        
+        uint otherCellIndex = (adhesion.cellAIndex == cellIndex) ? adhesion.cellBIndex : adhesion.cellAIndex;
+        if (otherCellIndex >= totalCellCount) continue;
+        
+        ComputeCell otherCell = cells[otherCellIndex];
+        if (otherCell.positionAndMass.w <= 0.0) continue;
+        
+        // Only give to neighbors with less nutrients
+        if (otherCell.nitrates < myNutrients) {
+            GPUMode otherMode = modes[otherCell.modeIndex];
+            
+            // Calculate this neighbor's effective priority with starvation boost
+            float neighborPriority = calculateEffectivePriority(otherMode.nutrientPriority, otherCell.nitrates);
+            
+            // Calculate this neighbor's share based on their effective priority
+            float priorityRatio = neighborPriority / totalNeighborPriority;
+            float nutrientsToGive = actualDistribution * priorityRatio;
+            
+            // Transfer nutrients (no atomics needed since updates are small and infrequent)
+            cells[otherCellIndex].nitrates += nutrientsToGive;
+            totalGiven += nutrientsToGive;
+        }
+    }
+    
+    // Subtract the total given from this cell
+    if (totalGiven > 0.0) {
+        cell.nitrates -= totalGiven;
+        cells[cellIndex].nitrates = cell.nitrates;
+    }
+}

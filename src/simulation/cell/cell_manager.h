@@ -21,6 +21,7 @@
 #include "../../rendering/core/mesh/sphere_mesh.h"
 #include "../cell/common_structs.h"
 #include "../../rendering/systems/frustum_culling.h"
+#include "../voxel/voxel_manager.h"
 
 // Forward declaration
 class Camera;
@@ -53,6 +54,9 @@ struct CellManager
     GLuint stagingCellCountBuffer{}; // CPU-accessible cell count buffer (no sync stalls)
     GLuint cellAdditionBuffer{};     // Cell addition queue for GPU
     GLuint uniqueIdBuffer{};         // GPU-accessible unique ID counter buffer
+    GLuint compactionCounterBuffer{}; // Atomic counter for cell compaction
+    GLuint compactionReadbackBuffer{}; // Persistent mapped buffer for async readback
+    GLuint* compactionReadbackPtr = nullptr; // Mapped pointer for async access
 
 	GLuint freeCellSlotBuffer{}; // Buffer for tracking free slots in the cell buffer
     GLuint freeAdhesionSlotBuffer{}; // Buffer for tracking free slots in the adhesion buffer
@@ -83,6 +87,8 @@ struct CellManager
     Shader* lodComputeShader = nullptr;       // Compute shader for LOD assignment
     GLuint lodInstanceBuffers[4]{};           // Instance buffers for each LOD level
     GLuint lodCountBuffer{};                  // Buffer to track instance counts per LOD level
+    GLuint lodCountReadbackBuffer{};          // Persistent mapped buffer for async LOD count readback
+    int* lodCountReadbackPtr = nullptr;       // Mapped pointer for async LOD counts
     int lodInstanceCounts[4]{};               // CPU-side copy of LOD instance counts
     float lodDistances[4] = {
         config::defaultLodDistance0,
@@ -102,6 +108,8 @@ struct CellManager
     Shader* tailRenderShader = nullptr;       // Vertex/fragment shaders for rendering tails
     GLuint unifiedOutputBuffers[4]{};         // Output buffers for each LOD level
     GLuint unifiedCountBuffer{};              // Buffer for LOD counts
+    GLuint unifiedCountReadbackBuffer{};      // Persistent mapped buffer for async unified count readback
+    int* unifiedCountReadbackPtr = nullptr;   // Mapped pointer for async unified counts
     GLuint flagellocyteOutputBuffers[4]{};    // Separate output buffers for flagellocyte cells
     GLuint flagellocyteCountBuffer{};         // Buffer for flagellocyte cell counts
     int flagellocyteInstanceCounts[4]{};      // CPU-side copy of flagellocyte instance counts
@@ -139,6 +147,23 @@ struct CellManager
     
     // Preview simulation flag (disables thrust force for genome preview)
     bool isPreviewSimulation = false;
+    
+    // Rolling contact physics parameters
+    float rollingFrictionCoefficient = 0.15f; // Friction coefficient for rolling contact (0=no friction, 1=high friction)
+    
+    // Global physics parameters
+    float globalDrag = 0.0f; // Global drag coefficient (0=no drag, 1=max drag)
+    glm::vec3 globalGravity = glm::vec3(0.0f, 0.0f, 0.0f); // Global gravity acceleration (units/s²)
+    
+    // Nutrient absorption parameters
+    float nutrientAbsorptionRate = 10.0f; // Rate at which cells absorb nutrients from voxels
+    float nutrientAbsorptionRadius = 2.0f; // Radius within which cells can absorb nutrients
+    float nutrientDistributionRate = 5.0f; // Rate at which nutrients are shared through adhesions (nutrients/sec)
+    
+    // Periodic nutrient injection (for main simulation)
+    float nutrientInjectionInterval = 5.0f; // Inject nutrients every N seconds
+    float nutrientInjectionTarget = 75.0f;  // Target nutrient level for injections
+    float nutrientInjectionTimer = 0.0f;    // Timer for tracking injection intervals
 
     // Compute shaders
     Shader* physicsShader = nullptr;
@@ -147,12 +172,18 @@ struct CellManager
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
     Shader* cellAdditionShader = nullptr;
+    Shader* nutrientAbsorptionShader = nullptr; // Nutrient absorption from voxel grid
+    Shader* nutrientDistributionShader = nullptr; // Nutrient distribution through adhesions
+    Shader* compactionShader = nullptr; // Dead cell removal and buffer compaction
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
     Shader* gridAssignShader = nullptr;    // Assign cells to grid
     Shader* gridPrefixSumShader = nullptr; // Calculate grid offsets
     Shader* gridInsertShader = nullptr;    // Insert cells into grid
+    
+    // Voxel-based nutrient system
+    VoxelManager voxelManager;             // Manages voxel grid for nutrient diffusion
     
     // CPU-side storage for initialization and debugging
     // Note: cpuCells is deprecated in favor of GPU buffers, should be removed after refactoring
@@ -472,6 +503,13 @@ struct CellManager
     void initializeSpatialGrid();
     void updateSpatialGrid();
     void cleanupSpatialGrid();
+    
+    // Voxel nutrient system functions
+    void initializeVoxelSystem();
+    void updateVoxelSystem(float deltaTime);
+    void renderVoxelSystem(const Camera& camera, const glm::vec2& resolution, bool showGridLines = true, bool showVoxels = true);
+    void cleanupVoxelSystem();
+    VoxelManager& getVoxelManager() { return voxelManager; }
 
     // Getter functions for debug information
     int getCellCount() const { return totalCellCount; }
@@ -514,6 +552,7 @@ struct CellManager
     // Getters for selection system
     bool hasSelectedCell() const { return selectedCell.isValid; }
     const SelectedCellInfo &getSelectedCell() const { return selectedCell; }
+    void refreshSelectedCellData(); // Update selected cell data from GPU
     ComputeCell getCellData(int index) const;
     uint32_t getCurrentFrame() const { return currentFrame; }
     uint32_t getCurrentCellCount() const { return static_cast<uint32_t>(totalCellCount); }
@@ -695,8 +734,11 @@ private:
     void runPositionUpdateCompute(float deltaTime);
     void runVelocityUpdateCompute(float deltaTime);
     void runInternalUpdateCompute(float deltaTime);
+    void runNutrientAbsorption(float deltaTime);
+    void runNutrientDistribution(float deltaTime);
     void runAdhesionPhysics(float deltaTime);
     void applyCellAdditions();
+    void compactDeadCells(); // Remove dead cells and update counters
 
     // Spatial grid helper functions
     void runGridClear();

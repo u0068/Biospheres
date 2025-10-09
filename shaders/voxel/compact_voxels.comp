@@ -1,0 +1,48 @@
+#version 460 core
+
+layout(local_size_x = 256) in;
+
+struct VoxelData
+{
+    vec4 nutrientDensity;
+    vec4 positionAndSize;
+    vec4 colorAndAlpha;
+    float lifetime;
+    float maxLifetime;
+    uint isActive;
+    uint _padding;
+};
+
+layout(std430, binding = 0) buffer VoxelBuffer
+{
+    VoxelData voxels[];
+};
+
+layout(std430, binding = 1) buffer ActiveVoxelIndices
+{
+    uint activeIndices[];
+};
+
+layout(binding = 0, offset = 0) uniform atomic_uint activeVoxelCounter;
+
+uniform int u_maxVoxels;
+
+void main()
+{
+    uint voxelIdx = gl_GlobalInvocationID.x;
+    
+    // Process all voxels in the grid, not just maxActiveVoxels
+    // We need to scan the entire 32^3 grid to find active voxels
+    uint totalVoxels = 32 * 32 * 32; // 32,768 voxels
+    if (voxelIdx >= totalVoxels) return;
+    
+    // If this voxel is active, add it to the active indices list
+    if (voxels[voxelIdx].isActive == 1)
+    {
+        uint index = atomicCounterIncrement(activeVoxelCounter);
+        if (index < activeIndices.length())
+        {
+            activeIndices[index] = voxelIdx;
+        }
+    }
+}

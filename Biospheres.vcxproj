@@ -172,12 +172,15 @@
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
     <ClCompile Include="src\simulation\cell\spatial_grid.cpp" />
     <ClCompile Include="src\simulation\cell\cell_selection.cpp" />
+    <ClCompile Include="src\simulation\cell\voxel_integration.cpp" />
+    <ClCompile Include="src\simulation\voxel\voxel_manager.cpp" />
     <ClCompile Include="third_party\glad.c" />
     <ClCompile Include="src\rendering\core\glad_helpers.cpp" />
     <ClCompile Include="src\rendering\core\glfw_helpers.cpp" />
     <ClCompile Include="src\audio\synthesizer.cpp" />
     <ClCompile Include="src\utils\timer.cpp" />
     <ClCompile Include="src\ui\ui_manager.cpp" />
+    <ClCompile Include="src\ui\ui_simulation_settings.cpp" />
     <ClCompile Include="src\ui\ui_performance_monitor.cpp" />
     <ClCompile Include="src\ui\ui_camera_controls.cpp" />
     <ClCompile Include="src\ui\ui_genome_editor.cpp" />
@@ -206,6 +209,8 @@
     <ClInclude Include="src\core\config.h" />
     <ClInclude Include="src\rendering\systems\frustum_culling.h" />
     <ClInclude Include="src\simulation\cell\common_structs.h" />
+    <ClInclude Include="src\simulation\voxel\voxel_structs.h" />
+    <ClInclude Include="src\simulation\voxel\voxel_manager.h" />
     <ClInclude Include="src\rendering\core\glad_helpers.h" />
     <ClInclude Include="src\rendering\core\glfw_helpers.h" />
     <ClInclude Include="src\scene\scene_manager.h" />

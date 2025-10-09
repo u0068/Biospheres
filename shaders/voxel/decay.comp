@@ -1,0 +1,53 @@
+#version 460 core
+
+layout(local_size_x = 256) in;
+
+struct VoxelData
+{
+    vec4 nutrientDensity;
+    vec4 positionAndSize;
+    vec4 colorAndAlpha;
+    float lifetime;
+    float maxLifetime;
+    uint isActive;
+    uint _padding;
+};
+
+layout(std430, binding = 0) buffer VoxelBuffer
+{
+    VoxelData voxels[];
+};
+
+layout(std430, binding = 1) buffer ActiveVoxelIndices
+{
+    uint activeIndices[];
+};
+
+uniform float u_deltaTime;
+uniform float u_decayRate;
+
+void main()
+{
+    uint threadIdx = gl_GlobalInvocationID.x;
+    if (threadIdx >= activeIndices.length()) return;
+    
+    uint voxelIdx = activeIndices[threadIdx];
+    if (voxelIdx >= voxels.length()) return;
+    if (voxels[voxelIdx].isActive == 0) return;
+    
+    // Update lifetime
+    voxels[voxelIdx].lifetime += u_deltaTime;
+    
+    // Apply decay
+    float decayFactor = exp(-u_decayRate * u_deltaTime);
+    voxels[voxelIdx].nutrientDensity *= decayFactor;
+    voxels[voxelIdx].colorAndAlpha.a *= decayFactor;
+    
+    // Deactivate voxel if nutrient density is too low
+    if (voxels[voxelIdx].nutrientDensity.a < 0.01)
+    {
+        voxels[voxelIdx].isActive = 0;
+        voxels[voxelIdx].nutrientDensity = vec4(0.0);
+        voxels[voxelIdx].colorAndAlpha = vec4(0.0);
+    }
+}

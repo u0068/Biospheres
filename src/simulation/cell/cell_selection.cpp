@@ -169,9 +169,34 @@ sizeof(ComputeCell),
 
 void CellManager::clearSelection()
 {
-selectedCell.cellIndex = -1;
-selectedCell.isValid = false;
-isDraggingCell = false;
+    selectedCell.isValid = false;
+    selectedCell.cellIndex = -1;
+    isDraggingCell = false;
+}
+
+void CellManager::refreshSelectedCellData()
+{
+    if (!selectedCell.isValid || selectedCell.cellIndex < 0 || selectedCell.cellIndex >= totalCellCount)
+    {
+        return;
+    }
+    
+    // Read the latest cell data from GPU buffer
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, getCellReadBuffer());
+    ComputeCell* cellData = (ComputeCell*)glMapBufferRange(
+        GL_SHADER_STORAGE_BUFFER,
+        selectedCell.cellIndex * sizeof(ComputeCell),
+        sizeof(ComputeCell),
+        GL_MAP_READ_BIT
+    );
+    
+    if (cellData)
+    {
+        selectedCell.cellData = *cellData;
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void CellManager::endDrag()

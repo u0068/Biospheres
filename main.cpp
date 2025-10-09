@@ -189,12 +189,21 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		// Render the active simulation with its camera
 		try
 		{
+			// Render opaque objects first (cells) - writes to depth buffer
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera, uiManager.wireframeMode);
 			checkGLError("renderCells");
 			
 			// Render gizmos if enabled
 			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
 			checkGLError("renderGizmos");
+			
+			// Render voxel grid (nutrients visualization) AFTER cells for proper depth sorting
+			// Voxel particles are semi-transparent and need depth buffer from cells
+			if (currentScene == Scene::MainSimulation)
+			{
+				activeCellManager->renderVoxelSystem(*activeCamera, glm::vec2(width, height), uiManager.showVoxelGrid, uiManager.showVoxelCubes);
+				checkGLError("renderVoxelSystem");
+			}
 			
 			// Render ring gizmos if enabled
 			        activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
@@ -214,6 +223,7 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		uiManager.renderCellInspector(*activeCellManager, sceneManager);
 		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
 		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
+		uiManager.renderSimulationSettings(*activeCellManager);
 
 		// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
@@ -244,25 +254,39 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 		return;
 	}
 	// Update only the active scene simulation
-	float timeStep = config::physicsTimeStep;// *sceneManager.getSimulationSpeed();
+	float timeStep = config::physicsTimeStep * sceneManager.getSimulationSpeed();
 	Scene currentScene = sceneManager.getCurrentScene();
 	
 	try
 	{
 		if (currentScene == Scene::PreviewSimulation)
 		{
+			// Enable preview mode for steady nutrient supply
+			previewCellManager.isPreviewSimulation = true;
+			
 			// Update only Preview Simulation
 			previewCellManager.updateCells(timeStep);
 			checkGLError("updateCells - preview");
+			
+			// Update voxel nutrient system
+			previewCellManager.updateVoxelSystem(timeStep);
+			checkGLError("updateVoxelSystem - preview");
 			
 			// Update preview simulation time tracking
 			sceneManager.updatePreviewSimulationTime(timeStep);
 		}
 		else if (currentScene == Scene::MainSimulation)
 		{
+			// Disable preview mode for normal simulation
+			mainCellManager.isPreviewSimulation = false;
+			
 			// Update only Main Simulation
 			mainCellManager.updateCells(timeStep);
 			checkGLError("updateCells - main");
+			
+			// Update voxel nutrient system
+			mainCellManager.updateVoxelSystem(timeStep);
+			checkGLError("updateVoxelSystem - main");
 		}
 	}
 	catch (const std::exception& e)
@@ -331,12 +355,14 @@ int main()
 	ComputeCell previewCell{};
 	previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
 	previewCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
+	previewCellManager.initializeVoxelSystem(); // Initialize voxel nutrient grid
 	
 	// Initialize Main Simulation
 	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
 	ComputeCell mainCell{};
 	mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
 	mainCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
+	mainCellManager.initializeVoxelSystem(); // Initialize voxel nutrient grid
 	
 	// Ensure both simulations have proper initial state by running one update cycle
 	previewCellManager.updateCells(config::physicsTimeStep);

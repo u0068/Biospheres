@@ -58,10 +58,10 @@ struct GPUMode {
     int childAKeepAdhesion;
     int childBKeepAdhesion;
     int maxAdhesions;
-    float flagellocyteThrustForce;
-    float _padding1;
-    float _padding2;
-    float _padding3;
+    float flagellocyteSwimSpeed;
+    float flagellocyteNutrientConsumption;
+    float nutrientPriority;
+    int cellType;
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells
@@ -764,7 +764,10 @@ void main() {
 
     outputCells[index] = cell; // Default output is the same cell
 
+    // Check split conditions: age AND nutrient level
+    const float SPLIT_NUTRIENT_THRESHOLD = 50.0;
     if (cell.age < mode.splitInterval) return;
+    if (cell.nitrates < SPLIT_NUTRIENT_THRESHOLD) return; // Need 50 nutrients to split
 
     int adhesionCount = 0;
     for (int i = 0; i < 20; ++i) {
@@ -844,18 +847,34 @@ void main() {
     // Both child cells should start with the same age after the split
     // Since we already aged the parent cell by deltaTime this frame,
     // we need to subtract the excess age beyond the split interval
-    float startAge = cell.age - mode.splitInterval;
+    // Clamp to ensure children never start at or above split interval
+    float startAge = min(cell.age - mode.splitInterval, mode.splitInterval * 0.99);
 
-    // Apply rotation deltas to parent orientation (deterministic, no random variation)
+    // Apply rotation deltas to parent orientation with small random offset to prevent perfect alignments
     vec4 q_parent = cell.orientation;
-    vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
-    vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
+    
+    // Generate small random rotation offset based on cell's unique ID
+    float randomSeed = float(cell.uniqueId);
+    float randomAngle = fract(sin(randomSeed * 12.9898) * 43758.5453) * 0.001; // Small random angle ~0.001 radians
+    vec3 randomAxis = normalize(vec3(
+        fract(sin(randomSeed * 78.233) * 43758.5453),
+        fract(sin(randomSeed * 45.164) * 43758.5453),
+        fract(sin(randomSeed * 94.673) * 43758.5453)
+    ));
+    vec4 randomRotation = vec4(randomAxis * sin(randomAngle * 0.5), cos(randomAngle * 0.5));
+    
+    vec4 q_childA = normalize(quatMultiply(quatMultiply(q_parent, mode.orientationA), randomRotation));
+    vec4 q_childB = normalize(quatMultiply(quatMultiply(q_parent, mode.orientationB), randomRotation));
 
+    // Split nutrients evenly between children
+    float halfNutrients = cell.nitrates * 0.5;
+    
     ComputeCell childA = cell;
     childA.positionAndMass.xyz += offset;
     childA.age = startAge;
     childA.modeIndex = mode.childModes.x;
     childA.orientation = q_childA;
+    childA.nitrates = halfNutrients; // Half of parent's nutrients
     // Lineage tracking: Child A inherits parent's unique ID and becomes child 1
     childA.parentLineageId = cell.uniqueId;  // Parent's unique ID becomes child's parent lineage ID
     childA.uniqueId = atomicAdd(nextUniqueId, 1); // Get next unique ID atomically
@@ -869,6 +888,7 @@ void main() {
     childB.age = startAge + 0.001;
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
+    childB.nitrates = halfNutrients; // Half of parent's nutrients
     // Lineage tracking: Child B gets new unique ID and becomes child 2
     childB.parentLineageId = cell.uniqueId;  // Parent's unique ID becomes child's parent lineage ID
     childB.uniqueId = atomicAdd(nextUniqueId, 1); // Get next unique ID atomically

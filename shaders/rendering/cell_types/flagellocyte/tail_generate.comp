@@ -53,10 +53,10 @@ struct GPUMode {
     int childAKeepAdhesion;
     int childBKeepAdhesion;
     int maxAdhesions;
-    float flagellocyteThrustForce;
-    float _padding1;
-    float _padding2;
-    float _padding3;
+    float flagellocyteSwimSpeed;
+    float flagellocyteNutrientConsumption;
+    float nutrientPriority;
+    int cellType;
 };
 
 layout(std430, binding = 0) readonly buffer CellBuffer {
@@ -120,10 +120,11 @@ void main() {
     
     ComputeCell cell = cells[cellIndex];
     
-    // Check if this cell is a flagellocyte (has thrust force > 0)
+    // Check if this cell is a flagellocyte (has swim speed > 0)
     int modeIndex = cell.modeIndex;
     if (modeIndex < 0 || modeIndex >= modes.length()) return;
-    if (modes[modeIndex].flagellocyteThrustForce <= 0.0) {
+    float swimSpeed = modes[modeIndex].flagellocyteSwimSpeed;
+    if (swimSpeed <= 0.0) {
         // Not a flagellocyte - set tail vertices far away to make them invisible
         int maxVerticesPerCell = (MAX_TAIL_SEGMENTS + 1) * RADIAL_SEGMENTS + (CAP_SEGMENTS * RADIAL_SEGMENTS) + 1;
         uint baseVertexIndex = cellIndex * maxVerticesPerCell;
@@ -137,7 +138,8 @@ void main() {
     }
     
     vec3 cellPos = cell.positionAndMass.xyz;
-    float cellRadius = 1.0; // Fixed radius
+    float cellMass = cell.positionAndMass.w;
+    float cellRadius = pow(cellMass, 1.0 / 3.0); // Radius = mass^(1/3)
     vec4 orientation = cell.orientation;
     
     // Get color from mode buffer
@@ -150,11 +152,18 @@ void main() {
     vec3 right = rotMatrix * vec3(1, 0, 0);
     vec3 up = rotMatrix * vec3(0, 1, 0);
     
+    // Scale tail dimensions based on cell radius
+    // This makes the tail proportional to the cell size
+    float tailLength = uTailLength * cellRadius;
+    float tailThickness = uTailThickness * cellRadius;
+    float spiralRadius = uSpiralRadius * cellRadius;
+    
     // Start point of tail (just inside the back of sphere to avoid gaps)
     vec3 tailStart = cellPos - tailDirection * (cellRadius * 0.85);
     
-    // Current rotation for spiral
-    float currentRotation = uTime * uRotationSpeed;
+    // Current rotation for spiral - scaled by swim speed
+    // Faster swim speed = faster tail rotation
+    float currentRotation = uTime * uRotationSpeed * swimSpeed;
     
     int tailSegments = min(uTailSegments, MAX_TAIL_SEGMENTS);
     // Use MAX_TAIL_SEGMENTS for buffer layout to ensure consistent spacing
@@ -169,7 +178,7 @@ void main() {
     // Generate vertices for each segment
     for (int segment = 0; segment <= tailSegments; segment++) {
         float t = float(segment) / float(tailSegments);
-        float axisPos = t * uTailLength;
+        float axisPos = t * tailLength;
         
         // Spiral angle
         float spiralAngle = (t * uSpiralTightness * 6.28318) + currentRotation;
@@ -177,7 +186,7 @@ void main() {
         // Gradually increase spiral radius from 0 to full radius
         // This creates a smooth transition from center to spiral
         float spiralRadiusFactor = smoothstep(0.0, 0.3, t); // Ramp up over first 30% of tail
-        vec3 spiralOffset = (right * cos(spiralAngle) + up * sin(spiralAngle)) * (uSpiralRadius * spiralRadiusFactor);
+        vec3 spiralOffset = (right * cos(spiralAngle) + up * sin(spiralAngle)) * (spiralRadius * spiralRadiusFactor);
         
         // Center of this ring
         vec3 ringCenter = tailStart - tailDirection * axisPos + spiralOffset;
@@ -185,12 +194,12 @@ void main() {
         // Thickness taper - lerp between full thickness and tapered based on uTailTaper
         // uTailTaper = 0.0: uniform thickness
         // uTailTaper = 1.0: full taper to point
-        float thickness = uTailThickness * (1.0 - t * uTailTaper);
+        float thickness = tailThickness * (1.0 - t * uTailTaper);
         
         // Calculate tangent for proper normal orientation
         vec3 tangent = normalize(-tailDirection + 
             (right * (-sin(spiralAngle)) + up * cos(spiralAngle)) * 
-            (uSpiralRadius * uSpiralTightness * 6.28318 / uTailLength));
+            (spiralRadius * uSpiralTightness * 6.28318 / tailLength));
         
         // Generate ring of vertices
         for (int radial = 0; radial < RADIAL_SEGMENTS; radial++) {
@@ -215,12 +224,12 @@ void main() {
     
     // Get the last ring position and properties
     float lastT = 1.0;
-    float lastAxisPos = lastT * uTailLength;
+    float lastAxisPos = lastT * tailLength;
     float lastSpiralAngle = (lastT * uSpiralTightness * 6.28318) + currentRotation;
     float lastSpiralRadiusFactor = smoothstep(0.0, 0.3, lastT);
-    vec3 lastSpiralOffset = (right * cos(lastSpiralAngle) + up * sin(lastSpiralAngle)) * (uSpiralRadius * lastSpiralRadiusFactor);
+    vec3 lastSpiralOffset = (right * cos(lastSpiralAngle) + up * sin(lastSpiralAngle)) * (spiralRadius * lastSpiralRadiusFactor);
     vec3 lastRingCenter = tailStart - tailDirection * lastAxisPos + lastSpiralOffset;
-    float lastThickness = uTailThickness * (1.0 - lastT * uTailTaper);
+    float lastThickness = tailThickness * (1.0 - lastT * uTailTaper);
     
     // Generate cap rings (hemisphere)
     for (int capSeg = 1; capSeg <= CAP_SEGMENTS; capSeg++) {

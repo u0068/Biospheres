@@ -232,12 +232,17 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 
                 // Reset scene manager time to keyframe time
                 sceneManager.resetPreviewSimulationTime();
-                sceneManager.setPreviewSimulationTime(nearestKeyframe.time); // If target time is after the keyframe, simulate forward
+                sceneManager.setPreviewSimulationTime(nearestKeyframe.time);
+                
+                // If target time is after the keyframe, simulate forward
                 if (targetTime > nearestKeyframe.time)
                 {
                     // Temporarily pause to prevent normal time updates during fast-forward
                     bool wasPaused = sceneManager.isPaused();
                     sceneManager.setPaused(true);
+                    
+                    // Enable preview mode for steady nutrient supply during resimulation
+                    cellManager.isPreviewSimulation = true;
                     
                     float timeToSimulate = targetTime - nearestKeyframe.time;
                     
@@ -274,6 +279,9 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                     // Temporarily pause to prevent normal time updates during fast-forward
                     bool wasPaused = sceneManager.isPaused();
                     sceneManager.setPaused(true);
+                    
+                    // Enable preview mode for steady nutrient supply during resimulation
+                    cellManager.isPreviewSimulation = true;
                     
                     // Use optimized frame-skipping resimulation
                     int framesSkipped = cellManager.updateCellsFastForwardOptimized(

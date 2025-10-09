@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -74,7 +74,8 @@ void main() {
     vec3 acc_new = cell.acceleration.xyz;
 
     vel += 0.5 * (acc_old + acc_new) * u_deltaTime;
-    vel *= pow(u_damping, u_deltaTime * 100.0);
+    // Invert damping so higher values = more drag (more intuitive)
+    vel *= pow(1.0 - u_damping, u_deltaTime * 100.0);
 
     cell.velocity.xyz = vel;
     //cell.acceleration = vec4(0.0);
@@ -85,7 +86,8 @@ void main() {
     vec3 alpha_new = cell.angularAcceleration.xyz;
 
     w += 0.5 * (alpha_old + alpha_new) * u_deltaTime;
-    w *= pow(u_damping, u_deltaTime * 100.0);
+    // Invert damping so higher values = more drag (more intuitive)
+    w *= pow(1.0 - u_damping, u_deltaTime * 100.0);
 
     cell.angularVelocity.xyz = w;
     //cell.angularAcceleration = vec4(0.0);

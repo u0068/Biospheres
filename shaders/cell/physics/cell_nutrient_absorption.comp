@@ -1,0 +1,299 @@
+#version 460 core
+
+layout(local_size_x = 256) in;
+
+// Cell data structure
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;
+    vec4 acceleration;
+    vec4 prevAcceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 prevAngularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+    uint parentLineageId;
+    uint uniqueId;
+    uint childNumber;
+    uint _lineagePadding;
+};
+
+// Voxel data structure (16³ grid)
+struct VoxelData {
+    vec4 nutrientDensity;      // RGBA nutrient channels
+    vec4 positionAndSize;
+    vec4 colorAndAlpha;
+    float lifetime;
+    float maxLifetime;
+    uint isActive;
+    uint _padding;
+};
+
+// GPU Mode adhesion settings structure
+struct GPUModeAdhesionSettings
+{
+    int canBreak;
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation;
+    float twistConstraintStiffness;
+    float twistConstraintDamping;
+    int enableTwistConstraint;
+    int _padding;
+};
+
+// GPU Mode structure
+struct GPUMode {
+    vec4 color;
+    vec4 orientationA;
+    vec4 orientationB;
+    vec4 splitDirection;
+    ivec2 childModes;
+    float splitInterval;
+    int genomeOffset;
+    GPUModeAdhesionSettings adhesionSettings;
+    int parentMakeAdhesion;
+    int childAKeepAdhesion;
+    int childBKeepAdhesion;
+    int maxAdhesions;
+    float flagellocyteSwimSpeed;
+    float flagellocyteNutrientConsumption;
+    float nutrientPriority;
+    int cellType;
+};
+
+// Buffers
+layout(std430, binding = 0) buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+layout(std430, binding = 1) buffer VoxelBuffer {
+    VoxelData voxels[];
+};
+
+layout(std430, binding = 2) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    uint freeAdhesionTop;
+};
+
+layout(std430, binding = 3) buffer ModeBuffer {
+    GPUMode modes[];
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform int u_voxelResolution;  // 16 for voxel grid
+uniform float u_worldSize;
+uniform float u_absorptionRate;  // How fast phagocytes absorb nutrients (units/second)
+uniform float u_absorptionRadius; // Radius within which cells can absorb nutrients
+uniform int u_isPreviewMode;     // 1 = preview mode (steady nutrient supply), 0 = normal mode
+uniform int u_doNutrientInjection; // 1 = inject nutrients this frame, 0 = normal
+uniform float u_injectionTarget;   // Target nutrient level for injections
+
+// Convert world position to voxel coordinate
+ivec3 worldToVoxelCoord(vec3 worldPos) {
+    float halfWorld = u_worldSize * 0.5;
+    vec3 normalized = (worldPos + halfWorld) / u_worldSize;
+    ivec3 coord = ivec3(normalized * float(u_voxelResolution));
+    return clamp(coord, ivec3(0), ivec3(u_voxelResolution - 1));
+}
+
+// Convert voxel coordinate to 1D index
+int voxelCoordToIndex(ivec3 coord) {
+    return coord.x + coord.y * u_voxelResolution + coord.z * u_voxelResolution * u_voxelResolution;
+}
+
+// Maximum nutrient capacity
+const float MAX_NUTRIENTS = 150.0;
+const float DEATH_THRESHOLD = 10.0;
+
+// Cell size scaling parameters
+// Size (radius) scales from 0.5 at 15 nutrients to 1.75 at 125 nutrients
+const float MIN_NUTRIENTS_FOR_SIZE = 15.0;
+const float MAX_NUTRIENTS_FOR_SIZE = 125.0;
+const float MIN_RADIUS = 0.5;
+const float MAX_RADIUS = 1.75;
+
+// Helper function to calculate mass from desired radius
+// Since radius = mass^(1/3), then mass = radius^3
+float calculateMassFromNutrients(float nutrients) {
+    // Clamp nutrients to valid range
+    float clampedNutrients = clamp(nutrients, MIN_NUTRIENTS_FOR_SIZE, MAX_NUTRIENTS_FOR_SIZE);
+    
+    // Linear interpolation of radius based on nutrients
+    float t = (clampedNutrients - MIN_NUTRIENTS_FOR_SIZE) / (MAX_NUTRIENTS_FOR_SIZE - MIN_NUTRIENTS_FOR_SIZE);
+    float radius = mix(MIN_RADIUS, MAX_RADIUS, t);
+    
+    // Convert radius to mass (mass = radius^3)
+    return radius * radius * radius;
+}
+
+void main() {
+    uint cellIndex = gl_GlobalInvocationID.x;
+    if (cellIndex >= totalCellCount) return;
+    
+    ComputeCell cell = cells[cellIndex];
+    
+    // Skip dead cells (mass = 0)
+    if (cell.positionAndMass.w <= 0.0) return;
+    
+    vec3 cellPos = cell.positionAndMass.xyz;
+    
+    // PREVIEW MODE: Provide steady nutrient supply to all cells
+    if (u_isPreviewMode != 0) {
+        // Get cell mode for type-specific metabolism
+        GPUMode cellMode = modes[cell.modeIndex];
+        
+        // Apply metabolism FIRST (all cells lose nutrients over time)
+        if (cell.nitrates > 0.0) {
+            float metabolismRate = 1.0; // Base: Lose 1.0 nutrients per second
+            
+            // Flagellocytes consume additional nutrients based on swim speed
+            if (cellMode.cellType == 1) {
+                float swimSpeed = cellMode.flagellocyteSwimSpeed;
+                float consumptionRate = cellMode.flagellocyteNutrientConsumption;
+                metabolismRate += swimSpeed * consumptionRate;
+            }
+            
+            cell.nitrates -= metabolismRate * u_deltaTime;
+            cell.nitrates = max(cell.nitrates, 0.0);
+        }
+        
+        // Then add steady nutrient supply (20.0 per second)
+        // Net result: +19.0/sec for phagocytes - fast enough to split every ~4 seconds
+        // Phagocytes gain nutrients much faster than split interval (typically 5+ seconds)
+        float previewNutrientRate = 20.0;
+        cell.nitrates += previewNutrientRate * u_deltaTime;
+        cell.nitrates = min(cell.nitrates, MAX_NUTRIENTS); // Cap at maximum
+        
+        // Update mass based on nutrient storage (scales cell size)
+        cell.positionAndMass.w = calculateMassFromNutrients(cell.nitrates);
+        
+        // Write back and skip voxel absorption
+        cells[cellIndex] = cell;
+        return;
+    }
+    
+    // MAIN SIMULATION MODE: Metabolism and periodic injections
+    // Get cell mode for type-specific metabolism
+    GPUMode cellMode = modes[cell.modeIndex];
+    
+    // Base metabolism - all cells lose nutrients over time
+    if (cell.nitrates > 0.0) {
+        float metabolismRate = 1.0; // Base: Lose 1.0 nutrients per second
+        
+        // Flagellocytes consume additional nutrients based on swim speed
+        // cellType: 0=Phagocyte, 1=Flagellocyte
+        if (cellMode.cellType == 1) {
+            float swimSpeed = cellMode.flagellocyteSwimSpeed;
+            float consumptionRate = cellMode.flagellocyteNutrientConsumption;
+            // Additional consumption proportional to swim speed
+            metabolismRate += swimSpeed * consumptionRate;
+        }
+        
+        cell.nitrates -= metabolismRate * u_deltaTime;
+        cell.nitrates = max(cell.nitrates, 0.0);
+    }
+    
+    // PERIODIC NUTRIENT INJECTION: Bring cells up to target level
+    // This happens periodically in main simulation to support nutrient distribution
+    if (u_doNutrientInjection != 0 && cell.nitrates < u_injectionTarget) {
+        cell.nitrates = u_injectionTarget;
+    }
+    
+    // Check if cell should die from starvation (nutrients < 10)
+    if (cell.nitrates < DEATH_THRESHOLD) {
+        // Mark cell for removal (set mass to 0)
+        // Dead cells are skipped by physics and rendering
+        cell.positionAndMass.w = 0.0;
+        cell.nitrates = 0.0;
+        cells[cellIndex] = cell;
+        return;
+    }
+    
+    // Update mass based on nutrient storage (scales cell size)
+    // Radius scales from 0.5 at 15 nutrients to 1.75 at 125 nutrients
+    cell.positionAndMass.w = calculateMassFromNutrients(cell.nitrates);
+    
+    // FLAGELLOCYTES CANNOT ABSORB FROM VOXELS
+    // They can only receive nutrients through adhesion connections
+    // cellType: 0=Phagocyte, 1=Flagellocyte
+    if (cellMode.cellType == 1) {
+        cells[cellIndex] = cell;
+        return;
+    }
+    
+    // Get the voxel at the cell's position (only for phagocytes)
+    ivec3 voxelCoord = worldToVoxelCoord(cellPos);
+    int voxelIndex = voxelCoordToIndex(voxelCoord);
+    
+    int totalVoxels = u_voxelResolution * u_voxelResolution * u_voxelResolution;
+    if (voxelIndex < 0 || voxelIndex >= totalVoxels) {
+        // No valid voxel, but still write cell back with metabolism and mass update applied
+        cells[cellIndex] = cell;
+        return;
+    }
+    
+    VoxelData voxel = voxels[voxelIndex];
+    
+    // Calculate total nutrient in voxel
+    float totalNutrient = voxel.nutrientDensity.r + voxel.nutrientDensity.g + 
+                          voxel.nutrientDensity.b + voxel.nutrientDensity.a;
+    
+    // If no nutrients available in voxel, we're done (already applied metabolism and mass update)
+    if (totalNutrient < 0.001) {
+        cells[cellIndex] = cell;
+        return;
+    }
+    
+    // Check if cell has reached maximum capacity
+    if (cell.nitrates >= MAX_NUTRIENTS) {
+        cells[cellIndex] = cell;
+        return;
+    }
+    
+    // Calculate absorption amount based on rate and deltaTime
+    float absorptionAmount = u_absorptionRate * u_deltaTime;
+    absorptionAmount = min(absorptionAmount, totalNutrient);
+    
+    // Limit absorption to not exceed maximum capacity
+    float remainingCapacity = MAX_NUTRIENTS - cell.nitrates;
+    absorptionAmount = min(absorptionAmount, remainingCapacity);
+    
+    // Absorb nutrients proportionally from all channels
+    float absorptionRatio = absorptionAmount / totalNutrient;
+    vec4 absorbed = voxel.nutrientDensity * absorptionRatio;
+    
+    // Update cell's nutrient storage
+    float absorbedTotal = absorbed.r + absorbed.g + absorbed.b + absorbed.a;
+    cell.nitrates += absorbedTotal;
+    
+    // Remove absorbed nutrients from voxel
+    voxels[voxelIndex].nutrientDensity -= absorbed;
+    voxels[voxelIndex].nutrientDensity = max(voxels[voxelIndex].nutrientDensity, vec4(0.0));
+    
+    // Check if voxel should be deactivated
+    float remainingNutrient = voxels[voxelIndex].nutrientDensity.r + 
+                              voxels[voxelIndex].nutrientDensity.g + 
+                              voxels[voxelIndex].nutrientDensity.b + 
+                              voxels[voxelIndex].nutrientDensity.a;
+    
+    if (remainingNutrient < 0.0001) {
+        voxels[voxelIndex].isActive = 0;
+    }
+    
+    // Write updated cell back
+    cells[cellIndex] = cell;
+}

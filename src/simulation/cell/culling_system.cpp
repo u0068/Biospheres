@@ -64,6 +64,22 @@ void CellManager::initializeUnifiedCulling()
         GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT
     );
     
+    // Create persistent mapped readback buffer for async unified count reads
+    glCreateBuffers(1, &unifiedCountReadbackBuffer);
+    uint32_t zeros[4] = {0, 0, 0, 0};
+    glNamedBufferStorage(
+        unifiedCountReadbackBuffer,
+        4 * sizeof(uint32_t),
+        zeros,
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    );
+    unifiedCountReadbackPtr = static_cast<int*>(glMapNamedBufferRange(
+        unifiedCountReadbackBuffer,
+        0,
+        4 * sizeof(uint32_t),
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    ));
+    
     // Create buffer for flagellocyte counts
     glCreateBuffers(1, &flagellocyteCountBuffer);
     glNamedBufferStorage(
@@ -328,8 +344,14 @@ void CellManager::runUnifiedCulling(const Camera& camera)
     
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     
-    // Read back LOD counts for rendering
-    glGetNamedBufferSubData(unifiedCountBuffer, 0, sizeof(lodInstanceCounts), lodInstanceCounts);
+    // ASYNC READBACK: Copy to readback buffer (non-blocking)
+    glCopyNamedBufferSubData(unifiedCountBuffer, unifiedCountReadbackBuffer, 0, 0, 4 * sizeof(uint32_t));
+    
+    // Read from persistent mapped buffer (data from PREVIOUS frame)
+    // 1-frame delay is acceptable for performance
+    for (int i = 0; i < 4; i++) {
+        lodInstanceCounts[i] = unifiedCountReadbackPtr[i];
+    }
     
     // Invalidate cache since LOD counts have changed
     invalidateStatisticsCache();
@@ -448,7 +470,8 @@ void CellManager::renderCellsUnified(glm::vec2 resolution, const Camera& camera,
             // Run tail generation compute shader
             tailGenerateShader->use();
             tailGenerateShader->setInt("uCellCount", totalCellCount);
-            tailGenerateShader->setFloat("uTime", static_cast<float>(glfwGetTime()));
+            // Disable tail rotation in preview mode
+            tailGenerateShader->setFloat("uTime", isPreviewSimulation ? 0.0f : static_cast<float>(glfwGetTime()));
             tailGenerateShader->setVec3("uCameraPos", camera.getPosition());
             tailGenerateShader->setFloat("uFadeStartDistance", fadeStartDistance);
             tailGenerateShader->setFloat("uFadeEndDistance", fadeEndDistance);

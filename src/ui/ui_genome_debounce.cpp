@@ -57,6 +57,9 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
                 bool wasPaused = sceneManager.isPaused();
                 sceneManager.setPaused(true);
                 
+                // Enable preview mode for steady nutrient supply during resimulation
+                cellManager.isPreviewSimulation = true;
+                
                 // Use optimized frame-skipping resimulation with progress tracking
                 int framesSkipped = cellManager.updateCellsFastForwardOptimized(
                     currentTime, 
@@ -77,6 +80,9 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
             }
             else
             {
+                // Enable preview mode for steady nutrient supply
+                cellManager.isPreviewSimulation = true;
+                
                 // If at time 0, just advance simulation by one frame after reset
                 cellManager.updateCellsFastForward(config::resimulationTimeStep);
                 sceneManager.setPreviewSimulationTime(0.0f);

@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -47,6 +47,7 @@ layout(std430, binding = 2) coherent buffer CellCountBuffer {
 // Uniforms
 uniform float u_deltaTime;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
+uniform float u_worldSize; // World boundary size
 
 // Quaternion multiplication function
 vec4 quatMultiply(vec4 q1, vec4 q2) {
@@ -94,13 +95,94 @@ void main() {
 
     pos += vel * u_deltaTime + 0.5 * acc * (u_deltaTime * u_deltaTime);
 
+    // Apply boundary containment with velocity reversal and rolling contact
+    float halfWorld = u_worldSize * 0.5;
+    float cellRadius = pow(cell.positionAndMass.w, 1.0/3.0);
+    vec3 w = cell.angularVelocity.xyz;
+    
+    // Rolling friction coefficient for walls
+    float wallFriction = 0.3;
+    
+    // Check each axis and apply rolling contact mechanics
+    // X-axis boundaries
+    if (pos.x - cellRadius < -halfWorld) {
+        pos.x = -halfWorld + cellRadius;
+        vel.x = -vel.x * 0.5; // Reverse and dampen normal velocity
+        
+        // Rolling contact: apply torque from tangential velocity
+        vec3 contactNormal = vec3(1.0, 0.0, 0.0); // Wall normal points inward
+        vec3 tangentialVel = vel - dot(vel, contactNormal) * contactNormal;
+        vec3 contactOffset = vec3(-cellRadius, 0.0, 0.0); // Contact point relative to center
+        
+        // Torque from friction: τ = r × F, where F opposes tangential motion
+        vec3 frictionTorque = cross(contactOffset, -tangentialVel * wallFriction);
+        w += frictionTorque * u_deltaTime / (cellRadius * cellRadius); // Apply torque impulse
+        
+    } else if (pos.x + cellRadius > halfWorld) {
+        pos.x = halfWorld - cellRadius;
+        vel.x = -vel.x * 0.5;
+        
+        vec3 contactNormal = vec3(-1.0, 0.0, 0.0);
+        vec3 tangentialVel = vel - dot(vel, contactNormal) * contactNormal;
+        vec3 contactOffset = vec3(cellRadius, 0.0, 0.0);
+        vec3 frictionTorque = cross(contactOffset, -tangentialVel * wallFriction);
+        w += frictionTorque * u_deltaTime / (cellRadius * cellRadius);
+    }
+    
+    // Y-axis boundaries
+    if (pos.y - cellRadius < -halfWorld) {
+        pos.y = -halfWorld + cellRadius;
+        vel.y = -vel.y * 0.5;
+        
+        vec3 contactNormal = vec3(0.0, 1.0, 0.0);
+        vec3 tangentialVel = vel - dot(vel, contactNormal) * contactNormal;
+        vec3 contactOffset = vec3(0.0, -cellRadius, 0.0);
+        vec3 frictionTorque = cross(contactOffset, -tangentialVel * wallFriction);
+        w += frictionTorque * u_deltaTime / (cellRadius * cellRadius);
+        
+    } else if (pos.y + cellRadius > halfWorld) {
+        pos.y = halfWorld - cellRadius;
+        vel.y = -vel.y * 0.5;
+        
+        vec3 contactNormal = vec3(0.0, -1.0, 0.0);
+        vec3 tangentialVel = vel - dot(vel, contactNormal) * contactNormal;
+        vec3 contactOffset = vec3(0.0, cellRadius, 0.0);
+        vec3 frictionTorque = cross(contactOffset, -tangentialVel * wallFriction);
+        w += frictionTorque * u_deltaTime / (cellRadius * cellRadius);
+    }
+    
+    // Z-axis boundaries
+    if (pos.z - cellRadius < -halfWorld) {
+        pos.z = -halfWorld + cellRadius;
+        vel.z = -vel.z * 0.5;
+        
+        vec3 contactNormal = vec3(0.0, 0.0, 1.0);
+        vec3 tangentialVel = vel - dot(vel, contactNormal) * contactNormal;
+        vec3 contactOffset = vec3(0.0, 0.0, -cellRadius);
+        vec3 frictionTorque = cross(contactOffset, -tangentialVel * wallFriction);
+        w += frictionTorque * u_deltaTime / (cellRadius * cellRadius);
+        
+    } else if (pos.z + cellRadius > halfWorld) {
+        pos.z = halfWorld - cellRadius;
+        vel.z = -vel.z * 0.5;
+        
+        vec3 contactNormal = vec3(0.0, 0.0, -1.0);
+        vec3 tangentialVel = vel - dot(vel, contactNormal) * contactNormal;
+        vec3 contactOffset = vec3(0.0, 0.0, cellRadius);
+        vec3 frictionTorque = cross(contactOffset, -tangentialVel * wallFriction);
+        w += frictionTorque * u_deltaTime / (cellRadius * cellRadius);
+    }
+    
+    cell.angularVelocity.xyz = w; // Update angular velocity after wall collisions
+
     cell.positionAndMass.xyz = pos;
+    cell.velocity.xyz = vel; // Update velocity after boundary check
     cell.prevAcceleration = vec4(acc, 0.0);
     cell.acceleration = vec4(0.0);
 
     // --- Angular verlet orientation ---
     vec4 q = cell.orientation; // quaternion
-    vec3 w = cell.angularVelocity.xyz;
+    // w already updated from wall collisions above
     vec3 alpha = cell.angularAcceleration.xyz;
 
     // Predict angular velocity

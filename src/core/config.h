@@ -19,7 +19,7 @@ namespace config
 	constexpr bool VSYNC{ false };
 
 	// ========== Cell Simulation Configuration ==========
-	constexpr int MAX_CELLS{256};
+	constexpr int MAX_CELLS{50000};
 	constexpr int DEFAULT_CELL_COUNT{100000};
 	constexpr int MAX_ADHESIONS_PER_CELL{ 20 }; // Maximum number of adhesions per cell
 	constexpr int MAX_ADHESIONS{ MAX_CELLS * MAX_ADHESIONS_PER_CELL / 2};
@@ -56,6 +56,17 @@ namespace config
 	// Distance culling configuration
 	constexpr bool defaultUseDistanceCulling{true};           // Enable/disable distance-based culling by default
 	constexpr bool defaultUseDistanceFade{true};              // Enable/disable distance-based fading by default
+
+	// ========== Voxel Grid Configuration ==========
+	// 16³ voxel grid for nutrients and future fluid simulation
+	// Much coarser than 64³ spatial grid for performance (each voxel = 4x4x4 spatial cells)
+	constexpr int VOXEL_BASE_RESOLUTION{16};                  // Voxel grid resolution (16³ = 4,096 voxels)
+	constexpr float VOXEL_BASE_SIZE{WORLD_SIZE / VOXEL_BASE_RESOLUTION}; // Size of each voxel (~12.5 units)
+	constexpr int MAX_ACTIVE_VOXELS{8000};                    // Maximum number of active voxels (sparse storage)
+	constexpr int NUTRIENT_CLOUD_BUFFER_SIZE{256};            // Cloud buffer size (clouds expire naturally based on lifetime)
+	constexpr float DEFAULT_DECAY_RATE{0.05f};                // Rate of nutrient decay over time
+	constexpr float DEFAULT_CLOUD_SPAWN_INTERVAL{2.0f};       // Base interval between cloud spawns (seconds)
+	constexpr float DEFAULT_CLOUD_SPAWN_VARIANCE{1.0f};       // Random variance in spawn timing (seconds)
 
 	// ========== Runtime Configuration Variables ==========
 	// These can be modified at runtime

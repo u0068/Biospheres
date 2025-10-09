@@ -43,6 +43,9 @@ CellManager::CellManager()
     internalUpdateShader = new Shader("shaders/cell/physics/cell_update_internal.comp");
     extractShader = new Shader("shaders/cell/management/extract_instances.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
+    nutrientAbsorptionShader = new Shader("shaders/cell/physics/cell_nutrient_absorption.comp");
+    nutrientDistributionShader = new Shader("shaders/cell/physics/nutrient_distribution.comp");
+    compactionShader = new Shader("shaders/cell/management/compact_cells.comp");
 
     // Initialize spatial grid shaders
     gridClearShader = new Shader("shaders/spatial/grid_clear.comp");
@@ -356,8 +359,8 @@ void CellManager::initializeGPUBuffers()
         stagingCellBuffer,
         cellLimit * sizeof(ComputeCell),
         nullptr,
-        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
-    );
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+
     mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
 
@@ -369,9 +372,35 @@ void CellManager::initializeGPUBuffers()
         nullptr,
         GL_DYNAMIC_STORAGE_BIT
     );
-    // Initialize with 1 (0 reserved for root cells)
+    
+    // Initialize with starting ID
     GLuint initialId = 1;
     glNamedBufferSubData(uniqueIdBuffer, 0, sizeof(GLuint), &initialId);
+    
+    // Create compaction counter buffer (atomic counter)
+    glCreateBuffers(1, &compactionCounterBuffer);
+    GLuint zero = 0;
+    glNamedBufferStorage(
+        compactionCounterBuffer,
+        sizeof(GLuint),
+        &zero,
+        GL_DYNAMIC_STORAGE_BIT
+    );
+    
+    // Create persistent mapped readback buffer for async compaction count
+    glCreateBuffers(1, &compactionReadbackBuffer);
+    glNamedBufferStorage(
+        compactionReadbackBuffer,
+        sizeof(GLuint),
+        &zero,
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    );
+    compactionReadbackPtr = static_cast<GLuint*>(glMapNamedBufferRange(
+        compactionReadbackBuffer, 
+        0, 
+        sizeof(GLuint),
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    ));
 
     // Cell addition queue buffer - FIXED: Increased size for 100k cells
     glCreateBuffers(1, &cellAdditionBuffer);
@@ -563,9 +592,17 @@ void CellManager::addGenomeToBuffer(GenomeData& genomeData) {
         gmode.childBKeepAdhesion = mode.childB.keepAdhesion;
         gmode.maxAdhesions = mode.maxAdhesions;
         
-        // Store flagellocyte thrust force
-        gmode.flagellocyteThrustForce = (mode.cellType == CellType::Flagellocyte) ? 
-            mode.flagellocyteSettings.thrustForce : 0.0f;
+        // Store flagellocyte settings
+        gmode.flagellocyteSwimSpeed = (mode.cellType == CellType::Flagellocyte) ? 
+            mode.flagellocyteSettings.swimSpeed : 0.0f;
+        gmode.flagellocyteNutrientConsumption = (mode.cellType == CellType::Flagellocyte) ?
+            mode.flagellocyteSettings.nutrientConsumptionRate : 0.0f;
+        
+        // Store nutrient priority
+        gmode.nutrientPriority = mode.nutrientPriority;
+        
+        // Store cell type
+        gmode.cellType = static_cast<int>(mode.cellType);
 
         // Store adhesion settings (convert bools to ints and pack for GPU)
         gmode.adhesionSettings.canBreak = mode.adhesionSettings.canBreak ? 1 : 0;
@@ -727,12 +764,29 @@ void CellManager::updateCells(float deltaTime)
         invalidateStatisticsCache();
     }
 
+    // Compact dead cells every 60 frames (~1 second at 60 FPS)
+    // Do this BEFORE physics to avoid buffer desync
+    if (currentFrame % 60 == 0 && totalCellCount > 0) {
+        compactDeadCells();
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+
     if (totalCellCount > 0) // Don't update cells if there are no cells to update
     {
         // Flush barriers before starting compute pipeline
         flushBarriers();
 
         verletIntegration(deltaTime);
+
+        // Run nutrient absorption from voxel grid BEFORE internal update
+        // This ensures cells have absorbed nutrients before split check
+        runNutrientAbsorption(deltaTime);
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        
+        // Run nutrient distribution through adhesion connections
+        // This allows cells to share nutrients based on priority
+        runNutrientDistribution(deltaTime);
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // Run cells' internal calculations (this creates new pending cells from mitosis)
         runInternalUpdateCompute(deltaTime);
@@ -784,6 +838,17 @@ void CellManager::updateCellsFastForward(float deltaTime)
         flushBarriers();
 
         verletIntegration(deltaTime);
+
+        // Run nutrient absorption from voxel grid BEFORE internal update
+        // This ensures cells have absorbed nutrients before split check
+        // IMPORTANT: In preview mode, this provides steady nutrient supply
+        runNutrientAbsorption(deltaTime);
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        
+        // Run nutrient distribution through adhesion connections
+        // This allows cells to share nutrients based on priority
+        runNutrientDistribution(deltaTime);
+        addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // Run cells' internal calculations with diagnostics DISABLED for performance
         // This is the key optimization - we temporarily disable diagnostics
@@ -1051,6 +1116,8 @@ void CellManager::runCollisionCompute()
 
     // Set uniforms
     physicsShader->setFloat("u_accelerationDamping", 0.8f); // More aggressive damping
+    physicsShader->setFloat("u_rollingFriction", rollingFrictionCoefficient); // Rolling contact friction
+    physicsShader->setVec3("u_gravity", globalGravity); // Global gravity
 
     // Pass dragged cell index to skip its physics
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -1121,6 +1188,7 @@ void CellManager::runPositionUpdateCompute(float deltaTime)
 
     // Set uniforms
     positionUpdateShader->setFloat("u_deltaTime", deltaTime);
+    positionUpdateShader->setFloat("u_worldSize", config::WORLD_SIZE);
 
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -1148,7 +1216,7 @@ void CellManager::runVelocityUpdateCompute(float deltaTime)
 
     // Set uniforms
     velocityUpdateShader->setFloat("u_deltaTime", deltaTime);
-    velocityUpdateShader->setFloat("u_damping", 0.98f);
+    velocityUpdateShader->setFloat("u_damping", globalDrag);
 
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
@@ -1229,6 +1297,133 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
         // Force a memory barrier to ensure all operations are complete
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
     }
+}
+
+void CellManager::runNutrientAbsorption(float deltaTime)
+{
+    TimerGPU timer("Nutrient Absorption");
+    
+    if (!nutrientAbsorptionShader) return;
+    
+    // Update injection timer (only in main simulation, not preview)
+    bool doInjection = false;
+    if (!isPreviewSimulation) {
+        nutrientInjectionTimer += deltaTime;
+        if (nutrientInjectionTimer >= nutrientInjectionInterval) {
+            doInjection = true;
+            nutrientInjectionTimer = 0.0f;
+        }
+    }
+    
+    nutrientAbsorptionShader->use();
+    
+    // Set uniforms
+    nutrientAbsorptionShader->setFloat("u_deltaTime", deltaTime);
+    nutrientAbsorptionShader->setInt("u_voxelResolution", 16); // Voxel grid is 16³
+    nutrientAbsorptionShader->setFloat("u_worldSize", config::WORLD_SIZE);
+    nutrientAbsorptionShader->setFloat("u_absorptionRate", nutrientAbsorptionRate);
+    nutrientAbsorptionShader->setFloat("u_absorptionRadius", nutrientAbsorptionRadius);
+    nutrientAbsorptionShader->setInt("u_isPreviewMode", isPreviewSimulation ? 1 : 0);
+    nutrientAbsorptionShader->setInt("u_doNutrientInjection", doInjection ? 1 : 0);
+    nutrientAbsorptionShader->setFloat("u_injectionTarget", nutrientInjectionTarget);
+    
+    // Bind buffers - read from current buffer, write to same buffer (in-place update)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Read/write cell data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxelManager.getVoxelDataBuffer()); // Read/write voxel data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer); // Cell count
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, modeBuffer); // Mode data (for cell type)
+    
+    // Dispatch compute shader
+    GLuint numGroups = (totalCellCount + 255) / 256;
+    nutrientAbsorptionShader->dispatch(numGroups, 1, 1);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Memory barrier to ensure voxel updates are visible
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::runNutrientDistribution(float deltaTime)
+{
+    TimerGPU timer("Nutrient Distribution");
+    
+    if (!nutrientDistributionShader || totalCellCount == 0 || totalAdhesionCount == 0) return;
+    
+    nutrientDistributionShader->use();
+    
+    // Set uniforms
+    nutrientDistributionShader->setFloat("u_deltaTime", deltaTime);
+    nutrientDistributionShader->setFloat("u_distributionRate", nutrientDistributionRate);
+    
+    // Bind buffers - read/write cell data, read mode data, read adhesion connections
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Read/write cell data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);          // Mode data (for priority)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer); // Adhesion connections
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);  // Cell count
+    
+    // Dispatch compute shader
+    GLuint numGroups = (totalCellCount + 255) / 256;
+    nutrientDistributionShader->dispatch(numGroups, 1, 1);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Memory barrier to ensure nutrient updates are visible
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void CellManager::compactDeadCells()
+{
+    TimerGPU timer("Cell Compaction");
+    
+    if (!compactionShader || totalCellCount == 0) return;
+    
+    // Reset compaction counter to 0
+    GLuint zero = 0;
+    glNamedBufferSubData(compactionCounterBuffer, 0, sizeof(GLuint), &zero);
+    
+    compactionShader->use();
+    
+    // Compact from current read buffer to a temporary write buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());  // Input (with dead cells)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer()); // Output (compacted)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gpuCellCountBuffer);   // Cell count
+    glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 0, compactionCounterBuffer); // Atomic counter
+    
+    // Dispatch compute shader
+    GLuint numGroups = (totalCellCount + 255) / 256;
+    compactionShader->dispatch(numGroups, 1, 1);
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
+    
+    // Memory barrier to ensure compaction is complete
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+    
+    // SYNCHRONOUS READ: We need the count immediately to avoid buffer mismatches
+    // This only happens every 60 frames, so the stall is acceptable
+    GLuint compactedCount = 0;
+    glGetNamedBufferSubData(compactionCounterBuffer, 0, sizeof(GLuint), &compactedCount);
+    
+    // Update cell counts immediately with compaction result
+    if (compactedCount > 0 && compactedCount <= static_cast<GLuint>(cellLimit)) {
+        totalCellCount = static_cast<int>(compactedCount);
+        GLuint counts[config::COUNTER_NUMBER] = {compactedCount, compactedCount, 0, 0};
+        glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * config::COUNTER_NUMBER, counts);
+        
+        // Sync counter buffers
+        syncCounterBuffers();
+        
+        // Copy compacted data to ALL triple buffers to ensure consistency
+        GLuint writeBuffer = getCellWriteBuffer();
+        for (int i = 0; i < 3; i++) {
+            if (cellBuffer[i] != writeBuffer) {
+                glCopyNamedBufferSubData(writeBuffer, cellBuffer[i], 0, 0, compactedCount * sizeof(ComputeCell));
+            }
+        }
+    }
+    
+    // Rotate buffers so compacted buffer becomes the read buffer for next physics pass
+    rotateBuffers();
 }
 
 void CellManager::applyCellAdditions()
@@ -1360,6 +1555,9 @@ void CellManager::resetSimulation()
     }
     totalAdhesionCount = 0;
     
+    // Reset voxel system (clears all nutrients and particles)
+    voxelManager.reset();
+    
     // Clear debug visualization buffers to prevent lingering elements after reset
     if (gizmoBuffer != 0) {
         glClearNamedBufferData(gizmoBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
@@ -1425,6 +1623,7 @@ void CellManager::spawnCells(int count)
         newCell.positionAndMass = glm::vec4(position, 1.);
         newCell.velocity = glm::vec4(velocity, 0.);
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
+        newCell.nitrates = 150.0f; // Start with full nutrients
         
         // Assign lineage ID for root cells
         newCell.parentLineageId = 0;  // Root cells have no parent

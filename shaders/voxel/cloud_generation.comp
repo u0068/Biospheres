@@ -1,0 +1,277 @@
+#version 460 core
+
+layout(local_size_x = 256) in;
+
+// Voxel data structure
+struct VoxelData
+{
+    vec4 nutrientDensity;     // RGBA: different nutrient types
+    vec4 positionAndSize;     // xyz: world position, w: voxel size
+    vec4 colorAndAlpha;       // RGB: color, A: fade alpha
+    float lifetime;
+    float maxLifetime;
+    uint isActive;
+    uint _padding;
+};
+
+// Cloud generation parameters
+struct CloudGenerationParams
+{
+    vec3 centerPosition;
+    float radius;
+    float noiseScale;
+    float noiseStrength;
+    float densityFalloff;
+    float targetDensity;
+    vec3 color;
+    float fadeInDuration;
+    float sustainDuration;
+    float fadeOutDuration;
+    uint cloudId;
+    float spawnTime;
+    uint isActive;
+    uint _padding[3];
+};
+
+layout(std430, binding = 0) buffer VoxelBuffer
+{
+    VoxelData voxels[];
+};
+
+layout(std430, binding = 1) buffer CloudBuffer
+{
+    CloudGenerationParams clouds[];
+};
+
+layout(binding = 0, offset = 0) uniform atomic_uint activeVoxelCounter;
+
+uniform float u_deltaTime;
+uniform float u_currentTime;
+uniform int u_resolution;
+uniform float u_voxelSize;
+uniform float u_worldSize;
+uniform int u_maxClouds;
+
+// 3D hash function for procedural generation
+float hash(vec3 p)
+{
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
+vec3 hash3(vec3 p)
+{
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+             dot(p, vec3(269.5, 183.3, 246.1)),
+             dot(p, vec3(113.5, 271.9, 124.6)));
+    return fract(sin(p) * 43758.5453123);
+}
+
+// 3D noise function
+float noise3D(vec3 p)
+{
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    
+    float n000 = hash(i + vec3(0.0, 0.0, 0.0));
+    float n100 = hash(i + vec3(1.0, 0.0, 0.0));
+    float n010 = hash(i + vec3(0.0, 1.0, 0.0));
+    float n110 = hash(i + vec3(1.0, 1.0, 0.0));
+    float n001 = hash(i + vec3(0.0, 0.0, 1.0));
+    float n101 = hash(i + vec3(1.0, 0.0, 1.0));
+    float n011 = hash(i + vec3(0.0, 1.0, 1.0));
+    float n111 = hash(i + vec3(1.0, 1.0, 1.0));
+    
+    float nx00 = mix(n000, n100, f.x);
+    float nx10 = mix(n010, n110, f.x);
+    float nx01 = mix(n001, n101, f.x);
+    float nx11 = mix(n011, n111, f.x);
+    
+    float nxy0 = mix(nx00, nx10, f.y);
+    float nxy1 = mix(nx01, nx11, f.y);
+    
+    return mix(nxy0, nxy1, f.z);
+}
+
+// Fractal Brownian Motion for organic variation (optimized to 3 octaves)
+float fbm(vec3 p)
+{
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    
+    // Reduced from 4 to 3 octaves for performance
+    for (int i = 0; i < 3; i++)
+    {
+        value += amplitude * noise3D(p * frequency);
+        frequency *= 2.0;
+        amplitude *= 0.5;
+    }
+    
+    return value;
+}
+
+// Distance from point to line segment
+float distanceToSegment(vec3 p, vec3 a, vec3 b)
+{
+    vec3 ab = b - a;
+    vec3 ap = p - a;
+    float t = clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0);
+    vec3 closest = a + t * ab;
+    return length(p - closest);
+}
+
+// Optimized branching structure with procedural time-based animation
+float branchingDensity(vec3 pos, vec3 center, float radius, uint seed, float time)
+{
+    vec3 toPos = pos - center;
+    float dist = length(toPos);
+    
+    // Early exit if too far
+    if (dist > radius * 1.2) return 0.0;
+    
+    // Add slow procedural movement to branches (very cheap - just offset)
+    float timeOffset = time * 0.1; // Slow drift
+    vec3 animatedPos = pos + vec3(
+        sin(time * 0.3 + float(seed)) * 0.5,
+        cos(time * 0.25 + float(seed) * 1.5) * 0.5,
+        sin(time * 0.2 + float(seed) * 2.0) * 0.5
+    );
+    
+    // Use 3D noise to create branching patterns
+    vec3 noisePos = animatedPos * (0.5 / radius) + vec3(float(seed) * 10.0);
+    
+    // Create main branch directions with noise
+    float branch1 = fbm(noisePos);
+    float branch2 = fbm(noisePos + vec3(100.0, 0.0, 0.0));
+    float branch3 = fbm(noisePos + vec3(0.0, 100.0, 0.0));
+    
+    // Combine branches with different frequencies
+    float branchPattern = max(max(branch1, branch2 * 0.8), branch3 * 0.6);
+    
+    // Distance-based falloff
+    float normalizedDist = dist / radius;
+    float distFalloff = 1.0 - smoothstep(0.0, 1.0, normalizedDist);
+    
+    // Create thicker "trunk" regions with subtle pulsing
+    float pulse = 0.95 + sin(time * 0.5 + float(seed)) * 0.05; // Subtle breathing effect
+    float trunk = fbm(pos * (0.2 / radius) + vec3(float(seed) * 5.0));
+    trunk = pow(trunk, 2.0) * 0.5 * pulse;
+    
+    // Combine patterns
+    float density = (branchPattern * 0.7 + trunk * 0.3) * distFalloff;
+    
+    // Add fine detail with time variation (very subtle)
+    float detail = noise3D(pos * (2.0 / radius) + timeOffset * 0.1) * 0.2;
+    density = mix(density, density * (0.8 + detail), 0.5);
+    
+    return clamp(density, 0.0, 1.0);
+}
+
+void main()
+{
+    uint voxelIdx = gl_GlobalInvocationID.x;
+    
+    // Don't process beyond max voxels (32^3 = 32,768)
+    uint totalVoxels = uint(u_resolution * u_resolution * u_resolution);
+    if (voxelIdx >= totalVoxels) return;
+    
+    // Calculate voxel world position from index (32³ grid)
+    int res = u_resolution;
+    int z = int(voxelIdx) / (res * res);
+    int y = (int(voxelIdx) / res) % res;
+    int x = int(voxelIdx) % res;
+    
+    float halfWorld = u_worldSize * 0.5;
+    vec3 voxelPos = vec3(
+        -halfWorld + (float(x) + 0.5) * u_voxelSize,
+        -halfWorld + (float(y) + 0.5) * u_voxelSize,
+        -halfWorld + (float(z) + 0.5) * u_voxelSize
+    );
+    
+    // Check each active cloud for branching patterns (optimized)
+    vec4 totalNutrient = vec4(0.0);
+    vec3 totalColor = vec3(0.0);
+    float totalAlpha = 0.0;
+    bool shouldBeActive = false;
+    
+    for (int i = 0; i < u_maxClouds; ++i)
+    {
+        CloudGenerationParams cloud = clouds[i];
+        if (cloud.isActive == 0) continue;
+        
+        // Calculate time since cloud spawn
+        float cloudAge = u_currentTime - cloud.spawnTime;
+        float totalDuration = cloud.fadeInDuration + cloud.sustainDuration + cloud.fadeOutDuration;
+        
+        // Skip expired clouds
+        if (cloudAge > totalDuration) continue;
+        
+        // Calculate distance from voxel to cloud center (for culling)
+        vec3 toVoxel = voxelPos - cloud.centerPosition;
+        float dist = length(toVoxel);
+        
+        // Early culling - skip if too far from cloud origin
+        float maxBranchReach = cloud.radius * 1.3;
+        if (dist > maxBranchReach) continue;
+        
+        // Calculate branching density at this position with procedural animation
+        float finalDensity = branchingDensity(voxelPos, cloud.centerPosition, cloud.radius, cloud.cloudId, u_currentTime);
+        
+        // Apply density falloff for softer edges
+        finalDensity = pow(finalDensity, cloud.densityFalloff);
+        
+        if (finalDensity > 0.01)
+        {
+            shouldBeActive = true;
+            
+            // Apply fade in/out based on cloud age
+            float fadeAlpha = 1.0;
+            if (cloudAge < cloud.fadeInDuration)
+            {
+                // Fade in
+                fadeAlpha = cloudAge / cloud.fadeInDuration;
+            }
+            else if (cloudAge > cloud.fadeInDuration + cloud.sustainDuration)
+            {
+                // Fade out
+                float fadeOutAge = cloudAge - cloud.fadeInDuration - cloud.sustainDuration;
+                fadeAlpha = 1.0 - (fadeOutAge / cloud.fadeOutDuration);
+            }
+            
+            // Calculate final nutrient density
+            float density = cloud.targetDensity * finalDensity * fadeAlpha;
+            
+            // Procedural color variation (very cheap - just trig functions)
+            float colorPulse = 0.9 + sin(u_currentTime * 0.4 + float(cloud.cloudId)) * 0.1;
+            vec3 colorVariation = cloud.color * colorPulse;
+            
+            // Add to total (support multiple overlapping clouds)
+            totalNutrient += vec4(colorVariation * density, density);
+            totalColor += colorVariation * density;
+            totalAlpha += fadeAlpha * finalDensity;
+        }
+    }
+    
+    // Update voxel data
+    if (shouldBeActive)
+    {
+        voxels[voxelIdx].nutrientDensity = totalNutrient;
+        voxels[voxelIdx].positionAndSize = vec4(voxelPos, u_voxelSize);
+        voxels[voxelIdx].colorAndAlpha = vec4(normalize(totalColor + 0.001), clamp(totalAlpha, 0.0, 1.0));
+        voxels[voxelIdx].lifetime = 0.0;
+        voxels[voxelIdx].maxLifetime = 20.0;
+        voxels[voxelIdx].isActive = 1;
+        voxels[voxelIdx]._padding = 0;
+        
+        // Increment active voxel counter
+        atomicCounterIncrement(activeVoxelCounter);
+    }
+    else if (voxels[voxelIdx].isActive == 1 && totalNutrient.a < 0.01)
+    {
+        // Deactivate voxel if no longer in any cloud
+        voxels[voxelIdx].isActive = 0;
+    }
+}

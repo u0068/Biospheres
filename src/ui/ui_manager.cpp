@@ -27,6 +27,10 @@
 void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& sceneManager)
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+    
+    // Refresh selected cell data from GPU every frame for live updates
+    cellManager.refreshSelectedCellData();
+    
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
@@ -54,6 +58,26 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
         //ImGui::Text("Radius: %.2f", radius);
         ImGui::Text("Absolute Mode Index: %i", modeIndex);
         ImGui::Text("Age: %.2f", age);
+        
+        // Nutrient information
+        float nutrients = selectedCell.cellData.nitrates;
+        ImGui::Text("Nutrients: %.1f / 150.0", nutrients);
+        
+        // Color-coded nutrient status
+        if (nutrients < 10.0f) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "[STARVING]");
+        } else if (nutrients < 50.0f) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "[LOW]");
+        } else if (nutrients >= 50.0f) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "[CAN SPLIT]");
+        }
+        
+        // Nutrient progress bar
+        float nutrientPercent = nutrients / 150.0f;
+        ImGui::ProgressBar(nutrientPercent, ImVec2(-1, 0), "");
         
         // Lineage information
         std::string lineageStr = cellManager.getCellLineageString(selectedCell.cellIndex);

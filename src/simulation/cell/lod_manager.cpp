@@ -48,6 +48,22 @@ void CellManager::initializeLODSystem()
         GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT
     );
     
+    // Create persistent mapped readback buffer for async LOD count reads
+    glCreateBuffers(1, &lodCountReadbackBuffer);
+    uint32_t zeros[4] = {0, 0, 0, 0};
+    glNamedBufferStorage(
+        lodCountReadbackBuffer,
+        4 * sizeof(uint32_t),
+        zeros,
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    );
+    lodCountReadbackPtr = static_cast<int*>(glMapNamedBufferRange(
+        lodCountReadbackBuffer,
+        0,
+        4 * sizeof(uint32_t),
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
+    ));
+    
     // Setup instance buffers for each LOD level
     sphereMesh.setupLODInstanceBuffers(lodInstanceBuffers);
     
@@ -111,8 +127,14 @@ void CellManager::runLODCompute(const Camera& camera)
     
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     
-    // Read back LOD counts for rendering
-    glGetNamedBufferSubData(lodCountBuffer, 0, sizeof(lodInstanceCounts), lodInstanceCounts);
+    // ASYNC READBACK: Copy to readback buffer (non-blocking)
+    glCopyNamedBufferSubData(lodCountBuffer, lodCountReadbackBuffer, 0, 0, 4 * sizeof(uint32_t));
+    
+    // Read from persistent mapped buffer (data from PREVIOUS frame)
+    // 1-frame delay is acceptable for performance
+    for (int i = 0; i < 4; i++) {
+        lodInstanceCounts[i] = lodCountReadbackPtr[i];
+    }
     
     // Invalidate cache since LOD counts have changed
     invalidateStatisticsCache();
