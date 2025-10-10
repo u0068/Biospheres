@@ -54,10 +54,14 @@ struct GPUMode {
     int childAKeepAdhesion; // 4 bytes
     int childBKeepAdhesion; // 4 bytes
     int maxAdhesions;       // 4 bytes (total 16 bytes)
-    float flagellocyteThrustForce; // 4 bytes
-    float _padding1;      // 4 bytes
-    float _padding2;      // 4 bytes
-    float _padding3;      // 4 bytes (total 16 bytes)
+    float flagellocyteSwimSpeed;           // 4 bytes - Swim speed multiplier
+    float flagellocyteNutrientConsumption; // 4 bytes - Nutrient consumption rate
+    float nutrientPriority;                // 4 bytes - Priority for nutrient distribution
+    int cellType;                          // 4 bytes - Cell type (0=Phagocyte, 1=Flagellocyte)
+    float splitMass;                       // 4 bytes - Mass threshold for cell splitting
+    float _padding;                        // 4 bytes - Padding for alignment
+    int _padding2;                         // 4 bytes - Padding for alignment
+    int _padding3;                         // 4 bytes - Padding for alignment (total 16 bytes)
 };
 
 // Adhesion connection structure - stores permanent connections between sibling cells

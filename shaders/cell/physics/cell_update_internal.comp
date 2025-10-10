@@ -799,7 +799,9 @@ void main() {
         ComputeCell other = inputCells[otherIndex];
         GPUMode otherMode = modes[other.modeIndex];
 
-        if (other.age < otherMode.splitInterval) continue; // Other cell not splitting
+        // Check if other cell is actually ready to split (age AND mass threshold)
+        if (other.age < otherMode.splitInterval) continue; // Other cell not ready (age)
+        if (other.positionAndMass.w < otherMode.splitMass) continue; // Other cell not ready (mass)
 
         // If other cell wants to split, compare priority
         float otherPriority = priority(otherIndex);

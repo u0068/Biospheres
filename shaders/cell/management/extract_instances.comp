@@ -34,10 +34,14 @@ struct GPUMode {
     int childAKeepAdhesion;
     int childBKeepAdhesion;
     int maxAdhesions;
-    float flagellocyteThrustForce;
-    float _padding1;
-    float _padding2;
-    float _padding3;
+    float flagellocyteSwimSpeed;
+    float flagellocyteNutrientConsumption;
+    float nutrientPriority;
+    int cellType;
+    float splitMass;
+    float _padding;
+    int _padding2;
+    int _padding3;
 };
 
 // Cell data structure for compute shader

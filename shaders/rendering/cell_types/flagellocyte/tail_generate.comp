@@ -57,6 +57,10 @@ struct GPUMode {
     float flagellocyteNutrientConsumption;
     float nutrientPriority;
     int cellType;
+    float splitMass;
+    float _padding;
+    int _padding2;
+    int _padding3;
 };
 
 layout(std430, binding = 0) readonly buffer CellBuffer {

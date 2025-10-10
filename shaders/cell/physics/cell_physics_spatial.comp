@@ -63,6 +63,10 @@ struct GPUMode {
     float flagellocyteNutrientConsumption;
     float nutrientPriority;
     int cellType;
+    float splitMass;
+    float _padding;
+    int _padding2;
+    int _padding3;
 };
 
 // Shader storage buffer objects
