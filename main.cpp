@@ -192,6 +192,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera, uiManager.wireframeMode);
 			checkGLError("renderCells");
 			
+			// Render particles
+			activeCellManager->renderParticles(*activeCamera, glm::vec2(width, height));
+			checkGLError("renderParticles");
+			
 			// Render gizmos if enabled
 			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
 			checkGLError("renderGizmos");
@@ -255,6 +259,10 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 			previewCellManager.updateCells(timeStep);
 			checkGLError("updateCells - preview");
 			
+			// Update particles
+			previewCellManager.updateParticles(timeStep);
+			checkGLError("updateParticles - preview");
+			
 			// Update preview simulation time tracking
 			sceneManager.updatePreviewSimulationTime(timeStep);
 		}
@@ -263,6 +271,10 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 			// Update only Main Simulation
 			mainCellManager.updateCells(timeStep);
 			checkGLError("updateCells - main");
+			
+			// Update particles
+			mainCellManager.updateParticles(timeStep);
+			checkGLError("updateParticles - main");
 		}
 	}
 	catch (const std::exception& e)

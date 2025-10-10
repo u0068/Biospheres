@@ -100,3 +100,12 @@ struct AdhesionDiagnosticEntry {
     float _pad5; // additional padding for 16-byte alignment
     float _pad6; // additional padding for 16-byte alignment
 };
+
+// Particle structure - stored per voxel in the spatial grid
+struct Particle {
+    vec3 position;      // World position
+    float lifetime;     // Remaining lifetime (0 = dead)
+    vec3 velocity;      // Velocity for movement
+    float maxLifetime;  // Maximum lifetime for fade calculation
+    vec4 color;         // RGBA color
+};

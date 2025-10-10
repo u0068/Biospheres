@@ -1,0 +1,107 @@
+#version 460
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Particle structure
+struct Particle {
+    vec3 position;      // World position
+    float lifetime;     // Remaining lifetime (0 = dead)
+    vec3 velocity;      // Velocity for movement
+    float maxLifetime;  // Maximum lifetime for fade calculation
+    vec4 color;         // RGBA color
+};
+
+// Instance data for rendering
+struct ParticleInstance {
+    vec3 position;
+    float size;
+    vec4 color;
+    float lifetime;      // Current lifetime
+    float maxLifetime;   // Maximum lifetime
+    float fadeFactor;    // Distance-based fade factor
+    float _padding[1];   // Padding for 16-byte alignment
+};
+
+// Buffers
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) writeonly buffer InstanceBuffer {
+    ParticleInstance instances[];
+};
+
+layout(std430, binding = 2) buffer CounterBuffer {
+    uint instanceCount;
+};
+
+// Uniforms
+uniform int u_maxParticles;
+uniform float u_particleSize;
+
+// Distance culling uniforms (same as cells)
+uniform vec3 u_cameraPos;
+uniform float u_maxRenderDistance = 170.0;    // Maximum distance to render particles
+uniform float u_fadeStartDistance = 30.0;     // Distance where fading begins
+uniform float u_fadeEndDistance = 160.0;      // Distance where fading ends
+uniform int u_useDistanceCulling = 1;         // Enable distance-based culling
+uniform int u_useFade = 1;                    // Enable distance-based fading
+
+// Calculate fade factor based on distance (same as cells)
+float calculateFadeFactor(float distanceToCamera) {
+    if (u_useFade == 0) return 1.0;
+    
+    if (distanceToCamera >= u_fadeEndDistance) {
+        return 0.0; // Completely faded out
+    } else if (distanceToCamera <= u_fadeStartDistance) {
+        return 1.0; // Fully visible
+    } else {
+        // Smooth fade between start and end distance
+        float fadeRange = u_fadeEndDistance - u_fadeStartDistance;
+        float fadeProgress = (distanceToCamera - u_fadeStartDistance) / fadeRange;
+        // Use smoothstep for more natural fading
+        return 1.0 - smoothstep(0.0, 1.0, fadeProgress);
+    }
+}
+
+void main() {
+    uint particleIndex = gl_GlobalInvocationID.x;
+    
+    if (particleIndex >= u_maxParticles) {
+        return;
+    }
+    
+    Particle p = particles[particleIndex];
+    
+    // Only render active particles
+    if (p.lifetime > 0.0) {
+        // Calculate distance from camera to particle
+        float distanceToCamera = distance(u_cameraPos, p.position);
+        
+        // Early exit if particle is beyond maximum render distance
+        if (u_useDistanceCulling != 0 && distanceToCamera > u_maxRenderDistance) {
+            return;
+        }
+        
+        // Calculate distance-based fade factor
+        float distanceFade = calculateFadeFactor(distanceToCamera);
+        
+        // Only add to visible instances if not completely faded out
+        if (distanceFade > 0.001) {
+            // Get instance slot
+            uint instanceIndex = atomicAdd(instanceCount, 1);
+            
+            // Calculate fade based on lifetime
+            float lifetimeFactor = p.lifetime / p.maxLifetime;
+            
+            // Write instance data
+            instances[instanceIndex].position = p.position;
+            instances[instanceIndex].size = u_particleSize * (0.5 + lifetimeFactor * 0.5);
+            instances[instanceIndex].color = p.color;  // Pass full color, no lifetime fade here
+            instances[instanceIndex].lifetime = p.lifetime;
+            instances[instanceIndex].maxLifetime = p.maxLifetime;
+            instances[instanceIndex].fadeFactor = distanceFade;
+            instances[instanceIndex]._padding[0] = 0.0;
+        }
+    }
+}

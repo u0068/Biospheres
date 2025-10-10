@@ -171,6 +171,7 @@
     <ClCompile Include="src\simulation\cell\gizmos.cpp" />
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
     <ClCompile Include="src\simulation\cell\spatial_grid.cpp" />
+    <ClCompile Include="src\simulation\cell\particle_system.cpp" />
     <ClCompile Include="src\simulation\cell\cell_selection.cpp" />
     <ClCompile Include="third_party\glad.c" />
     <ClCompile Include="src\rendering\core\glad_helpers.cpp" />
@@ -267,6 +268,10 @@
     <None Include="shaders\rendering\flagella\flagellocyte.vert" />
     <None Include="shaders\rendering\flagella\flagellocyte.frag" />
     <None Include="shaders\rendering\flagella\flagellocyte.geom" />
+    <None Include="shaders\particles\particle_update.comp" />
+    <None Include="shaders\particles\particle_extract.comp" />
+    <None Include="shaders\particles\particle.vert" />
+    <None Include="shaders\particles\particle.frag" />
     <None Include="tools\sync_structs.ps1" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

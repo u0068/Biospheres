@@ -232,6 +232,37 @@ struct CellManager
     Shader* adhesionPhysicsShader = nullptr;  // Compute shader for processing adhesionSettings physics
 
     // ============================================================================
+    // PARTICLE SYSTEM
+    // ============================================================================
+    
+    // Particle system buffers
+    GLuint particleBuffer{};            // Buffer for particle data
+    GLuint particleVoxelBuffer{};       // Buffer for voxel particle counts
+    GLuint particleInstanceBuffer{};    // Buffer for particle instance data
+    GLuint particleCountBuffer{};       // Buffer for particle instance count
+    GLuint particleVAO{};                // VAO for particle rendering
+    GLuint particleVBO{};                // VBO for particle quad vertices
+    
+    // Particle system shaders
+    Shader* particleUpdateShader = nullptr;   // Compute shader for particle update
+    Shader* particleExtractShader = nullptr;  // Compute shader for extracting instances
+    Shader* particleRenderShader = nullptr;   // Vertex/fragment shaders for rendering
+    
+    // Particle system parameters
+    int maxParticlesPerVoxel = 1;       // Maximum particles per voxel
+    int totalMaxParticles = 0;          // Total particle capacity
+    float particleSpawnRate = 0.5f;     // Particles spawned per voxel per second
+    float particleLifetime = 3.0f;      // Base lifetime for particles
+    float particleSize = 0.2f;          // Size of particles
+    bool enableParticles = true;        // Enable/disable particle system
+    
+    // Particle system functions
+    void initializeParticleSystem();
+    void updateParticles(float deltaTime);
+    void renderParticles(const Camera& camera, const glm::vec2& viewportSize);
+    void cleanupParticleSystem();
+
+    // ============================================================================
     // ENHANCED DIAGNOSTIC SYSTEM
     // ============================================================================
     

@@ -90,6 +90,9 @@ CellManager::CellManager()
     
     // Load global flagellocyte settings
     loadGlobalFlagellocyteSettings();
+    
+    // Initialize particle system
+    initializeParticleSystem();
 }
 
 CellManager::~CellManager()
@@ -265,6 +268,7 @@ void CellManager::cleanup()
     cleanupAnchorGizmos();
     cleanupAdhesionLines();
     cleanupLODSystem();
+    cleanupParticleSystem();
     sphereMesh.cleanup();
     
     // Clean up enhanced diagnostic buffers

@@ -1,0 +1,259 @@
+#version 460
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Particle structure - stored per voxel in the spatial grid
+struct Particle {
+    vec3 position;      // World position
+    float lifetime;     // Remaining lifetime (0 = dead)
+    vec3 velocity;      // Velocity for movement
+    float maxLifetime;  // Maximum lifetime for fade calculation
+    vec4 color;         // RGBA color
+};
+
+// Voxel data - stores particle count for each grid cell
+struct VoxelData {
+    uint particleCount;     // Number of active particles in this voxel
+    uint _padding[3];       // Padding for alignment
+};
+
+// Buffers
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) buffer VoxelBuffer {
+    VoxelData voxels[];
+};
+
+// Uniforms
+uniform float u_deltaTime;
+uniform float u_time;
+uniform int u_gridResolution;
+uniform float u_gridCellSize;
+uniform float u_worldSize;
+uniform int u_maxParticlesPerVoxel;
+uniform float u_spawnRate;          // Particles to spawn per voxel per second
+uniform float u_particleLifetime;   // Base lifetime for particles
+
+// Noise parameters for cloud generation
+uniform float u_noiseScale = 0.1;      // Scale of noise patterns
+uniform float u_noiseThreshold = 0.3;  // Threshold for cloud density
+uniform float u_timeScale = 0.2;        // How fast clouds evolve
+uniform vec3 u_cloudOffset = vec3(0.0); // Overall cloud position offset
+
+// Random number generator
+uint hash(uint x) {
+    x += (x << 10u);
+    x ^= (x >> 6u);
+    x += (x << 3u);
+    x ^= (x >> 11u);
+    x += (x << 15u);
+    return x;
+}
+
+float random(uint seed) {
+    return float(hash(seed)) / 4294967295.0;
+}
+
+// Simple 3D noise function (gradient noise approximation)
+vec3 random3(vec3 p) {
+    return fract(sin(vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+                          dot(p, vec3(269.5, 183.3, 246.1)),
+                          dot(p, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
+}
+
+float noise3D(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    
+    // Smoothstep
+    f = f * f * (3.0 - 2.0 * f);
+    
+    // Random values at corners
+    float a = random3(i + vec3(0.0, 0.0, 0.0)).x;
+    float b = random3(i + vec3(1.0, 0.0, 0.0)).x;
+    float c = random3(i + vec3(0.0, 1.0, 0.0)).x;
+    float d = random3(i + vec3(1.0, 1.0, 0.0)).x;
+    float e = random3(i + vec3(0.0, 0.0, 1.0)).x;
+    float f2 = random3(i + vec3(1.0, 0.0, 1.0)).x;
+    float g = random3(i + vec3(0.0, 1.0, 1.0)).x;
+    float h = random3(i + vec3(1.0, 1.0, 1.0)).x;
+    
+    // Trilinear interpolation
+    vec3 u = f;
+    return mix(mix(mix(a, b, u.x), mix(c, d, u.x), u.y),
+               mix(mix(e, f2, u.x), mix(g, h, u.x), u.y), u.z);
+}
+
+// Modified noise for more distinct cloud regions
+float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    
+    // Fewer octaves for less detail, more distinct regions
+    for (int i = 0; i < 3; i++) {
+        value += amplitude * noise3D(p * frequency);
+        amplitude *= 0.6;  // Higher persistence for more distinct features
+        frequency *= 2.0;
+    }
+    
+    return value;
+}
+
+// Sharpen the noise to create more distinct regions
+float sharpenNoise(float value, float sharpness) {
+    // Apply power function to increase contrast
+    return pow(value, sharpness);
+}
+
+// Create distinct cloud regions using domain distortion
+float distinctCloudNoise(vec3 p) {
+    // Domain distortion for more organic shapes
+    vec3 distorted = p + vec3(
+        noise3D(p * 0.5) * 0.3,
+        noise3D(p * 0.5 + 100.0) * 0.3,
+        noise3D(p * 0.5 + 200.0) * 0.3
+    );
+    
+    float noise = fbm(distorted);
+    
+    // Sharpen for more distinct regions
+    noise = sharpenNoise(noise, 2.0);
+    
+    // Add ridged noise for cloud edges
+    float ridged = 1.0 - abs(noise3D(p * 2.0));
+    noise = mix(noise, ridged, 0.3);
+    
+    return noise;
+}
+
+// Function to convert 3D grid coordinates to 1D index
+uint gridToIndex(ivec3 gridPos) {
+    return uint(gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution);
+}
+
+// Function to convert grid index to world position (center of voxel)
+vec3 gridToWorld(ivec3 gridPos) {
+    vec3 normalizedPos = (vec3(gridPos) + 0.5) / float(u_gridResolution);
+    return normalizedPos * u_worldSize - u_worldSize * 0.5;
+}
+
+void main() {
+    uint voxelIndex = gl_GlobalInvocationID.x;
+    uint totalVoxels = uint(u_gridResolution * u_gridResolution * u_gridResolution);
+    
+    if (voxelIndex >= totalVoxels) {
+        return;
+    }
+    
+    // Calculate base particle index for this voxel
+    uint baseParticleIndex = voxelIndex * u_maxParticlesPerVoxel;
+    
+    // Get voxel grid position
+    int z = int(voxelIndex / (u_gridResolution * u_gridResolution));
+    int y = int((voxelIndex / u_gridResolution) % u_gridResolution);
+    int x = int(voxelIndex % u_gridResolution);
+    ivec3 gridPos = ivec3(x, y, z);
+    vec3 voxelCenter = gridToWorld(gridPos);
+    
+    // Update single particle per voxel
+    uint particleIndex = baseParticleIndex; // Only one particle per voxel
+    Particle p = particles[particleIndex];
+    bool hasActiveParticle = false;
+    
+    if (p.lifetime > 0.0) {
+        // Update particle
+        p.lifetime -= u_deltaTime;
+        
+        // Only apply subtle internal motion within voxel bounds
+        vec3 voxelMin = voxelCenter - vec3(u_gridCellSize * 0.5);
+        vec3 voxelMax = voxelCenter + vec3(u_gridCellSize * 0.5);
+        
+        // Gentle internal movement but constrained to voxel
+        p.position += p.velocity * u_deltaTime;
+        
+        // Keep particles within voxel bounds
+        p.position = clamp(p.position, voxelMin, voxelMax);
+        
+        // Desynchronized random motion to use full voxel volume
+        uint randomSeed = uint(u_time * 1000.0) + voxelIndex * 1237u;
+        
+        // Create voxel-specific chaotic motion
+        float voxelOffset = float(voxelIndex) * 0.1; // Unique offset per voxel
+        float timeOffset = u_time + voxelOffset; // Desynchronize time per voxel
+        
+        uint motionSeed = voxelIndex * 7919u; // Static seed per voxel for consistency
+        float speedMultiplier = 1.5 + random(motionSeed + uint(timeOffset * 10.0)) * 1.5;
+        
+        p.velocity = vec3(
+            (random(motionSeed + uint(timeOffset * 13.7)) - 0.5) * speedMultiplier,
+            (random(motionSeed + uint(timeOffset * 11.3)) - 0.5) * speedMultiplier,
+            (random(motionSeed + uint(timeOffset * 17.9)) - 0.5) * speedMultiplier
+        );
+        
+        // Add stronger voxel-specific turbulence to reach edges
+        p.velocity.x += sin(timeOffset * 4.0 + voxelCenter.y * 2.5 + voxelOffset) * 0.8;
+        p.velocity.y += cos(timeOffset * 3.0 + voxelCenter.x * 2.5 + voxelOffset * 1.5) * 0.8;
+        p.velocity.z += sin(timeOffset * 3.5 + voxelCenter.z * 2.5 + voxelOffset * 2.1) * 0.8;
+        
+        // Add additional chaotic component for volume exploration
+        p.velocity.x += sin(timeOffset * 7.3 + voxelCenter.z * 1.7) * 0.3;
+        p.velocity.y += cos(timeOffset * 5.7 + voxelCenter.x * 1.7) * 0.3;
+        p.velocity.z += sin(timeOffset * 6.1 + voxelCenter.y * 1.7) * 0.3;
+        
+        if (p.lifetime <= 0.0) {
+            p.lifetime = 0.0;
+        } else {
+            hasActiveParticle = true;
+        }
+        
+        particles[particleIndex] = p;
+    }
+    
+    // Calculate cloud density using distinct noise
+    vec3 noisePos = (voxelCenter + u_cloudOffset) * u_noiseScale + vec3(u_time * u_timeScale);
+    float cloudDensity = distinctCloudNoise(noisePos);
+    
+    // Only spawn particle in dense cloud areas if slot is empty
+    if (cloudDensity > u_noiseThreshold && !hasActiveParticle) {
+        // Spawn probability based on how dense the cloud is here
+        float spawnChance = (cloudDensity - u_noiseThreshold) * u_spawnRate * u_deltaTime * 2.0;
+        uint seed = uint(u_time * 1000.0) + voxelIndex * 7919u;
+        
+        if (random(seed) < spawnChance) {
+            // Spawn new particle in single slot
+            Particle newParticle;
+            
+            // Position within full voxel bounds
+            vec3 voxelMin = voxelCenter - vec3(u_gridCellSize * 0.5); // Full voxel bounds
+            vec3 voxelMax = voxelCenter + vec3(u_gridCellSize * 0.5);
+            
+            newParticle.position = vec3(
+                mix(voxelMin.x, voxelMax.x, random(seed + 0u)),
+                mix(voxelMin.y, voxelMax.y, random(seed + 1u)),
+                mix(voxelMin.z, voxelMax.z, random(seed + 2u))
+            );
+            
+            // Zero initial velocity - particles represent voxel data, not physics objects
+            newParticle.velocity = vec3(0.0);
+            
+            // Lifetime varies with cloud density
+            float lifetimeVariation = cloudDensity * 0.5 + random(seed + 3u) * 0.3;
+            newParticle.lifetime = u_particleLifetime * (0.7 + lifetimeVariation);
+            newParticle.maxLifetime = newParticle.lifetime;
+            
+            // Color - white to light gray with subtle variation
+            float brightness = 0.8 + cloudDensity * 0.2 + random(seed + 4u) * 0.1;
+            brightness = clamp(brightness, 0.7, 1.0);
+            newParticle.color = vec4(brightness, brightness, brightness, 1.0);
+            
+            particles[particleIndex] = newParticle;
+            hasActiveParticle = true;
+        }
+    }
+    
+    // Update voxel particle count (0 or 1)
+    voxels[voxelIndex].particleCount = hasActiveParticle ? 1u : 0u;
+}

@@ -93,6 +93,9 @@
     <ClCompile Include="src\simulation\cell\spatial_grid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\simulation\cell\particle_system.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\simulation\cell\adhesion_manager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -310,6 +313,18 @@
     <None Include="shaders\cell\physics\cell_velocity_update.comp" />
     <None Include="shaders\cell\physics\cell_position_update.comp" />
     <None Include="shaders\shared_structs.glsl" />
+    <None Include="shaders\particles\particle_update.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\particles\particle_extract.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\particles\particle.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\particles\particle.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
     <None Include="tools\sync_structs.ps1">
       <Filter>Source Files</Filter>
     </None>
