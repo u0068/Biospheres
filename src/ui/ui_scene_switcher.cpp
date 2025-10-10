@@ -2,6 +2,7 @@
 #include "../simulation/cell/cell_manager.h"
 #include "../core/config.h"
 #include "imgui.h"
+#include "ui_layout.h"
 #include <algorithm>
 #include <string>
 #include <cmath>
@@ -23,9 +24,9 @@
 void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager)
 {
     // Set window position on first use - top center
-    ImGui::SetNextWindowPos(ImVec2(400, 20), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_FirstUseEver);
-    int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
+    ImGui::SetNextWindowPos(UILayout::Layout::getSceneSwitcherPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getSceneSwitcherSize(), ImGuiCond_FirstUseEver);
+    int flags = getWindowFlags(ImGuiWindowFlags_None);
     if (ImGui::Begin("Scene Manager", nullptr, flags))
     {
         // Get current scene for use throughout the function

@@ -32,6 +32,7 @@
 // UI includes
 #include "src/ui/ui_manager.h"
 #include "src/ui/imgui_helpers.h"
+#include "src/ui/ui_layout.h"
 
 // Input includes
 #include "src/input/input.h"
@@ -431,6 +432,9 @@ int main()
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
+		
+		// Update UI layout viewport dimensions
+		UILayout::updateViewport();
 
 		// Set viewport with our validated dimensions
 		try

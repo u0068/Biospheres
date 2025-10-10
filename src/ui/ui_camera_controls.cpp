@@ -1,8 +1,9 @@
 #include "ui_manager.h"
 #include "../simulation/cell/cell_manager.h"
+#include "../rendering/camera/camera.h"
 #include "../core/config.h"
 #include "imgui.h"
-#include <algorithm>
+#include "ui_layout.h"
 #include <string>
 #include <cmath>
 #include <cstdlib>
@@ -23,9 +24,9 @@
 void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, SceneManager& sceneManager)
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
-    ImGui::SetNextWindowPos(ImVec2(50, 470), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
-	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    ImGui::SetNextWindowPos(UILayout::Layout::getCameraControlsPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getCameraControlsSize(), ImGuiCond_FirstUseEver);
+	int flags = getWindowFlags();
     if (ImGui::Begin("Camera & Controls", nullptr, flags))
     {
     glm::vec3 camPos = camera.getPosition();

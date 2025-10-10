@@ -1,5 +1,7 @@
 #include "ui_manager.h"
 #include "../simulation/cell/cell_manager.h"
+#include "imgui.h"
+#include "ui_layout.h"
 #include "../core/config.h"
 #include "imgui.h"
 #include <algorithm>
@@ -31,9 +33,9 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
     // Refresh selected cell data from GPU every frame for live updates
     cellManager.refreshSelectedCellData();
     
-    ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
-	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    ImGui::SetNextWindowPos(UILayout::Layout::getCellInspectorPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getCellInspectorSize(), ImGuiCond_FirstUseEver);
+	int flags = getWindowFlags();
     if (ImGui::Begin("Cell Inspector", nullptr, flags))
     {
 

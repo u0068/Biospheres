@@ -2,6 +2,7 @@
 #include "../simulation/cell/cell_manager.h"
 #include "../core/config.h"
 #include "imgui.h"
+#include "ui_layout.h"
 #include <algorithm>
 #include <string>
 #include <cmath>
@@ -24,10 +25,10 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     // Set window size and position for a long horizontal resizable window
-    ImGui::SetNextWindowPos(ImVec2(50, 680), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(UILayout::Layout::getTimeScrubberPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getTimeScrubberSize(), ImGuiCond_FirstUseEver);
     
-    int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
+    int flags = getWindowFlags(ImGuiWindowFlags_None);
     if (ImGui::Begin("Time Scrubber", nullptr, flags))
     {
         // Update current simulation time from scene manager

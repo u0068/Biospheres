@@ -8,9 +8,16 @@ ImGuiIO& initImGui(GLFWwindow* window)
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 
-	// ENABLE docking and viewports
+	// ENABLE docking
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+	
+	// Disable viewports to keep windows contained within main window
+	// If you want windows to go outside, uncomment the line below:
+	// io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+	
+	// Keep windows within the main viewport
+	io.ConfigViewportsNoAutoMerge = false;
+	io.ConfigViewportsNoTaskBarIcon = true;
 
 	ImGui::StyleColorsDark();
 	ImGui_ImplGlfw_InitForOpenGL(window, true);

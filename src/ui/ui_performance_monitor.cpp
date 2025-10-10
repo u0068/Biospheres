@@ -2,6 +2,7 @@
 #include "../simulation/cell/cell_manager.h"
 #include "../core/config.h"
 #include "imgui.h"
+#include "ui_layout.h"
 #include <algorithm>
 #include <string>
 #include <cmath>
@@ -24,9 +25,9 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     cellManager.updateCounts();
-    ImGui::SetNextWindowPos(ImVec2(420, 50), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
-	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    ImGui::SetNextWindowPos(UILayout::Layout::getPerformanceMonitorPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getPerformanceMonitorSize(), ImGuiCond_FirstUseEver);
+	int flags = getWindowFlags();
     if (ImGui::Begin("Advanced Performance Monitor", nullptr, flags))
     {
 

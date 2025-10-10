@@ -208,6 +208,7 @@
     <ClInclude Include="src\simulation\cell\cell_manager.h" />
     <ClInclude Include="src\simulation\cell\cell_selection.h" />
     <ClInclude Include="src\core\config.h" />
+    <ClInclude Include="src\core\version.h" />
     <ClInclude Include="src\rendering\systems\frustum_culling.h" />
     <ClInclude Include="src\simulation\cell\common_structs.h" />
     <ClInclude Include="src\simulation\voxel\voxel_structs.h" />
@@ -219,6 +220,7 @@
     <ClInclude Include="src\utils\timer.h" />
     <ClInclude Include="src\utils\genome_io.h" />
     <ClInclude Include="src\ui\ui_manager.h" />
+    <ClInclude Include="src\ui\ui_layout.h" />
     <ClInclude Include="src\ui\imgui_helpers.h" />
     <ClInclude Include="third_party\imgui\imconfig.h" />
     <ClInclude Include="third_party\imgui\imgui.h" />

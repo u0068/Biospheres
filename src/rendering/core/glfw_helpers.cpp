@@ -1,6 +1,11 @@
 #include <glad/glad.h>
 #include "glfw_helpers.h"
 #include "../../core/config.h"
+#include "../../core/version.h"
+#include <iostream>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <string>
 
 void initGLFW()
 {
@@ -60,8 +65,11 @@ GLFWwindow *createWindow()
     // Set window to open maximized
     glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
+    // Create window title with version
+    std::string windowTitle = std::string(config::APPLICATION_NAME) + " v" + Version::FULL_STRING;
+    
     // Create a GLFWwindow object
-    GLFWwindow *window = glfwCreateWindow(config::INITIAL_WINDOW_WIDTH, config::INITIAL_WINDOW_HEIGHT, config::APPLICATION_NAME, NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(config::INITIAL_WINDOW_WIDTH, config::INITIAL_WINDOW_HEIGHT, windowTitle.c_str(), NULL, NULL);
     // Error check if the window fails to create
     if (window == NULL)
     {

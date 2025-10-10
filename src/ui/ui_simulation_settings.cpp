@@ -1,12 +1,13 @@
 #include "ui_manager.h"
 #include "../simulation/cell/cell_manager.h"
-#include "../scene/scene_manager.h"
-#include "../../third_party/imgui/imgui.h"
+#include "../core/config.h"
+#include "imgui.h"
+#include "ui_layout.h"
 
 void UIManager::renderSimulationSettings(CellManager& cellManager)
 {
-    ImGui::SetNextWindowPos(ImVec2(10, 400), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(UILayout::Layout::getSimulationSettingsPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getSimulationSettingsSize(), ImGuiCond_FirstUseEver);
     
     if (ImGui::Begin("Simulation Settings", nullptr, getWindowFlags()))
     {

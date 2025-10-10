@@ -12,6 +12,7 @@
 #include "../audio/audio_engine.h"
 #include "../scene/scene_manager.h"
 #include "../utils/genome_io.h"
+#include "ui_layout.h"
 
 // Ensure std::min and std::max are available
 #ifdef min
@@ -24,12 +25,12 @@
 void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager)
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
-    ImGui::SetNextWindowPos(ImVec2(840, 50), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(UILayout::Layout::getGenomeEditorPos(), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(UILayout::Layout::getGenomeEditorSize(), ImGuiCond_FirstUseEver);
     
     // Set minimum window size constraints
     ImGui::SetNextWindowSizeConstraints(ImVec2(800, 500), ImVec2(FLT_MAX, FLT_MAX));
-    int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
+    int flags = getWindowFlags();
     if (ImGui::Begin("Genome Editor", nullptr, flags))
     {
         // Validate and fix any colors that might be in the wrong range
@@ -113,6 +114,13 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     }
     addTooltip("Load a previously saved genome configuration");
 
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to Defaults"))
+    {
+        ImGui::OpenPopup("Reset Confirmation");
+    }
+    addTooltip("Reset the genome to default settings");
+
     // Save success popup
     if (ImGui::BeginPopupModal("Save Success", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
@@ -146,6 +154,45 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
     {
         ImGui::Text("Failed to load genome!");
         ImGui::Text("Check the console for error details.");
+        if (ImGui::Button("OK"))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // Reset confirmation popup
+    if (ImGui::BeginPopupModal("Reset Confirmation", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Are you sure you want to reset the genome to defaults?");
+        ImGui::Text("This will discard all current settings.");
+        ImGui::Separator();
+        
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+        
+        if (ImGui::Button("Yes, Reset", ImVec2(120, 0)))
+        {
+            // Reset to default genome
+            currentGenome = GenomeData();
+            selectedModeIndex = 0;
+            genomeChanged = true;
+            ImGui::CloseCurrentPopup();
+            ImGui::OpenPopup("Reset Success");
+        }
+        
+        ImGui::PopStyleColor(3);
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0)))
+            ImGui::CloseCurrentPopup();
+        
+        ImGui::EndPopup();
+    }
+
+    // Reset success popup
+    if (ImGui::BeginPopupModal("Reset Success", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Genome has been reset to default settings!");
         if (ImGui::Button("OK"))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
@@ -565,10 +612,7 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Flagellocyte Settings");
         
         drawSliderWithInput("Swim Speed", &mode.flagellocyteSettings.swimSpeed, 0.0f, 2.0f, "%.2f");
-        addTooltip("Swim speed multiplier (0.0 = no thrust, 1.0 = normal, 2.0 = double speed)\nHigher speed consumes more nutrients");
-        
-        drawSliderWithInput("Nutrient Consumption", &mode.flagellocyteSettings.nutrientConsumptionRate, 0.0f, 5.0f, "%.2f");
-        addTooltip("Nutrients consumed per second at full swim speed\nTotal consumption = base metabolism (1.0) + swimSpeed × this value");
+        addTooltip("Swim speed multiplier (0.0 = no thrust, 1.0 = normal, 2.0 = double speed)\nNutrient consumption is automatically based on swim speed");
     }
 
     // Add divider before color picker

@@ -146,6 +146,9 @@
     <ClInclude Include="src\core\config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\version.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\rendering\systems\frustum_culling.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -171,6 +174,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\ui\ui_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui\ui_layout.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\input\input.h">
