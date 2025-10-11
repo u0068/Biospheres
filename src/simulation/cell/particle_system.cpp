@@ -12,12 +12,6 @@ struct Particle {
     glm::vec4 color;         // RGBA color
 };
 
-// Voxel data structure
-struct VoxelData {
-    uint32_t particleCount;  // Number of active particles in this voxel
-    uint32_t _padding[3];    // Padding for alignment
-};
-
 // Particle instance for rendering (properly aligned)
 struct ParticleInstance {
     glm::vec3 position;
@@ -31,7 +25,7 @@ struct ParticleInstance {
 
 void CellManager::initializeParticleSystem()
 {
-    std::cout << "Initializing particle system...\n";
+    std::cout << "Initializing particle system with unified spatial grid...\n";
     
     // Calculate total particles based on grid
     int totalVoxels = config::TOTAL_GRID_CELLS;
@@ -56,31 +50,18 @@ void CellManager::initializeParticleSystem()
     }
     glNamedBufferSubData(particleBuffer, 0, totalMaxParticles * sizeof(Particle), initialParticles.data());
     
-    // Create voxel data buffer
-    glCreateBuffers(1, &particleVoxelBuffer);
-    glNamedBufferStorage(particleVoxelBuffer, 
-                        totalVoxels * sizeof(VoxelData), 
-                        nullptr, 
+    // Create particle count buffer for grid insertion
+    glCreateBuffers(1, &particleCountBuffer);
+    uint32_t particleCountData[4] = { static_cast<uint32_t>(totalMaxParticles), 0, 0, 0 };
+    glNamedBufferStorage(particleCountBuffer, 
+                        sizeof(uint32_t) * 4, 
+                        particleCountData, 
                         GL_DYNAMIC_STORAGE_BIT);
-    
-    // Initialize voxel data to zero
-    std::vector<VoxelData> initialVoxels(totalVoxels);
-    for (auto& v : initialVoxels) {
-        v.particleCount = 0;
-    }
-    glNamedBufferSubData(particleVoxelBuffer, 0, totalVoxels * sizeof(VoxelData), initialVoxels.data());
     
     // Create instance buffer for rendering
     glCreateBuffers(1, &particleInstanceBuffer);
     glNamedBufferStorage(particleInstanceBuffer, 
                         totalMaxParticles * sizeof(ParticleInstance), 
-                        nullptr, 
-                        GL_DYNAMIC_STORAGE_BIT);
-    
-    // Create counter buffer
-    glCreateBuffers(1, &particleCountBuffer);
-    glNamedBufferStorage(particleCountBuffer, 
-                        sizeof(uint32_t), 
                         nullptr, 
                         GL_DYNAMIC_STORAGE_BIT);
     
@@ -146,20 +127,20 @@ void CellManager::initializeParticleSystem()
     glVertexArrayAttribFormat(particleVAO, 7, 1, GL_FLOAT, GL_FALSE, offsetof(ParticleInstance, fadeFactor));
     glVertexArrayAttribBinding(particleVAO, 7, 1);
     
-    // Initialize shaders
+    // Initialize shaders - now using unified grid system
     particleUpdateShader = new Shader("shaders/particles/particle_update.comp");
+    particleGridInsertShader = new Shader("shaders/particles/particle_grid_insert.comp");
     particleExtractShader = new Shader("shaders/particles/particle_extract.comp");
     particleRenderShader = new Shader("shaders/particles/particle.vert", "shaders/particles/particle.frag");
     
-    std::cout << "Particle system initialized successfully\n";
+    std::cout << "Particle system initialized successfully with unified spatial grid\n";
 }
 
 void CellManager::updateParticles(float deltaTime)
 {
     if (!enableParticles) return;
     
-    // TimerGPU timer("Particle Update"); // Temporarily disabled due to query errors
-    
+    // Step 1: Update particle behavior (voxel-based shader with original behavior)
     particleUpdateShader->use();
     
     // Set uniforms
@@ -169,6 +150,8 @@ void CellManager::updateParticles(float deltaTime)
     particleUpdateShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     particleUpdateShader->setFloat("u_worldSize", config::WORLD_SIZE);
     particleUpdateShader->setInt("u_maxParticlesPerVoxel", maxParticlesPerVoxel);
+    particleUpdateShader->setInt("u_maxParticlesTotal", totalMaxParticles);
+    particleUpdateShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
     particleUpdateShader->setFloat("u_spawnRate", particleSpawnRate);
     particleUpdateShader->setFloat("u_particleLifetime", particleLifetime);
     
@@ -183,14 +166,36 @@ void CellManager::updateParticles(float deltaTime)
     particleUpdateShader->setFloat("u_timeScale", 0.15f);      // Slower evolution for more stable regions
     particleUpdateShader->setVec3("u_cloudOffset", glm::vec3(0.0f, 20.0f, 0.0f)); // Offset clouds upward
     
-    // Bind buffers
+    // Bind particle buffer (particles update themselves but don't need grid buffers for this step)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleVoxelBuffer);
     
     // Dispatch compute shader (one thread per voxel)
     int totalVoxels = config::TOTAL_GRID_CELLS;
     GLuint numGroups = (totalVoxels + 255) / 256;
     particleUpdateShader->dispatch(numGroups, 1, 1);
+    
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Step 2: Insert active particles into unified spatial grid
+    particleGridInsertShader->use();
+    
+    // Set uniforms for grid insertion
+    particleGridInsertShader->setInt("u_gridResolution", config::GRID_RESOLUTION);
+    particleGridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
+    particleGridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
+    particleGridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
+    particleGridInsertShader->setInt("u_particleIndexOffset", config::DEFAULT_CELL_COUNT); // Offset to distinguish from cells
+    
+    // Bind buffers for unified grid insertion
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);     // Particle data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);         // Unified grid buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridOffsetBuffer);    // Grid offsets
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer);     // Grid counts
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, particleCountBuffer); // Particle count buffer
+    
+    // Dispatch compute shader (one thread per particle)
+    GLuint numParticleGroups = (totalMaxParticles + 255) / 256;
+    particleGridInsertShader->dispatch(numParticleGroups, 1, 1);
     
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
@@ -288,11 +293,6 @@ void CellManager::cleanupParticleSystem()
         particleBuffer = 0;
     }
     
-    if (particleVoxelBuffer != 0) {
-        glDeleteBuffers(1, &particleVoxelBuffer);
-        particleVoxelBuffer = 0;
-    }
-    
     if (particleInstanceBuffer != 0) {
         glDeleteBuffers(1, &particleInstanceBuffer);
         particleInstanceBuffer = 0;
@@ -317,6 +317,12 @@ void CellManager::cleanupParticleSystem()
         particleUpdateShader->destroy();
         delete particleUpdateShader;
         particleUpdateShader = nullptr;
+    }
+    
+    if (particleGridInsertShader) {
+        particleGridInsertShader->destroy();
+        delete particleGridInsertShader;
+        particleGridInsertShader = nullptr;
     }
     
     if (particleExtractShader) {

@@ -247,14 +247,14 @@ struct CellManager
     
     // Particle system buffers
     GLuint particleBuffer{};            // Buffer for particle data
-    GLuint particleVoxelBuffer{};       // Buffer for voxel particle counts
     GLuint particleInstanceBuffer{};    // Buffer for particle instance data
-    GLuint particleCountBuffer{};       // Buffer for particle instance count
+    GLuint particleCountBuffer{};       // Buffer for particle count and grid insertion
     GLuint particleVAO{};                // VAO for particle rendering
     GLuint particleVBO{};                // VBO for particle quad vertices
     
     // Particle system shaders
     Shader* particleUpdateShader = nullptr;   // Compute shader for particle update
+    Shader* particleGridInsertShader = nullptr; // Compute shader for grid insertion
     Shader* particleExtractShader = nullptr;  // Compute shader for extracting instances
     Shader* particleRenderShader = nullptr;   // Vertex/fragment shaders for rendering
     

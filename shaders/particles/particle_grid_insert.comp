@@ -1,0 +1,94 @@
+#version 460
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Particle structure
+struct Particle {
+    vec3 position;      // World position
+    float lifetime;     // Remaining lifetime (0 = dead)
+    vec3 velocity;      // Velocity for movement
+    float maxLifetime;  // Maximum lifetime for fade calculation
+    vec4 color;         // RGBA color
+};
+
+// Unified spatial grid buffers (same as cells use)
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 1) buffer GridBuffer {
+    uint gridCells[];    // Stores cell and particle indices for each grid cell
+};
+
+layout(std430, binding = 2) buffer GridOffsetBuffer {
+    uint gridOffsets[];  // Starting offsets for each grid cell
+};
+
+layout(std430, binding = 3) buffer GridCountBuffer {
+    uint gridCounts[];   // Number of items in each grid cell
+};
+
+layout(std430, binding = 4) buffer ParticleCountBuffer {
+    uint totalMaxParticles;
+    uint activeParticleCount;
+    uint _padding1;
+    uint _padding2;
+};
+
+// Uniforms
+uniform int u_gridResolution;
+uniform float u_gridCellSize;
+uniform float u_worldSize;
+uniform int u_maxCellsPerGrid;
+uniform int u_particleIndexOffset;  // Offset to distinguish particle indices from cell indices
+
+// Function to convert world position to grid coordinates
+ivec3 worldToGrid(vec3 worldPos) {
+    // Clamp to world bounds first
+    vec3 clampedPos = clamp(worldPos, vec3(-u_worldSize * 0.5), vec3(u_worldSize * 0.5));
+    
+    // Convert to grid coordinates [0, gridResolution)
+    vec3 normalizedPos = (clampedPos + u_worldSize * 0.5) / u_worldSize;
+    ivec3 gridPos = ivec3(normalizedPos * u_gridResolution);
+    
+    // Ensure we stay within bounds
+    return clamp(gridPos, ivec3(0), ivec3(u_gridResolution - 1));
+}
+
+// Function to convert 3D grid coordinates to 1D index
+uint gridToIndex(ivec3 gridPos) {
+    return uint(gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution);
+}
+
+void main() {
+    uint particleIndex = gl_GlobalInvocationID.x;
+    
+    // Check bounds
+    if (particleIndex >= totalMaxParticles) {
+        return;
+    }
+    
+    // Only process active particles
+    if (particles[particleIndex].lifetime <= 0.0) {
+        return;
+    }
+    
+    // Get particle position
+    vec3 particlePos = particles[particleIndex].position;
+    
+    // Convert to grid coordinates
+    ivec3 gridPos = worldToGrid(particlePos);
+    uint gridIndex = gridToIndex(gridPos);
+    
+    // Get the offset for this grid cell and atomically claim a slot
+    uint slotIndex = atomicAdd(gridOffsets[gridIndex], 1);
+    
+    // Calculate the actual index in the grid buffer
+    uint gridBufferIndex = gridIndex * u_maxCellsPerGrid + slotIndex;
+    
+    // Make sure we don't exceed the maximum items per grid cell
+    if (slotIndex < u_maxCellsPerGrid) {
+        // Store particle index with offset to distinguish from cell indices
+        gridCells[gridBufferIndex] = particleIndex + uint(u_particleIndexOffset);
+    }
+}

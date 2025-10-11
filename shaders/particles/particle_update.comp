@@ -11,19 +11,21 @@ struct Particle {
     vec4 color;         // RGBA color
 };
 
-// Voxel data - stores particle count for each grid cell
-struct VoxelData {
-    uint particleCount;     // Number of active particles in this voxel
-    uint _padding[3];       // Padding for alignment
-};
-
-// Buffers
+// Unified spatial grid buffers (same as cells use)
 layout(std430, binding = 0) buffer ParticleBuffer {
     Particle particles[];
 };
 
-layout(std430, binding = 1) buffer VoxelBuffer {
-    VoxelData voxels[];
+layout(std430, binding = 1) buffer GridBuffer {
+    uint gridCells[];    // Stores cell and particle indices for each grid cell
+};
+
+layout(std430, binding = 2) buffer GridOffsetBuffer {
+    uint gridOffsets[];  // Starting offsets for each grid cell
+};
+
+layout(std430, binding = 3) buffer GridCountBuffer {
+    uint gridCounts[];   // Number of items in each grid cell
 };
 
 // Uniforms
@@ -35,6 +37,8 @@ uniform float u_worldSize;
 uniform int u_maxParticlesPerVoxel;
 uniform float u_spawnRate;          // Particles to spawn per voxel per second
 uniform float u_particleLifetime;   // Base lifetime for particles
+uniform int u_maxParticlesTotal;    // Total maximum particles in system
+uniform int u_maxCellsPerGrid;      // Maximum items per grid cell (cells + particles)
 
 // Sphere culling uniforms
 uniform float u_sphereRadius;       // Radius of sphere boundary
@@ -134,6 +138,19 @@ float distinctCloudNoise(vec3 p) {
     return noise;
 }
 
+// Function to convert world position to grid coordinates
+ivec3 worldToGrid(vec3 worldPos) {
+    // Clamp to world bounds first
+    vec3 clampedPos = clamp(worldPos, vec3(-u_worldSize * 0.5), vec3(u_worldSize * 0.5));
+    
+    // Convert to grid coordinates [0, gridResolution)
+    vec3 normalizedPos = (clampedPos + u_worldSize * 0.5) / u_worldSize;
+    ivec3 gridPos = ivec3(normalizedPos * u_gridResolution);
+    
+    // Ensure we stay within bounds
+    return clamp(gridPos, ivec3(0), ivec3(u_gridResolution - 1));
+}
+
 // Function to convert 3D grid coordinates to 1D index
 uint gridToIndex(ivec3 gridPos) {
     return uint(gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution);
@@ -177,13 +194,12 @@ void main() {
                 p.lifetime = 0.0;
                 particles[particleIndex] = p;
             }
-            voxels[voxelIndex].particleCount = 0;
             return;
         }
     }
     
     if (p.lifetime > 0.0) {
-        // Update particle
+        // Update particle with original voxel-based behavior
         p.lifetime -= u_deltaTime;
         
         // Only apply subtle internal motion within voxel bounds
@@ -272,7 +288,4 @@ void main() {
             hasActiveParticle = true;
         }
     }
-    
-    // Update voxel particle count (0 or 1)
-    voxels[voxelIndex].particleCount = hasActiveParticle ? 1u : 0u;
 }
