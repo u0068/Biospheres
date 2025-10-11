@@ -172,6 +172,11 @@ void CellManager::updateParticles(float deltaTime)
     particleUpdateShader->setFloat("u_spawnRate", particleSpawnRate);
     particleUpdateShader->setFloat("u_particleLifetime", particleLifetime);
     
+    // Sphere culling uniforms
+    particleUpdateShader->setFloat("u_sphereRadius", config::SPHERE_RADIUS);
+    particleUpdateShader->setVec3("u_sphereCenter", config::SPHERE_CENTER);
+    particleUpdateShader->setInt("u_enableSphereCulling", config::ENABLE_SPHERE_CULLING ? 1 : 0);
+    
     // Noise parameters for distinct cloud regions
     particleUpdateShader->setFloat("u_noiseScale", 0.08f);     // Slightly smaller scale for bigger regions
     particleUpdateShader->setFloat("u_noiseThreshold", 0.4f);  // Higher threshold for less sparse areas
@@ -217,6 +222,11 @@ void CellManager::renderParticles(const Camera& camera, const glm::vec2& viewpor
         particleExtractShader->setFloat("u_fadeEndDistance", 160.0f);      // Same as cells
         particleExtractShader->setInt("u_useDistanceCulling", 1);          // Enable distance culling
         particleExtractShader->setInt("u_useFade", 1);                     // Enable distance fading
+        
+        // Sphere culling uniforms
+        particleExtractShader->setFloat("u_sphereRadius", config::SPHERE_RADIUS);
+        particleExtractShader->setVec3("u_sphereCenter", config::SPHERE_CENTER);
+        particleExtractShader->setInt("u_enableSphereCulling", config::ENABLE_SPHERE_CULLING ? 1 : 0);
         
         // Bind buffers
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);

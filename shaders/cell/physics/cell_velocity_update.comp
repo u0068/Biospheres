@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -49,6 +49,13 @@ uniform float u_deltaTime;
 uniform float u_damping;
 uniform int u_draggedCellIndex; // Index of cell being dragged (-1 if none)
 
+// Sphere barrier uniforms
+uniform float u_sphereRadius;
+uniform vec3 u_sphereCenter;
+uniform bool u_enableVelocityBarrier;
+uniform float u_barrierDamping;
+uniform float u_barrierPushDistance;
+
 // Quaternion multiplication function
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -75,6 +82,39 @@ void main() {
 
     vel += 0.5 * (acc_old + acc_new) * u_deltaTime;
     vel *= pow(u_damping, u_deltaTime * 100.0);
+    
+    // --- Velocity Barrier Logic ---
+    if (u_enableVelocityBarrier) {
+        vec3 cellPos = cell.positionAndMass.xyz;
+        float distanceFromCenter = length(cellPos - u_sphereCenter);
+        
+        // Check if cell is outside or very close to the sphere boundary
+        if (distanceFromCenter > u_sphereRadius - u_barrierPushDistance) {
+            // Calculate direction from sphere center to cell
+            vec3 outwardDirection = normalize(cellPos - u_sphereCenter);
+            
+            // Check if velocity is pointing outward (away from center)
+            float outwardVelocity = dot(vel, outwardDirection);
+            
+            if (outwardVelocity > 0.0) {
+                // Reverse the outward component of velocity
+                vel -= outwardDirection * outwardVelocity * 2.0;
+                
+                // Apply additional damping
+                vel *= u_barrierDamping;
+                
+                // Add small inward push to prevent getting stuck
+                vel -= outwardDirection * 0.5;
+            }
+            
+            // If cell is already outside, push it back inside
+            if (distanceFromCenter > u_sphereRadius) {
+                vec3 pushDirection = -outwardDirection;
+                float pushStrength = (distanceFromCenter - u_sphereRadius) * 2.0;
+                vel += pushDirection * pushStrength;
+            }
+        }
+    }
 
     cell.velocity.xyz = vel;
     //cell.acceleration = vec4(0.0);

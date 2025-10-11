@@ -38,6 +38,7 @@ public:
     void setupLODInstanceBuffers(GLuint lodInstanceBuffers[4]); // Setup separate instance buffers for each LOD level
     void setupLODInstanceBufferWithFade(int lodLevel, GLuint lodInstanceDataBuffer); // Setup LOD instance buffer with fade factor
     void render(int instanceCount) const;
+    void renderSingle() const; // Render single sphere without instancing
     void renderLOD(int lodLevel, int instanceCount, int instanceOffset = 0) const; // Render specific LOD level
     void cleanup();
     

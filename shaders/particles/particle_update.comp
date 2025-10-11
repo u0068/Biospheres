@@ -36,6 +36,11 @@ uniform int u_maxParticlesPerVoxel;
 uniform float u_spawnRate;          // Particles to spawn per voxel per second
 uniform float u_particleLifetime;   // Base lifetime for particles
 
+// Sphere culling uniforms
+uniform float u_sphereRadius;       // Radius of sphere boundary
+uniform vec3 u_sphereCenter;        // Center of sphere
+uniform int u_enableSphereCulling;  // Enable sphere-based culling
+
 // Noise parameters for cloud generation
 uniform float u_noiseScale = 0.1;      // Scale of noise patterns
 uniform float u_noiseThreshold = 0.3;  // Threshold for cloud density
@@ -162,6 +167,20 @@ void main() {
     uint particleIndex = baseParticleIndex; // Only one particle per voxel
     Particle p = particles[particleIndex];
     bool hasActiveParticle = false;
+    
+    // Check if voxel is outside sphere boundary - skip if culling enabled
+    if (u_enableSphereCulling != 0) {
+        float distanceToSphereCenter = distance(voxelCenter, u_sphereCenter);
+        if (distanceToSphereCenter > u_sphereRadius) {
+            // Clear any existing particle in this voxel
+            if (p.lifetime > 0.0) {
+                p.lifetime = 0.0;
+                particles[particleIndex] = p;
+            }
+            voxels[voxelIndex].particleCount = 0;
+            return;
+        }
+    }
     
     if (p.lifetime > 0.0) {
         // Update particle

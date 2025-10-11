@@ -32,6 +32,19 @@ namespace config
 	constexpr float GRID_CELL_SIZE{WORLD_SIZE / GRID_RESOLUTION}; // Size of each grid cell (~1.56 units)
 	constexpr int MAX_CELLS_PER_GRID{32};                         // Reduced from 64 to 32: better memory access patterns
 	constexpr int TOTAL_GRID_CELLS{GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION};
+	
+	// ========== Sphere Skin Configuration ==========
+	constexpr float SPHERE_RADIUS{50.0f};                        // Radius of sphere boundary for culling
+	constexpr glm::vec3 SPHERE_CENTER{0.0f, 0.0f, 0.0f};       // Center of sphere (world origin)
+	constexpr bool ENABLE_SPHERE_CULLING{true};                  // Enable sphere-based culling
+	constexpr bool ENABLE_SPHERE_SKIN_VISUALIZATION{true};       // Enable visual sphere skin rendering
+	constexpr glm::vec3 SPHERE_SKIN_COLOR{0.2f, 0.4f, 0.8f};   // Color of sphere skin (light blue)
+	constexpr float SPHERE_SKIN_TRANSPARENCY{0.99f};             // Transparency of sphere skin (0.0 = invisible, 1.0 = opaque)
+	
+	// ========== Velocity Barrier Configuration ==========
+	constexpr bool ENABLE_VELOCITY_BARRIER{true};                // Enable velocity reversal barrier at sphere boundary
+	constexpr float BARRIER_DAMPING{0.8f};                       // Damping factor when velocity is reversed (0.0 = full stop, 1.0 = no damping)
+	constexpr float BARRIER_PUSH_DISTANCE{2.0f};                 // Distance inside boundary to push cells back when they breach
 
 	// ========== Rendering Configuration ==========
 	// Distance-based culling and fading parameters

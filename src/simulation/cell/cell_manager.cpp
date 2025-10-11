@@ -924,6 +924,7 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
     // Use unified culling system if any culling is enabled
     if (useFrustumCulling || useDistanceCulling || useLODSystem) {
         renderCellsUnified(resolution, camera, wireframe);
+        renderSphereSkin(camera, resolution);
         return;
     }
     
@@ -1036,6 +1037,9 @@ void CellManager::renderCells(glm::vec2 resolution, Shader &cellShader, Camera &
         glDisable(GL_CULL_FACE);
         // Restore polygon mode to fill
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        
+        // Render sphere skin after cells
+        renderSphereSkin(camera, resolution);
     }
     catch (const std::exception &e)
     {
@@ -1156,7 +1160,15 @@ void CellManager::runVelocityUpdateCompute(float deltaTime)
 
     // Pass dragged cell index to skip its position updates
     int draggedIndex = (isDraggingCell && selectedCell.isValid) ? selectedCell.cellIndex : -1;
-    velocityUpdateShader->setInt("u_draggedCellIndex", draggedIndex); // Bind current cell buffer for in-place updates
+    velocityUpdateShader->setInt("u_draggedCellIndex", draggedIndex);
+    
+    // Set sphere barrier uniforms
+    velocityUpdateShader->setFloat("u_sphereRadius", config::SPHERE_RADIUS);
+    velocityUpdateShader->setVec3("u_sphereCenter", config::SPHERE_CENTER);
+    velocityUpdateShader->setInt("u_enableVelocityBarrier", config::ENABLE_VELOCITY_BARRIER ? 1 : 0);
+    velocityUpdateShader->setFloat("u_barrierDamping", config::BARRIER_DAMPING);
+    velocityUpdateShader->setFloat("u_barrierPushDistance", config::BARRIER_PUSH_DISTANCE);
+    // Bind current cell buffer for in-place updates
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellWriteBuffer());

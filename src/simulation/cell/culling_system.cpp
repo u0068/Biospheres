@@ -229,6 +229,18 @@ void CellManager::cleanupUnifiedCulling()
         tailRenderShader = nullptr;
     }
     
+    if (sphereSkinShader) {
+        sphereSkinShader->destroy();
+        delete sphereSkinShader;
+        sphereSkinShader = nullptr;
+    }
+    
+    if (worldSphereShader) {
+        worldSphereShader->destroy();
+        delete worldSphereShader;
+        worldSphereShader = nullptr;
+    }
+    
     for (int i = 0; i < 4; i++) {
         if (unifiedOutputBuffers[i] != 0) {
             glDeleteBuffers(1, &unifiedOutputBuffers[i]);
@@ -303,6 +315,11 @@ void CellManager::runUnifiedCulling(const Camera& camera)
     unifiedCullShader->setInt("u_useDistanceCulling", useDistanceCulling ? 1 : 0);
     unifiedCullShader->setInt("u_useLOD", useLODSystem ? 1 : 0);
     unifiedCullShader->setInt("u_useFade", useDistanceCulling ? 1 : 0);
+    
+    // Set sphere culling uniforms
+    unifiedCullShader->setFloat("u_sphereRadius", config::SPHERE_RADIUS);
+    unifiedCullShader->setVec3("u_sphereCenter", config::SPHERE_CENTER);
+    unifiedCullShader->setInt("u_enableSphereCulling", config::ENABLE_SPHERE_CULLING ? 1 : 0);
     
     // Set frustum planes as uniforms
     const auto& planes = currentFrustum.getPlanes();
@@ -523,4 +540,74 @@ void CellManager::setDistanceCullingParams(float maxDistance, float fadeStart, f
     maxRenderDistance = maxDistance;
     fadeStartDistance = fadeStart;
     fadeEndDistance = fadeEnd;
+}
+
+void CellManager::renderSphereSkin(const Camera& camera, glm::vec2 resolution)
+{
+    if (!runtimeSphereEnabled) return;
+    
+    // Initialize world sphere shader if needed
+    if (!worldSphereShader) {
+        worldSphereShader = new Shader("shaders/rendering/world_boundary/world_sphere.vert", 
+                                       "shaders/rendering/world_boundary/world_sphere.frag");
+    }
+    
+    // Ensure world sphere mesh is initialized with icosphere (smoother than lat/lon)
+    if (worldSphereMesh.getIndexCount() == 0) {
+        worldSphereMesh.generateIcosphere(0, 4, 1.0f); // Use icosphere for smoother geometry
+        worldSphereMesh.setupBuffers();
+    }
+    
+    worldSphereShader->use();
+    
+    // Set up camera matrices
+    glm::mat4 view = camera.getViewMatrix();
+    glm::mat4 projection = glm::perspective(glm::radians(config::defaultFrustumFov), 
+                                           resolution.x / resolution.y,
+                                           config::defaultFrustumNearPlane, 
+                                           config::defaultFrustumFarPlane);
+    
+    // Create model matrix for sphere (position at sphere center, scale to sphere radius)
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, config::SPHERE_CENTER);
+    model = glm::scale(model, glm::vec3(config::SPHERE_RADIUS));
+    
+    // Set uniforms using runtime parameters
+    worldSphereShader->setMat4("uModel", model);
+    worldSphereShader->setMat4("uView", view);
+    worldSphereShader->setMat4("uProjection", projection);
+    worldSphereShader->setVec3("uViewPos", camera.getPosition());
+    worldSphereShader->setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
+    worldSphereShader->setVec3("uSphereColor", runtimeSphereColor);
+    worldSphereShader->setFloat("uTransparency", runtimeSphereTransparency);
+    worldSphereShader->setFloat("uTime", static_cast<float>(glfwGetTime()));
+    
+    // Set distance fade uniforms using existing fade system
+    worldSphereShader->setFloat("u_fadeStartDistance", fadeStartDistance);
+    worldSphereShader->setFloat("u_fadeEndDistance", fadeEndDistance);
+    
+    // Disable blending for opaque sphere test
+    if (runtimeSphereTransparency < 1.0f) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glDisable(GL_BLEND);
+    }
+    
+    // Fix inverted faces by culling front faces instead of back faces
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT); // Cull front faces to show the correct side
+    
+    // Enable depth testing and write to depth buffer for proper layering
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    
+    // Render world sphere
+    worldSphereMesh.renderSingle();
+    
+    // Restore OpenGL state
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK); // Restore to back face culling
+    glDisable(GL_BLEND);
 }

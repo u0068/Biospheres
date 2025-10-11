@@ -132,6 +132,11 @@ uniform int u_useDistanceCulling = 1;         // Enable distance-based culling
 uniform int u_useLOD = 1;                     // Enable LOD system
 uniform int u_useFade = 1;                    // Enable distance-based fading
 
+// Sphere culling uniforms
+uniform float u_sphereRadius;                 // Radius of sphere boundary
+uniform vec3 u_sphereCenter;                  // Center of sphere
+uniform int u_enableSphereCulling = 1;        // Enable sphere-based culling
+
 // Test if sphere is inside frustum
 bool isSphereInFrustum(vec3 center, float radius) {
     for (int i = 0; i < 6; i++) {
@@ -183,6 +188,14 @@ void main() {
     
     // Calculate distance from camera to cell center
     float distanceToCamera = distance(u_cameraPos, cellPos);
+    
+    // Check if cell is outside sphere boundary - cull if enabled
+    if (u_enableSphereCulling != 0) {
+        float distanceToSphereCenter = distance(cellPos, u_sphereCenter);
+        if (distanceToSphereCenter - cellRadius > u_sphereRadius) {
+            return; // Cell is completely outside sphere boundary
+        }
+    }
     
     // Early exit if cell is beyond maximum render distance
     if (u_useDistanceCulling != 0 && distanceToCamera > u_maxRenderDistance) {

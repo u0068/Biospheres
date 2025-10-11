@@ -47,6 +47,11 @@ uniform float u_fadeEndDistance = 160.0;      // Distance where fading ends
 uniform int u_useDistanceCulling = 1;         // Enable distance-based culling
 uniform int u_useFade = 1;                    // Enable distance-based fading
 
+// Sphere culling uniforms
+uniform float u_sphereRadius;       // Radius of sphere boundary
+uniform vec3 u_sphereCenter;        // Center of sphere
+uniform int u_enableSphereCulling;  // Enable sphere-based culling
+
 // Calculate fade factor based on distance (same as cells)
 float calculateFadeFactor(float distanceToCamera) {
     if (u_useFade == 0) return 1.0;
@@ -75,6 +80,14 @@ void main() {
     
     // Only render active particles
     if (p.lifetime > 0.0) {
+        // Check if particle is outside sphere boundary - cull if enabled
+        if (u_enableSphereCulling != 0) {
+            float distanceToSphereCenter = distance(p.position, u_sphereCenter);
+            if (distanceToSphereCenter > u_sphereRadius) {
+                return;
+            }
+        }
+        
         // Calculate distance from camera to particle
         float distanceToCamera = distance(u_cameraPos, p.position);
         

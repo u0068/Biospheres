@@ -224,6 +224,59 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
             cellManager.setFogColor(fogColor);
         }
         addTooltip("Color of atmospheric fog for distant cells");
+        
+        // Sphere skin visualization controls
+        ImGui::Separator();
+        ImGui::Text("World Sphere Boundary:");
+        
+        // Enable/disable sphere visualization
+        bool enableSphereSkin = cellManager.getSphereEnabled();
+        if (ImGui::Checkbox("Enable Sphere Boundary", &enableSphereSkin)) {
+            cellManager.setSphereEnabled(enableSphereSkin);
+        }
+        addTooltip("Show/hide the world sphere boundary visualization");
+        
+        // Sphere color control
+        glm::vec3 sphereColor = cellManager.getSphereColor();
+        if (ImGui::ColorEdit3("Sphere Color##SphereColor", &sphereColor.x, ImGuiColorEditFlags_Float)) {
+            cellManager.setSphereColor(sphereColor);
+        }
+        addTooltip("Color of the world sphere boundary");
+        
+        // Sphere transparency control
+        float sphereTransparency = cellManager.getSphereTransparency();
+        if (ImGui::SliderFloat("Sphere Transparency", &sphereTransparency, 0.0f, 1.0f, "%.2f")) {
+            cellManager.setSphereTransparency(sphereTransparency);
+        }
+        addTooltip("Transparency of the world sphere (0.0 = invisible, 1.0 = opaque)");
+        
+        // Velocity barrier controls
+        ImGui::Separator();
+        ImGui::Text("Velocity Barrier:");
+        
+        // Enable/disable velocity barrier
+        static bool enableVelocityBarrier = config::ENABLE_VELOCITY_BARRIER;
+        if (ImGui::Checkbox("Enable Velocity Barrier", &enableVelocityBarrier)) {
+            // Note: This would require runtime config modification
+            // For now, just display the current state
+        }
+        addTooltip("Enable velocity reversal at sphere boundary to keep cells contained");
+        
+        // Barrier damping control
+        static float barrierDamping = config::BARRIER_DAMPING;
+        if (ImGui::SliderFloat("Barrier Damping", &barrierDamping, 0.0f, 1.0f, "%.2f")) {
+            // Note: This would require runtime config modification
+            // For now, just display the slider
+        }
+        addTooltip("Velocity damping when cells hit the barrier (0.0 = full stop, 1.0 = no damping)");
+        
+        // Barrier push distance control
+        static float barrierPushDistance = config::BARRIER_PUSH_DISTANCE;
+        if (ImGui::SliderFloat("Push Distance", &barrierPushDistance, 0.5f, 10.0f, "%.1f")) {
+            // Note: This would require runtime config modification
+            // For now, just display the slider
+        }
+        addTooltip("Distance inside boundary where barrier starts pushing cells back");
     }
 
     // Show current selection info

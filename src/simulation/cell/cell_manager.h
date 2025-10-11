@@ -77,6 +77,15 @@ struct CellManager
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
+    
+    // World sphere mesh for boundary visualization
+    SphereMesh worldSphereMesh;
+    Shader* worldSphereShader = nullptr;
+    
+    // Runtime sphere skin parameters (for UI control)
+    glm::vec3 runtimeSphereColor{config::SPHERE_SKIN_COLOR};
+    float runtimeSphereTransparency{config::SPHERE_SKIN_TRANSPARENCY};
+    bool runtimeSphereEnabled{config::ENABLE_SPHERE_SKIN_VISUALIZATION};
 
     // LOD system
     Shader* lodVertexShader = nullptr;        // Vertex shader for LOD rendering
@@ -100,6 +109,7 @@ struct CellManager
     Shader* flagellocyteShader = nullptr;     // Vertex/fragment shaders for flagellocyte cells
     Shader* tailGenerateShader = nullptr;     // Compute shader for generating tail geometry
     Shader* tailRenderShader = nullptr;       // Vertex/fragment shaders for rendering tails
+    Shader* sphereSkinShader = nullptr;       // Vertex/fragment shaders for sphere skin visualization
     GLuint unifiedOutputBuffers[4]{};         // Output buffers for each LOD level
     GLuint unifiedCountBuffer{};              // Buffer for LOD counts
     GLuint flagellocyteOutputBuffers[4]{};    // Separate output buffers for flagellocyte cells
@@ -674,6 +684,19 @@ struct CellManager
     void renderCellsUnified(glm::vec2 resolution, const Camera& camera, bool wireframe = false);
     void setDistanceCullingParams(float maxDistance, float fadeStart, float fadeEnd);
     int getVisibleCellCount() const { return visibleCellCount; }
+    
+    // Sphere skin visualization
+    void renderSphereSkin(const Camera& camera, glm::vec2 resolution);
+    
+    // Runtime sphere parameter getters/setters
+    glm::vec3 getSphereColor() const { return runtimeSphereColor; }
+    void setSphereColor(const glm::vec3& color) { runtimeSphereColor = color; }
+    
+    float getSphereTransparency() const { return runtimeSphereTransparency; }
+    void setSphereTransparency(float transparency) { runtimeSphereTransparency = transparency; }
+    
+    bool getSphereEnabled() const { return runtimeSphereEnabled; }
+    void setSphereEnabled(bool enabled) { runtimeSphereEnabled = enabled; }
     
     // Getter functions for distance culling parameters
     float getMaxRenderDistance() const { return maxRenderDistance; }

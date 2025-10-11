@@ -81,8 +81,57 @@ void SphereMesh::generateIcosphere(int lod, int subdivisions, float radius) {
 }
 
 void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, float radius) {
-    // Use icosphere for LOD 0
-    generateIcosphere(0, 3, radius); // 3 subdivisions for high quality
+    vertices[0].clear();
+    indices[0].clear();
+    
+    // Generate vertices
+    for (int lat = 0; lat <= latitudeSegments; ++lat) {
+        float theta = 3.14159265358979323846f * float(lat) / float(latitudeSegments);
+        float sinTheta = sin(theta);
+        float cosTheta = cos(theta);
+        
+        for (int lon = 0; lon <= longitudeSegments; ++lon) {
+            float phi = 2.0f * 3.14159265358979323846f * float(lon) / float(longitudeSegments);
+            float sinPhi = sin(phi);
+            float cosPhi = cos(phi);
+            
+            Vertex vertex;
+            
+            // Position
+            vertex.position.x = radius * sinTheta * cosPhi;
+            vertex.position.y = radius * cosTheta;
+            vertex.position.z = radius * sinTheta * sinPhi;
+            
+            // Normal (same as position for unit sphere, normalized for radius)
+            vertex.normal = glm::normalize(vertex.position);
+            
+            // UV coordinates
+            vertex.uv.x = float(lon) / float(longitudeSegments);
+            vertex.uv.y = float(lat) / float(latitudeSegments);
+            
+            vertices[0].push_back(vertex);
+        }
+    }
+    
+    // Generate indices for triangles
+    for (int lat = 0; lat < latitudeSegments; ++lat) {
+        for (int lon = 0; lon < longitudeSegments; ++lon) {
+            int current = lat * (longitudeSegments + 1) + lon;
+            int next = current + longitudeSegments + 1;
+            
+            // First triangle
+            indices[0].push_back(current);
+            indices[0].push_back(next);
+            indices[0].push_back(current + 1);
+            
+            // Second triangle
+            indices[0].push_back(current + 1);
+            indices[0].push_back(next);
+            indices[0].push_back(next + 1);
+        }
+    }
+    
+    indexCount[0] = static_cast<int>(indices[0].size());
 }
 
 void SphereMesh::generateLODSpheres(float radius) {
@@ -329,6 +378,14 @@ void SphereMesh::render(int instanceCount) const {
 
     glBindVertexArray(VAO[0]);
     glDrawElementsInstanced(GL_TRIANGLES, indexCount[0], GL_UNSIGNED_INT, 0, instanceCount);
+    glBindVertexArray(0);
+}
+
+void SphereMesh::renderSingle() const {
+    if (VAO[0] == 0 || indexCount[0] == 0) return;
+
+    glBindVertexArray(VAO[0]);
+    glDrawElements(GL_TRIANGLES, indexCount[0], GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
 
