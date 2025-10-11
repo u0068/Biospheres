@@ -206,6 +206,9 @@ void main() {
         vec3 voxelMin = voxelCenter - vec3(u_gridCellSize * 0.5);
         vec3 voxelMax = voxelCenter + vec3(u_gridCellSize * 0.5);
         
+        // Apply lighter velocity damping to allow full voxel exploration
+        p.velocity *= 0.98;
+        
         // Gentle internal movement but constrained to voxel
         p.position += p.velocity * u_deltaTime;
         
@@ -220,7 +223,7 @@ void main() {
         float timeOffset = u_time + voxelOffset; // Desynchronize time per voxel
         
         uint motionSeed = voxelIndex * 7919u; // Static seed per voxel for consistency
-        float speedMultiplier = 1.5 + random(motionSeed + uint(timeOffset * 10.0)) * 1.5;
+        float speedMultiplier = 0.8 + random(motionSeed + uint(timeOffset * 10.0)) * 0.8;
         
         p.velocity = vec3(
             (random(motionSeed + uint(timeOffset * 13.7)) - 0.5) * speedMultiplier,
@@ -228,15 +231,15 @@ void main() {
             (random(motionSeed + uint(timeOffset * 17.9)) - 0.5) * speedMultiplier
         );
         
-        // Add stronger voxel-specific turbulence to reach edges
-        p.velocity.x += sin(timeOffset * 4.0 + voxelCenter.y * 2.5 + voxelOffset) * 0.8;
-        p.velocity.y += cos(timeOffset * 3.0 + voxelCenter.x * 2.5 + voxelOffset * 1.5) * 0.8;
-        p.velocity.z += sin(timeOffset * 3.5 + voxelCenter.z * 2.5 + voxelOffset * 2.1) * 0.8;
+        // Add voxel-specific turbulence for full volume exploration
+        p.velocity.x += sin(timeOffset * 1.5 + voxelCenter.y * 0.8 + voxelOffset) * 0.4;
+        p.velocity.y += cos(timeOffset * 1.2 + voxelCenter.x * 0.8 + voxelOffset * 1.5) * 0.4;
+        p.velocity.z += sin(timeOffset * 1.3 + voxelCenter.z * 0.8 + voxelOffset * 2.1) * 0.4;
         
-        // Add additional chaotic component for volume exploration
-        p.velocity.x += sin(timeOffset * 7.3 + voxelCenter.z * 1.7) * 0.3;
-        p.velocity.y += cos(timeOffset * 5.7 + voxelCenter.x * 1.7) * 0.3;
-        p.velocity.z += sin(timeOffset * 6.1 + voxelCenter.y * 1.7) * 0.3;
+        // Add secondary motion for reaching voxel corners
+        p.velocity.x += sin(timeOffset * 2.3 + voxelCenter.z * 0.5) * 0.2;
+        p.velocity.y += cos(timeOffset * 1.9 + voxelCenter.x * 0.5) * 0.2;
+        p.velocity.z += sin(timeOffset * 2.1 + voxelCenter.y * 0.5) * 0.2;
         
         if (p.lifetime <= 0.0) {
             p.lifetime = 0.0;
