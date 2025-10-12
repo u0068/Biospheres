@@ -77,29 +77,7 @@ struct AdhesionConnection {
     uint _padding[2];     // Padding to ensure 16-byte alignment (96 bytes total)
 };
 
-// Adhesion diagnostic entry structure - matches C++ AdhesionDiagnosticEntry
-struct AdhesionDiagnosticEntry {
-    uint connectionIndex;
-    uint cellA;
-    uint cellB;
-    uint modeIndex;
-    uint reasonCode; // See reason code definitions in C++ code
-    vec3 anchorDirA;
-    float _pad0; // padding to 16 bytes alignment
-    vec3 anchorDirB;
-    float _pad1; // padding to 16 bytes alignment
-    uint frameIndex;
-    uint splitEventID;
-    uint parentCellID;
-    uint inheritanceType; // 0=none, 1=childA_keeps, 2=childB_keeps, 3=both_keep, 4=neither_keep
-    uint originalConnectionIndex; // Index of the original connection being inherited from
-    float adhesionZone; // Dot product with split direction (inheritance decision factor)
-    float _pad2; // padding to 16-byte alignment
-    float _pad3; // padding to 16-byte alignment
-    float _pad4; // padding to 16-byte alignment
-    float _pad5; // additional padding for 16-byte alignment
-    float _pad6; // additional padding for 16-byte alignment
-};
+
 
 // Particle structure - stored per voxel in the spatial grid
 struct Particle {

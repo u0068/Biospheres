@@ -81,62 +81,7 @@ struct AdhesionConnection {
     uint _padding[4];     // Padding to ensure 16-byte alignment (96 bytes total)
 };
 
-// Enhanced diagnostic entry structure - matches C++ EnhancedDiagnosticEntry
-struct EnhancedDiagnosticEntry {
-    // Core event data
-    uint eventType;           // DiagnosticEventType
-    uint frameIndex;          // Frame when event occurred
-    uint cellA;               // Primary cell involved
-    uint cellB;               // Secondary cell (if applicable, -1 otherwise)
 
-    // Event-specific data
-    uint connectionIndex;     // For adhesion events
-    uint modeIndex;           // Mode of primary cell
-    uint splitEventID;        // Groups related split events
-    uint parentCellID;        // For inheritance tracking
-
-    // Spatial data
-    float positionA[3];       // Position of cell A
-    float positionB[3];       // Position of cell B (if applicable)
-    float anchorDirA[3];      // Anchor direction for cell A
-    float anchorDirB[3];      // Anchor direction for cell B
-
-    // Physics data
-    float velocityA[3];       // Velocity of cell A
-    float velocityB[3];       // Velocity of cell B (if applicable)
-    float massA;              // Mass of cell A
-    float massB;              // Mass of cell B (if applicable)
-
-    // Cell state data
-    float ageA;               // Age of cell A
-    float ageB;               // Age of cell B (if applicable)
-    float toxinsA;            // Toxin level of cell A
-    float toxinsB;            // Toxin level of cell B (if applicable)
-    float nitratesA;          // Nitrate level of cell A
-    float nitratesB;          // Nitrate level of cell B (if applicable)
-
-    // Signaling substances
-    float signallingA[4];     // Signalling substances of cell A
-    float signallingB[4];     // Signalling substances of cell B
-
-    // Lineage data for cell A
-    uint lineageA_parentId;   // Parent unique ID for cell A
-    uint lineageA_uniqueId;   // Unique ID for cell A
-    uint lineageA_childNum;   // Child number for cell A
-
-    // Lineage data for cell B
-    uint lineageB_parentId;   // Parent unique ID for cell B
-    uint lineageB_uniqueId;   // Unique ID for cell B
-    uint lineageB_childNum;   // Child number for cell B
-
-    // Additional event data
-    float eventValue1;        // Generic event-specific value 1
-    float eventValue2;        // Generic event-specific value 2
-    uint eventFlags;          // Bit flags for event properties
-
-    // Padding to ensure 16-byte alignment (added 6 uint32_t fields = 24 bytes)
-    float _padding[1];
-};
 
 layout(std430, binding = 0) restrict buffer ReadCellBuffer {
     ComputeCell inputCells[];
@@ -169,13 +114,7 @@ layout(std430, binding = 6) coherent buffer freeAdhesionSlotBuffer {
     uint freeAdhesionSlotIndices[];
 };
 
-layout(std430, binding = 7) coherent buffer EnhancedDiagnosticBuffer {
-    EnhancedDiagnosticEntry diagnosticEntries[];
-};
 
-layout(std430, binding = 8) coherent buffer DiagnosticCountBuffer {
-    uint diagnosticCount;
-};
 
 layout(std430, binding = 9) coherent buffer UniqueIdBuffer {
     uint nextUniqueId;
@@ -184,8 +123,7 @@ layout(std430, binding = 9) coherent buffer UniqueIdBuffer {
 uniform float u_deltaTime;
 uniform int u_maxCells;
 uniform int u_maxAdhesions;
-uniform int u_enableAdhesionDiagnostics;
-uniform int u_currentFrame;
+
 
 vec4 quatMultiply(vec4 q1, vec4 q2) {
     return vec4(
@@ -340,157 +278,6 @@ uint getLineageIdFromIndex(uint cellIndex) {
     return (cell.parentLineageId << 16) | (cell.uniqueId << 8) | cell.childNumber;
 }
 
-// Function to log enhanced diagnostic entries
-void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineageId, uint connectionIndex,
-                          uint modeIndex, uint splitEventID, uint parentCellLineageId,
-                          vec3 anchorDirA, vec3 anchorDirB, float eventValue1, float eventValue2, uint eventFlags) {
-    if (u_enableAdhesionDiagnostics == 0) return;
-
-    // Atomically increment the counter and get the index
-    uint index = atomicAdd(diagnosticCount, 1u);
-
-    // Check if we have space in the buffer
-    if (index >= diagnosticEntries.length()) return;
-
-    // Create the enhanced diagnostic entry
-    EnhancedDiagnosticEntry entry;
-
-    // Core event data (store lineage IDs instead of indexes)
-    entry.eventType = eventType;
-    entry.frameIndex = uint(u_currentFrame);
-    entry.cellA = cellALineageId;
-    entry.cellB = cellBLineageId;
-
-    // Event-specific data
-    entry.connectionIndex = connectionIndex;
-    entry.modeIndex = modeIndex;
-    entry.splitEventID = splitEventID;
-    entry.parentCellID = parentCellLineageId;
-
-    // Get cell data for comprehensive logging (use lineage IDs to find cells)
-    ComputeCell cellDataA;
-    ComputeCell cellDataB;
-    bool foundA = false, foundB = false;
-
-    // Find cells by lineage ID (this is a simple linear search for diagnostic purposes)
-    for (uint i = 0; i < totalCellCount && (!foundA || !foundB); ++i) {
-        ComputeCell candidate = inputCells[i];
-        uint candidateLineage = (candidate.parentLineageId << 16) | (candidate.uniqueId << 8) | candidate.childNumber;
-
-        if (!foundA && candidateLineage == cellALineageId) {
-            cellDataA = candidate;
-            foundA = true;
-        }
-        if (!foundB && candidateLineage == cellBLineageId) {
-            cellDataB = candidate;
-            foundB = true;
-        }
-    }
-
-    // Store lineage data for cell A (if found)
-    if (foundA) {
-        entry.lineageA_parentId = cellDataA.parentLineageId;
-        entry.lineageA_uniqueId = cellDataA.uniqueId;
-        entry.lineageA_childNum = cellDataA.childNumber;
-
-        entry.positionA[0] = cellDataA.positionAndMass.x;
-        entry.positionA[1] = cellDataA.positionAndMass.y;
-        entry.positionA[2] = cellDataA.positionAndMass.z;
-        entry.velocityA[0] = cellDataA.velocity.x;
-        entry.velocityA[1] = cellDataA.velocity.y;
-        entry.velocityA[2] = cellDataA.velocity.z;
-        entry.massA = cellDataA.positionAndMass.w;
-        entry.ageA = cellDataA.age;
-        entry.toxinsA = cellDataA.toxins;
-        entry.nitratesA = cellDataA.nitrates;
-        entry.signallingA[0] = cellDataA.signallingSubstances.x;
-        entry.signallingA[1] = cellDataA.signallingSubstances.y;
-        entry.signallingA[2] = cellDataA.signallingSubstances.z;
-        entry.signallingA[3] = cellDataA.signallingSubstances.w;
-    } else {
-        // Initialize cell A lineage data to invalid values
-        entry.lineageA_parentId = 0xFFFFFFFF;
-        entry.lineageA_uniqueId = 0xFFFFFFFF;
-        entry.lineageA_childNum = 0xFFFFFFFF;
-        entry.positionA[0] = 0.0; entry.positionA[1] = 0.0; entry.positionA[2] = 0.0;
-        entry.velocityA[0] = 0.0; entry.velocityA[1] = 0.0; entry.velocityA[2] = 0.0;
-        entry.massA = 0.0; entry.ageA = 0.0; entry.toxinsA = 0.0; entry.nitratesA = 0.0;
-        entry.signallingA[0] = 0.0; entry.signallingA[1] = 0.0; entry.signallingA[2] = 0.0; entry.signallingA[3] = 0.0;
-    }
-
-    // Get second cell data if applicable
-    if (cellBLineageId != 0xFFFFFFFF && foundB) {
-        // Store lineage data for cell B
-        entry.lineageB_parentId = cellDataB.parentLineageId;
-        entry.lineageB_uniqueId = cellDataB.uniqueId;
-        entry.lineageB_childNum = cellDataB.childNumber;
-
-        entry.positionB[0] = cellDataB.positionAndMass.x;
-        entry.positionB[1] = cellDataB.positionAndMass.y;
-        entry.positionB[2] = cellDataB.positionAndMass.z;
-        entry.velocityB[0] = cellDataB.velocity.x;
-        entry.velocityB[1] = cellDataB.velocity.y;
-        entry.velocityB[2] = cellDataB.velocity.z;
-        entry.massB = cellDataB.positionAndMass.w;
-        entry.ageB = cellDataB.age;
-        entry.toxinsB = cellDataB.toxins;
-        entry.nitratesB = cellDataB.nitrates;
-        entry.signallingB[0] = cellDataB.signallingSubstances.x;
-        entry.signallingB[1] = cellDataB.signallingSubstances.y;
-        entry.signallingB[2] = cellDataB.signallingSubstances.z;
-        entry.signallingB[3] = cellDataB.signallingSubstances.w;
-    } else {
-        // Initialize cell B lineage data to invalid values
-        entry.lineageB_parentId = 0xFFFFFFFF;
-        entry.lineageB_uniqueId = 0xFFFFFFFF;
-        entry.lineageB_childNum = 0xFFFFFFFF;
-
-        // Clear second cell data if not applicable
-        entry.positionB[0] = 0.0f; entry.positionB[1] = 0.0f; entry.positionB[2] = 0.0f;
-        entry.velocityB[0] = 0.0f; entry.velocityB[1] = 0.0f; entry.velocityB[2] = 0.0f;
-        entry.massB = 0.0f; entry.ageB = 0.0f; entry.toxinsB = 0.0f; entry.nitratesB = 0.0f;
-        entry.signallingB[0] = 0.0f; entry.signallingB[1] = 0.0f; entry.signallingB[2] = 0.0f; entry.signallingB[3] = 0.0f;
-    }
-
-    // Anchor directions
-    entry.anchorDirA[0] = anchorDirA.x;
-    entry.anchorDirA[1] = anchorDirA.y;
-    entry.anchorDirA[2] = anchorDirA.z;
-    entry.anchorDirB[0] = anchorDirB.x;
-    entry.anchorDirB[1] = anchorDirB.y;
-    entry.anchorDirB[2] = anchorDirB.z;
-
-    // Event values
-    entry.eventValue1 = eventValue1;
-    entry.eventValue2 = eventValue2;
-    entry.eventFlags = eventFlags;
-
-    // Padding (7 floats for 16-byte alignment)
-    for (int i = 0; i < 7; i++) {
-        entry._padding[i] = 0.0f;
-    }
-
-    // Write the entry to the buffer
-    diagnosticEntries[index] = entry;
-}
-
-// Legacy wrapper function for backward compatibility
-void logAdhesionDiagnostic(uint connectionIndex, uint cellALineageId, uint cellBLineageId, uint modeIndex,
-                          uint reasonCode, vec3 anchorDirA, vec3 anchorDirB,
-                          uint frameIndex, uint splitEventID, uint parentCellLineageId,
-                          uint inheritanceType, uint originalConnectionIndex, float adhesionZone) {
-    // Map legacy reason codes to enhanced event types (adhesion events are 0-29)
-    // For inherited connections, use eventFlags to store original connection index
-    uint flags = 0u;
-    if (reasonCode == 0) { // Inherited connection
-        // Store original connection index in the upper 16 bits of eventFlags
-        flags = (originalConnectionIndex << 16) | (inheritanceType & 0xFFFF);
-    }
-    logEnhancedDiagnostic(reasonCode, cellALineageId, cellBLineageId, connectionIndex, modeIndex,
-                         splitEventID, parentCellLineageId, anchorDirA, anchorDirB,
-                         adhesionZone, float(inheritanceType), flags);
-}
-
 uint getNewAdhesionIndex() {
     // Try to reserve a free adhesion slot
     // Snapshot free top value without modifying it first
@@ -541,8 +328,8 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     for (int j = 0; j < 20; ++j) {
         // Atomically try to claim this slot
         int expected = -1;
-        int newValue = -2; // Temporary marker to claim the slot
-        if (atomicCompSwap(outputCells[cellBIndex].adhesionIndices[j], expected, newValue) == expected) {
+        int newValueB = -2; // Temporary marker to claim the slot
+        if (atomicCompSwap(outputCells[cellBIndex].adhesionIndices[j], expected, newValueB) == expected) {
             slotB = j;
             break;
         }
@@ -697,29 +484,12 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
     outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
 
-    // Log diagnostic entry for direct adhesion creation
-    logAdhesionDiagnostic(
-        newAdhesionIndex, getLineageIdFromIndex(cellAIndex), getLineageIdFromIndex(cellBIndex), modeIndex,
-        1, // reasonCode: Direct
-        anchorDirectionA, anchorDirectionB,
-        uint(u_currentFrame), 0u, // frameIndex, splitEventID (0 for direct)
-        0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
-    );
-
     return true;
 }
 
 void removeAdhesion(int adhesionIndex){
-    // Log diagnostic entry for adhesion removal
     if (adhesionIndex >= 0 && adhesionIndex < connections.length()) {
         AdhesionConnection conn = connections[adhesionIndex];
-        logAdhesionDiagnostic(
-            uint(adhesionIndex), getLineageIdFromIndex(conn.cellAIndex), getLineageIdFromIndex(conn.cellBIndex), conn.modeIndex,
-            2, // reasonCode: Broken
-            conn.anchorDirectionA, conn.anchorDirectionB,
-            uint(u_currentFrame), 0u, // frameIndex, splitEventID (0 for general removal)
-            0u, 0u, 0u, 0.0 // parentCellID, inheritanceType, originalConnectionIndex, adhesionZone
-        );
     }
     
     // Mark as inactive
@@ -752,7 +522,7 @@ void removeAdhesion(int adhesionIndex){
 
 float priority(uint seed) {
     // Generate a pseudo-random priority based on the seed
-    return hash11(seed ^ uint(u_currentFrame));
+    return float(seed % 1000) / 1000.0; // Simple pseudo-random value
 }
 
 void main() {
@@ -885,95 +655,6 @@ void main() {
     inputCells[childAIndex] = childA;
     inputCells[childBIndex] = childB;
 
-    // Log cell replacement event - parent cell is replaced by its children
-    logEnhancedDiagnostic(
-        34u, // CELL_REPLACED
-        getLineageIdFromIndex(childAIndex), // Child A lineage ID (replaces parent)
-        getLineageIdFromIndex(childBIndex), // Child B lineage ID (replaces parent)
-        0xFFFFFFFF, // No connection index
-        cell.modeIndex, // Parent's original mode
-        1u, // Split event ID
-        getLineageIdFromIndex(index), // Original parent lineage ID
-        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
-        cell.age, float(mode.splitInterval), // Event values: parent's age, split interval
-        0u // eventFlags
-    );
-    
-    // Log diagnostic events for cell lifecycle
-    // Cell split start event for parent (log that parent will split into two children)
-    logEnhancedDiagnostic(
-        32u, // CELL_SPLIT_START
-        getLineageIdFromIndex(index), // Original parent lineage ID (before split)
-        getLineageIdFromIndex(childAIndex), // Child A lineage ID (continuation of parent)
-        0xFFFFFFFF, // No connection index
-        cell.modeIndex, // Parent's mode
-        1u, // Split event ID
-        getLineageIdFromIndex(index), // Original parent lineage ID
-        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
-        cell.age, float(mode.splitInterval), // Event values: actual age, split interval
-        0u // eventFlags
-    );
-
-    // Also log split start for child B
-    logEnhancedDiagnostic(
-        32u, // CELL_SPLIT_START
-        getLineageIdFromIndex(childAIndex), // Child A lineage ID
-        getLineageIdFromIndex(childBIndex), // Child B lineage ID
-        0xFFFFFFFF, // No connection index
-        childA.modeIndex, // Child A's mode
-        1u, // Split event ID
-        getLineageIdFromIndex(index), // Original parent lineage ID
-        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
-        startAge, float(mode.splitInterval), // Event values: starting age, split interval
-        0u // eventFlags
-    );
-    
-    // Debug output for lineage tracking (this will be visible in console)
-    // Note: This is a simple way to verify lineage assignment works
-    // In a real implementation, you might want to use a more sophisticated logging system
-    
-    // Cell birth event for child A (continuation of parent)
-    logEnhancedDiagnostic(
-        30u, // CELL_BIRTH
-        getLineageIdFromIndex(childAIndex), // Child A lineage ID
-        0xFFFFFFFF, // No second cell
-        0xFFFFFFFF, // No connection index
-        childA.modeIndex, // Child A's mode
-        1u, // Split event ID
-        getLineageIdFromIndex(index), // Original parent lineage ID
-        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
-        startAge, float(mode.splitInterval), // Event values: starting age, split interval
-        0u // eventFlags
-    );
-
-    // Cell birth event for new child B
-    logEnhancedDiagnostic(
-        30u, // CELL_BIRTH
-        getLineageIdFromIndex(childBIndex), // New child lineage ID
-        0xFFFFFFFF, // No second cell
-        0xFFFFFFFF, // No connection index
-        childB.modeIndex, // Child's mode
-        1u, // Split event ID
-        getLineageIdFromIndex(index), // Original parent lineage ID
-        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
-        startAge, float(mode.splitInterval), // Event values: starting age, split interval
-        0u // eventFlags
-    );
-    
-    // Cell split complete event (log that parent split into two children)
-    logEnhancedDiagnostic(
-        33u, // CELL_SPLIT_COMPLETE
-        getLineageIdFromIndex(childAIndex), // Child A lineage ID (split completed)
-        getLineageIdFromIndex(childBIndex), // Child B lineage ID (split completed)
-        0xFFFFFFFF, // No connection index
-        childA.modeIndex, // Child A's mode
-        1u, // Split event ID
-        getLineageIdFromIndex(index), // Original parent lineage ID
-        vec3(0.0), vec3(0.0), // No anchor directions for lifecycle events
-        startAge, float(mode.splitInterval), // Event values: starting age, split interval
-        0u // eventFlags
-    );
-
     // Inherit adhesions for the new child cells
     for (int i = 0; i < 20; ++i) {
         int oldAdhesionIndex = cell.adhesionIndices[i];
@@ -1098,19 +779,10 @@ void main() {
             // If connection creation failed for Child A, skip logging but continue to allow Child B to inherit
             // Failure can occur if: no free adhesion indices, Child A has no free slots, or neighbor has no free slots
             if (newConnectionIndex >= 0) {
-                // Log diagnostic entry for inherited connection (Child A)
             // Use the actual cellA/cellB assignment from the connection structure
             uint actualCellA = neighborWasCellA ? neighborIndex : childAIndex;
             uint actualCellB = neighborWasCellA ? childAIndex : neighborIndex;
-            logAdhesionDiagnostic(
-                uint(newConnectionIndex), getLineageIdFromIndex(actualCellA), getLineageIdFromIndex(actualCellB), oldConnection.modeIndex,
-                0, // reasonCode: Inherited
-                neighborWasCellA ? neighborAnchorDirection : childAnchorDirection,
-                neighborWasCellA ? childAnchorDirection : neighborAnchorDirection,
-                uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
-                getLineageIdFromIndex(index), 1u, uint(oldAdhesionIndex), float(parentZone) // original parentCellID, inheritanceType (1=childA_keeps), originalConnectionIndex, adhesionZone
-            );
-            }
+        }
         }
         
         // Memory barrier to ensure Child A's connection writes are visible before Child B tries to allocate slots
@@ -1177,19 +849,10 @@ void main() {
             
             // If connection creation failed, skip logging but continue processing
             if (newConnectionIndex >= 0) {
-                // Log diagnostic entry for inherited connection (Child B)
             // Use the actual cellA/cellB assignment from the connection structure
             uint actualCellA_B = neighborWasCellA ? neighborIndex : childBIndex;
             uint actualCellB_B = neighborWasCellA ? childBIndex : neighborIndex;
-            logAdhesionDiagnostic(
-                uint(newConnectionIndex), getLineageIdFromIndex(actualCellA_B), getLineageIdFromIndex(actualCellB_B), oldConnection.modeIndex,
-                0, // reasonCode: Inherited
-                neighborWasCellA ? neighborAnchorDirection : childAnchorDirection,
-                neighborWasCellA ? childAnchorDirection : neighborAnchorDirection,
-                uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
-                getLineageIdFromIndex(index), 2u, uint(oldAdhesionIndex), float(parentZone) // original parentCellID, inheritanceType (2=childB_keeps), originalConnectionIndex, adhesionZone
-            );
-            }
+        }
         }
     }
 
@@ -1247,14 +910,5 @@ void main() {
     if (slotA != -1 && slotB != -1) {
         outputCells[childAIndex].adhesionIndices[slotA] = int(childToChildConnectionIndex);
         outputCells[childBIndex].adhesionIndices[slotB] = int(childToChildConnectionIndex);
-
-        // Log diagnostic entry for child-to-child adhesion
-        logAdhesionDiagnostic(
-            childToChildConnectionIndex, getLineageIdFromIndex(childAIndex), getLineageIdFromIndex(childBIndex), cell.modeIndex,
-            3, // reasonCode: ChildToChild
-            anchorDirectionA, anchorDirectionB,
-            uint(u_currentFrame), 1u, // frameIndex, splitEventID (1 for split event)
-            getLineageIdFromIndex(index), 3u, 0u, float(childZoneA) // original parentCellID, inheritanceType (3=child_to_child), originalConnectionIndex=0, adhesionZone (actual zone)
-        );
     }
 }
