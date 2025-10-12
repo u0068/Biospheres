@@ -1443,7 +1443,7 @@ void CellManager::spawnCells(int count)
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
         
         // Initialize padding to zero for new cells
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 5; i++) {
             newCell._padding[i] = 0.0f;
         }
         
@@ -1615,7 +1615,8 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
             entry.velocityA[2] = cell.velocity.z;
             entry.massA = cell.positionAndMass.w;
             entry.ageA = cell.age;
-            for (int i = 0; i < 13; i++) {
+            entry.nutrientsA = cell.nutrients;
+            for (int i = 0; i < 11; i++) {
                 entry._padding[i] = 0.0f;  // Initialize padding to zero
             }
             
@@ -1660,7 +1661,8 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
             entry.velocityB[2] = cell.velocity.z;
             entry.massB = cell.positionAndMass.w;
             entry.ageB = cell.age;
-                                            }
+            entry.nutrientsB = cell.nutrients;
+        }
     }
     else {
         // Initialize cell B lineage data to invalid values

@@ -16,7 +16,8 @@ struct ComputeCell {
     // Internal:
     int modeIndex;              // absolute index of the cell's mode
     float age;                  // also used for split timer
-    float _padding[6];          // Padding to maintain alignment (was toxins, nitrates, signallingSubstances)
+    float nutrients;            // nutrient storage for cell metabolism
+    float _padding[5];          // Padding to maintain alignment (reduced from 6 to add nutrients)
     int adhesionIndices[20];
     
     // Lineage tracking (AA.BB.C format)
@@ -108,6 +109,8 @@ struct EnhancedDiagnosticEntry {
     // Cell state data
     float ageA;               // Age of cell A
     float ageB;               // Age of cell B (if applicable)
+    float nutrientsA;         // Nutrient level of cell A
+    float nutrientsB;         // Nutrient level of cell B (if applicable)
     
     // Lineage data for cell A
     uint lineageA_parentId;   // Parent unique ID for cell A
@@ -124,8 +127,8 @@ struct EnhancedDiagnosticEntry {
     float eventValue2;        // Generic event-specific value 2
     uint eventFlags;          // Bit flags for event properties
 
-    // Padding to ensure 16-byte alignment (was toxins, nitrates, signalling substances = 24 bytes)
-    float _padding[13];
+    // Padding to ensure 16-byte alignment (added nutrientsA+B = 8 bytes, reduced from 13)
+    float _padding[11];
 };
 
 layout(std430, binding = 0) restrict buffer ReadCellBuffer {
@@ -391,11 +394,11 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.velocityA[2] = cellDataA.velocity.z;
         entry.massA = cellDataA.positionAndMass.w;
         entry.ageA = cellDataA.age;
+        entry.nutrientsA = cellDataA.nutrients;
         entry._padding[0] = 0.0; entry._padding[1] = 0.0; entry._padding[2] = 0.0;
         entry._padding[3] = 0.0; entry._padding[4] = 0.0; entry._padding[5] = 0.0;
         entry._padding[6] = 0.0; entry._padding[7] = 0.0; entry._padding[8] = 0.0;
-        entry._padding[9] = 0.0; entry._padding[10] = 0.0; entry._padding[11] = 0.0;
-        entry._padding[12] = 0.0;
+        entry._padding[9] = 0.0; entry._padding[10] = 0.0;
     } else {
         // Initialize cell A lineage data to invalid values
         entry.lineageA_parentId = 0xFFFFFFFF;
@@ -421,11 +424,11 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.velocityB[2] = cellDataB.velocity.z;
         entry.massB = cellDataB.positionAndMass.w;
         entry.ageB = cellDataB.age;
+        entry.nutrientsB = cellDataB.nutrients;
         entry._padding[0] = 0.0; entry._padding[1] = 0.0; entry._padding[2] = 0.0;
         entry._padding[3] = 0.0; entry._padding[4] = 0.0; entry._padding[5] = 0.0;
         entry._padding[6] = 0.0; entry._padding[7] = 0.0; entry._padding[8] = 0.0;
-        entry._padding[9] = 0.0; entry._padding[10] = 0.0; entry._padding[11] = 0.0;
-        entry._padding[12] = 0.0;
+        entry._padding[9] = 0.0; entry._padding[10] = 0.0;
     } else {
         // Initialize cell B lineage data to invalid values
         entry.lineageB_parentId = 0xFFFFFFFF;
@@ -846,7 +849,7 @@ void main() {
     childA.modeIndex = mode.childModes.x;
     childA.orientation = q_childA;
     // Initialize padding to zero for new cell
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 5; ++i) {
         childA._padding[i] = 0.0;
     }
     // Lineage tracking: Child A inherits parent's unique ID and becomes child 1
@@ -863,7 +866,7 @@ void main() {
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
     // Initialize padding to zero for new cell
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 5; ++i) {
         childB._padding[i] = 0.0;
     }
     // Lineage tracking: Child B gets new unique ID and becomes child 2

@@ -365,8 +365,8 @@ struct CellManager
         // Cell state data
         float ageA;                   // Age of cell A
         float ageB;                   // Age of cell B (if applicable)
-        
-        // Lineage data for cell A
+        float nutrientsA;             // Nutrient level of cell A
+        float nutrientsB;             // Nutrient level of cell B (if applicable)
         uint32_t lineageA_parentId;   // Parent unique ID for cell A
         uint32_t lineageA_uniqueId;   // Unique ID for cell A
         uint32_t lineageA_childNum;   // Child number for cell A
@@ -381,8 +381,8 @@ struct CellManager
         float eventValue2;            // Generic event-specific value 2
         uint32_t eventFlags;          // Bit flags for event properties
 
-        // Padding to ensure 16-byte alignment (was toxins, nitrates, signalling substances = 24 bytes)
-        float _padding[13];
+        // Padding to ensure 16-byte alignment (added nutrientsA+B = 8 bytes, reduced from 13)
+        float _padding[11];
     };
 #pragma pack(pop)
     static_assert(sizeof(EnhancedDiagnosticEntry) % 16 == 0, "EnhancedDiagnosticEntry must be 16-byte aligned");

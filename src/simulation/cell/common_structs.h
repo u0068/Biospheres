@@ -23,7 +23,8 @@ struct ComputeCell {
     // Internal:
     int modeIndex{ 0 };
     float age{ 0 };                     // also used for split timer
-    float _padding[6];                  // Padding to maintain alignment (was toxins, nitrates, signallingSubstances)
+    float nutrients{ 0.0f };            // nutrient storage for cell metabolism
+    float _padding[5];                  // Padding to maintain alignment (reduced from 6 to add nutrients)
     int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1 };
 
     // Lineage tracking (AA.BB.C format)
