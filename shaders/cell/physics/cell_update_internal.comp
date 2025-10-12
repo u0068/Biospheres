@@ -14,11 +14,9 @@ struct ComputeCell {
     vec4 angularAcceleration;       // Pseudo-vector for easy math
     vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
     // Internal:
-    vec4 signallingSubstances;  // 4 substances for now
     int modeIndex;              // absolute index of the cell's mode
     float age;                  // also used for split timer
-    float toxins;
-    float nitrates;
+    float _padding[6];          // Padding to maintain alignment (was toxins, nitrates, signallingSubstances)
     int adhesionIndices[20];
     
     // Lineage tracking (AA.BB.C format)
@@ -110,15 +108,7 @@ struct EnhancedDiagnosticEntry {
     // Cell state data
     float ageA;               // Age of cell A
     float ageB;               // Age of cell B (if applicable)
-    float toxinsA;            // Toxin level of cell A
-    float toxinsB;            // Toxin level of cell B (if applicable)
-    float nitratesA;          // Nitrate level of cell A
-    float nitratesB;          // Nitrate level of cell B (if applicable)
-
-    // Signaling substances
-    float signallingA[4];     // Signalling substances of cell A
-    float signallingB[4];     // Signalling substances of cell B
-
+    
     // Lineage data for cell A
     uint lineageA_parentId;   // Parent unique ID for cell A
     uint lineageA_uniqueId;   // Unique ID for cell A
@@ -134,8 +124,8 @@ struct EnhancedDiagnosticEntry {
     float eventValue2;        // Generic event-specific value 2
     uint eventFlags;          // Bit flags for event properties
 
-    // Padding to ensure 16-byte alignment (added 6 uint32_t fields = 24 bytes)
-    float _padding[1];
+    // Padding to ensure 16-byte alignment (was toxins, nitrates, signalling substances = 24 bytes)
+    float _padding[13];
 };
 
 layout(std430, binding = 0) restrict buffer ReadCellBuffer {
@@ -401,12 +391,8 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.velocityA[2] = cellDataA.velocity.z;
         entry.massA = cellDataA.positionAndMass.w;
         entry.ageA = cellDataA.age;
-        entry.toxinsA = cellDataA.toxins;
-        entry.nitratesA = cellDataA.nitrates;
-        entry.signallingA[0] = cellDataA.signallingSubstances.x;
-        entry.signallingA[1] = cellDataA.signallingSubstances.y;
-        entry.signallingA[2] = cellDataA.signallingSubstances.z;
-        entry.signallingA[3] = cellDataA.signallingSubstances.w;
+        entry._padding[0] = 0.0; entry._padding[1] = 0.0; entry._padding[2] = 0.0;
+        entry._padding[3] = 0.0; entry._padding[4] = 0.0; entry._padding[5] = 0.0;
     } else {
         // Initialize cell A lineage data to invalid values
         entry.lineageA_parentId = 0xFFFFFFFF;
@@ -414,8 +400,7 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.lineageA_childNum = 0xFFFFFFFF;
         entry.positionA[0] = 0.0; entry.positionA[1] = 0.0; entry.positionA[2] = 0.0;
         entry.velocityA[0] = 0.0; entry.velocityA[1] = 0.0; entry.velocityA[2] = 0.0;
-        entry.massA = 0.0; entry.ageA = 0.0; entry.toxinsA = 0.0; entry.nitratesA = 0.0;
-        entry.signallingA[0] = 0.0; entry.signallingA[1] = 0.0; entry.signallingA[2] = 0.0; entry.signallingA[3] = 0.0;
+        entry.massA = 0.0; entry.ageA = 0.0;
     }
 
     // Get second cell data if applicable
@@ -433,12 +418,8 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.velocityB[2] = cellDataB.velocity.z;
         entry.massB = cellDataB.positionAndMass.w;
         entry.ageB = cellDataB.age;
-        entry.toxinsB = cellDataB.toxins;
-        entry.nitratesB = cellDataB.nitrates;
-        entry.signallingB[0] = cellDataB.signallingSubstances.x;
-        entry.signallingB[1] = cellDataB.signallingSubstances.y;
-        entry.signallingB[2] = cellDataB.signallingSubstances.z;
-        entry.signallingB[3] = cellDataB.signallingSubstances.w;
+        entry._padding[0] = 0.0; entry._padding[1] = 0.0; entry._padding[2] = 0.0;
+        entry._padding[3] = 0.0; entry._padding[4] = 0.0; entry._padding[5] = 0.0;
     } else {
         // Initialize cell B lineage data to invalid values
         entry.lineageB_parentId = 0xFFFFFFFF;
@@ -448,8 +429,7 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         // Clear second cell data if not applicable
         entry.positionB[0] = 0.0f; entry.positionB[1] = 0.0f; entry.positionB[2] = 0.0f;
         entry.velocityB[0] = 0.0f; entry.velocityB[1] = 0.0f; entry.velocityB[2] = 0.0f;
-        entry.massB = 0.0f; entry.ageB = 0.0f; entry.toxinsB = 0.0f; entry.nitratesB = 0.0f;
-        entry.signallingB[0] = 0.0f; entry.signallingB[1] = 0.0f; entry.signallingB[2] = 0.0f; entry.signallingB[3] = 0.0f;
+        entry.massB = 0.0f; entry.ageB = 0.0f;
     }
 
     // Anchor directions

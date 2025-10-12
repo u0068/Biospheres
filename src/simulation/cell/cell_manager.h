@@ -297,9 +297,8 @@ struct CellManager
         ADHESION_MANUAL_REMOVE = 15,   // Connection manually removed by user
         ADHESION_COLLISION_BREAK = 16, // Connection broken due to collision
         ADHESION_AGE_BREAK = 17,       // Connection broken due to cell age
-        ADHESION_TOXIN_BREAK = 18,     // Connection broken due to high toxins
-        ADHESION_SIGNALING_BREAK = 19, // Connection broken due to signaling
-        ADHESION_UNKNOWN_ERROR = 20,   // Connection failed for unknown reason
+        ADHESION_SIGNALING_BREAK = 18, // Connection broken due to signaling
+        ADHESION_UNKNOWN_ERROR = 19,   // Connection failed for unknown reason
         
         // Cell Lifecycle Events (30-59)
         CELL_BIRTH = 30,               // New cell created
@@ -366,14 +365,6 @@ struct CellManager
         // Cell state data
         float ageA;                   // Age of cell A
         float ageB;                   // Age of cell B (if applicable)
-        float toxinsA;                // Toxin level of cell A
-        float toxinsB;                // Toxin level of cell B (if applicable)
-        float nitratesA;              // Nitrate level of cell A
-        float nitratesB;              // Nitrate level of cell B (if applicable)
-        
-        // Signaling substances
-        float signallingA[4];         // Signalling substances of cell A
-        float signallingB[4];         // Signalling substances of cell B
         
         // Lineage data for cell A
         uint32_t lineageA_parentId;   // Parent unique ID for cell A
@@ -390,8 +381,8 @@ struct CellManager
         float eventValue2;            // Generic event-specific value 2
         uint32_t eventFlags;          // Bit flags for event properties
 
-        // Padding to ensure 16-byte alignment (added 6 uint32_t fields = 24 bytes)
-        float _padding[1];
+        // Padding to ensure 16-byte alignment (was toxins, nitrates, signalling substances = 24 bytes)
+        float _padding[13];
     };
 #pragma pack(pop)
     static_assert(sizeof(EnhancedDiagnosticEntry) % 16 == 0, "EnhancedDiagnosticEntry must be 16-byte aligned");
@@ -409,7 +400,6 @@ struct CellManager
         // Performance thresholds
         float velocityThreshold = 50.0f;
         float accelerationThreshold = 100.0f;
-        float toxinThreshold = 0.8f;
         
         // Buffer management
         uint32_t maxEntries = 100000;

@@ -121,9 +121,6 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
             
             ImGui::DragFloat("Acceleration Threshold", &cellManager.diagnosticState.accelerationThreshold, 5.0f, 50.0f, 500.0f, "%.1f");
             addTooltip("Acceleration threshold for high acceleration events");
-            
-            ImGui::DragFloat("Toxin Threshold", &cellManager.diagnosticState.toxinThreshold, 0.01f, 0.1f, 1.0f, "%.2f");
-            addTooltip("Toxin level threshold for instability events");
         }
         
         // Buffer status

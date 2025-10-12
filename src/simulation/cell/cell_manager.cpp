@@ -1610,12 +1610,10 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
             entry.velocityA[2] = cell.velocity.z;
             entry.massA = cell.positionAndMass.w;
             entry.ageA = cell.age;
-            entry.toxinsA = cell.toxins;
-            entry.nitratesA = cell.nitrates;
-            for (int i = 0; i < 4; i++) {
-                entry.signallingA[i] = cell.signallingSubstances[i];
+            for (int i = 0; i < 6; i++) {
+                entry._padding[i] = 0.0f;  // Initialize padding to zero
             }
-
+            
             // Update genome tracking if enabled
             if (diagnosticState.genomeTrackingEnabled && cell.modeIndex < getGenomeData().modes.size()) {
                 updateGenomeTracking(cellA, getGenomeData().modes[cell.modeIndex]);
@@ -1657,12 +1655,7 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
             entry.velocityB[2] = cell.velocity.z;
             entry.massB = cell.positionAndMass.w;
             entry.ageB = cell.age;
-            entry.toxinsB = cell.toxins;
-            entry.nitratesB = cell.nitrates;
-            for (int i = 0; i < 4; i++) {
-                entry.signallingB[i] = cell.signallingSubstances[i];
-            }
-        }
+                                            }
     }
     else {
         // Initialize cell B lineage data to invalid values
@@ -1920,9 +1913,8 @@ void CellManager::writeEnhancedDiagnosticLog()
             case 15: return "ADHESION_MANUAL_REMOVE";
             case 16: return "ADHESION_COLLISION_BREAK";
             case 17: return "ADHESION_AGE_BREAK";
-            case 18: return "ADHESION_TOXIN_BREAK";
-            case 19: return "ADHESION_SIGNALING_BREAK";
-            case 20: return "ADHESION_UNKNOWN_ERROR";
+            case 18: return "ADHESION_SIGNALING_BREAK";
+            case 19: return "ADHESION_UNKNOWN_ERROR";
             // Cell lifecycle events
             case 30: return "CELL_BIRTH";
             case 31: return "CELL_DEATH";
@@ -2096,11 +2088,6 @@ void CellManager::checkPerformanceThresholds()
         float acceleration = glm::length(glm::vec3(cell.acceleration.x, cell.acceleration.y, cell.acceleration.z));
         if (acceleration > diagnosticState.accelerationThreshold) {
             logDiagnosticEvent(DiagnosticEventType::PHYSICS_HIGH_ACCELERATION, i, UINT32_MAX, UINT32_MAX, acceleration);
-        }
-        
-        // Check toxin threshold
-        if (cell.toxins > diagnosticState.toxinThreshold) {
-            logDiagnosticEvent(DiagnosticEventType::PHYSICS_HIGH_ACCELERATION, i, UINT32_MAX, UINT32_MAX, cell.toxins);
         }
     }
 }

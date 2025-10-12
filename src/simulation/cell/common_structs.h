@@ -21,11 +21,9 @@ struct ComputeCell {
     glm::vec4 prevAngularAcceleration{};                // yz, zx, xy, padding
 
     // Internal:
-    glm::vec4 signallingSubstances{};   // 4 substances for now
     int modeIndex{ 0 };
     float age{ 0 };                     // also used for split timer
-    float toxins{ 0 };
-    float nitrates{ 1 };
+    float _padding[6];                  // Padding to maintain alignment (was toxins, nitrates, signallingSubstances)
     int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1 };
 
     // Lineage tracking (AA.BB.C format)
