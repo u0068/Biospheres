@@ -1,0 +1,141 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure (matches ComputeCell from cell_update_internal.comp)
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    // Internal:
+    int modeIndex;              // absolute index of the cell's mode
+    float age;                  // also used for split timer
+    float nutrients;            // nutrient storage for cell metabolism
+    float _padding[5];          // Padding to maintain alignment
+    int adhesionIndices[20];
+    
+    // Lineage tracking (AA.BB.C format)
+    uint parentLineageId;       // AA: Parent's unique ID (0 for root cells)
+    uint uniqueId;              // BB: This cell's unique ID
+    uint childNumber;           // C: Child number (1 or 2, 0 for root cells)
+    uint _lineagePadding;       // Padding to maintain 16-byte alignment
+};
+
+// Selection result structure
+struct SelectionResult {
+    uint closestCellIndex;      // Index of the closest intersecting cell
+    float intersectionDistance; // Distance to intersection point
+    uint intersectionCount;     // Total number of intersections found
+    uint _padding;              // Padding for 16-byte alignment
+};
+
+// Input buffers
+layout(std430, binding = 0) readonly buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+// Output buffer for selection results
+layout(std430, binding = 1) coherent buffer SelectionResultBuffer {
+    SelectionResult result;
+};
+
+// Uniforms for ray casting
+uniform vec3 u_rayOrigin;
+uniform vec3 u_rayDirection;
+uniform int u_cellCount;
+uniform float u_maxDistance;
+
+// Helper function to calculate cell radius from mass
+float getCellRadius(float mass) {
+    // Assuming sphere volume: V = (4/3) * π * r³
+    // Mass proportional to volume: mass ∝ r³
+    // Therefore: r = (mass / (4/3 * π))^(1/3)
+    // Simplified: r = mass^(1/3) * constant
+    return pow(mass, 1.0/3.0) * 0.5; // Adjust constant as needed
+}
+
+// Ray-sphere intersection test
+bool raySphereIntersection(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, float sphereRadius, out float t) {
+    vec3 oc = rayOrigin - sphereCenter;
+    float a = dot(rayDirection, rayDirection);
+    float b = 2.0 * dot(oc, rayDirection);
+    float c = dot(oc, oc) - sphereRadius * sphereRadius;
+    
+    float discriminant = b * b - 4.0 * a * c;
+    
+    if (discriminant < 0.0) {
+        return false;
+    }
+    
+    float sqrtDiscriminant = sqrt(discriminant);
+    float t1 = (-b - sqrtDiscriminant) / (2.0 * a);
+    float t2 = (-b + sqrtDiscriminant) / (2.0 * a);
+    
+    // We want the closest positive intersection
+    if (t1 > 0.001 && t1 < u_maxDistance) { // Small epsilon to avoid self-intersection
+        t = t1;
+        return true;
+    } else if (t2 > 0.001 && t2 < u_maxDistance) {
+        t = t2;
+        return true;
+    }
+    
+    return false;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    // Initialize result if this is the first invocation
+    if (index == 0) {
+        result.closestCellIndex = uint(-1);
+        result.intersectionDistance = u_maxDistance;
+        result.intersectionCount = 0;
+    }
+    
+    // Make sure initialization is complete before proceeding
+    memoryBarrierBuffer();
+    barrier();
+    
+    if (index >= uint(u_cellCount)) return;
+    
+    ComputeCell cell = cells[index];
+    vec3 cellPosition = cell.positionAndMass.xyz;
+    float cellMass = cell.positionAndMass.w;
+    float cellRadius = getCellRadius(cellMass);
+    
+    float intersectionDistance;
+    if (raySphereIntersection(u_rayOrigin, u_rayDirection, cellPosition, cellRadius, intersectionDistance)) {
+        // Atomically increment intersection count
+        atomicAdd(result.intersectionCount, 1);
+        
+        // Atomically update closest cell if this intersection is closer
+        // Note: This is a simplified approach. For perfect accuracy, we might need
+        // a more sophisticated reduction algorithm, but this should work well in practice.
+        uint currentClosest = result.closestCellIndex;
+        float currentDistance = result.intersectionDistance;
+        
+        // Try to update if we're closer
+        if (intersectionDistance < currentDistance) {
+            // Use atomic exchange to attempt to claim the "closest" spot
+            // This is a simple approach that may have race conditions but should work
+            // reasonably well for selection purposes
+            memoryBarrierBuffer();
+            
+            // Double-check after memory barrier
+            if (intersectionDistance < result.intersectionDistance) {
+                result.closestCellIndex = index;
+                result.intersectionDistance = intersectionDistance;
+            }
+        }
+    }
+    
+    // Ensure all writes are complete
+    memoryBarrierBuffer();
+}

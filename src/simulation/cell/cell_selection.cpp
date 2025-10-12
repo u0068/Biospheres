@@ -96,48 +96,11 @@ endDrag();
 }
 }
 
-// todo: REWRITE FOR GPU ONLY
+// GPU-based cell selection using compute shader
 int CellManager::selectCellAtPosition(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection)
 {
-float closestDistance = FLT_MAX;
-int closestCellIndex = -1;
-int intersectionCount = 0;
-
-// Debug output for raycasting
-std::cout << "Testing " << totalCellCount << " cells for intersection..." << std::endl;
-
-for (int i = 0; i < totalCellCount; i++)
-{
-glm::vec3 cellPosition = glm::vec3(cpuCells[i].positionAndMass);
-float cellRadius = cpuCells[i].getRadius();
-
-float intersectionDistance;
-    if (raySphereIntersection(rayOrigin, rayDirection, cellPosition, cellRadius, intersectionDistance))
-    {
-        intersectionCount++;
-        std::string lineageStr = getCellLineageString(i);
-        std::cout << "Cell " << i << " (lineage: " << lineageStr << ") at (" << cellPosition.x << ", " << cellPosition.y << ", " << cellPosition.z
-        << ") radius " << cellRadius << " intersected at distance " << intersectionDistance << std::endl;
-
-if (intersectionDistance < closestDistance && intersectionDistance > 0)
-{
-closestDistance = intersectionDistance;
-closestCellIndex = i;
-}
-}
-}
-
-std::cout << "Found " << intersectionCount << " intersections total" << std::endl;
-if (closestCellIndex >= 0)
-{
-std::cout << "Selected closest cell " << closestCellIndex << " at distance " << closestDistance << std::endl;
-}
-else
-{
-std::cout << "No valid cell intersections found" << std::endl;
-}
-
-return closestCellIndex;
+    // Use GPU selection for massive performance improvement
+    return selectCellAtPositionGPU(rayOrigin, rayDirection);
 }
 
 // todo: REWRITE FOR GPU ONLY

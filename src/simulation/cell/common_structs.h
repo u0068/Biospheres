@@ -148,6 +148,17 @@ enum class CellType : uint8_t
     COUNT
 };
 
+// GPU Selection result structure (matches shader SelectionResult)
+struct alignas(16) SelectionResult
+{
+    uint32_t closestCellIndex;      // Index of the closest intersecting cell
+    float intersectionDistance;     // Distance to intersection point
+    uint32_t intersectionCount;     // Total number of intersections found
+    uint32_t _padding;              // Padding for 16-byte alignment
+};
+static_assert(sizeof(SelectionResult) == 16, "SelectionResult must be exactly 16 bytes");
+static_assert(sizeof(SelectionResult) % 16 == 0, "SelectionResult must be 16-byte aligned for GPU usage");
+
 // Helper function to get cell type name
 inline const char* getCellTypeName(CellType type)
 {

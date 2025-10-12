@@ -61,6 +61,9 @@ struct CellManager
     GLuint stagingCellBuffer{};      // CPU-accessible cell data buffer
     void* mappedCellPtr = nullptr;   // Pointer to the cell data staging buffer
 
+    // GPU selection buffer for ray casting
+    GLuint selectionResultBuffer{};  // Buffer for storing selection results
+
     // Genome buffer (immutable, no need for double buffering)
     // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
     GLuint modeBuffer{};
@@ -157,6 +160,7 @@ struct CellManager
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
     Shader* cellAdditionShader = nullptr;
+    Shader* cellSelectionShader = nullptr; // GPU-based cell selection
 
     // Spatial partitioning compute shaders
     Shader* gridClearShader = nullptr;     // Clear grid counts
@@ -535,6 +539,10 @@ struct CellManager
 
     // GPU synchronization for selection (synchronous readback for immediate use)
     void syncCellPositionsFromGPU();
+
+    // GPU-based cell selection
+    int selectCellAtPositionGPU(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection);
+    void initializeSelectionBuffer();
 
     // Utility functions for mouse interaction
     glm::vec3 calculateMouseRay(const glm::vec2 &mousePos, const glm::vec2 &screenSize,

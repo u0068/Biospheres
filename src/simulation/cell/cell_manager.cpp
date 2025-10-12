@@ -43,6 +43,7 @@ CellManager::CellManager()
     internalUpdateShader = new Shader("shaders/cell/physics/cell_update_internal.comp");
     extractShader = new Shader("shaders/cell/management/extract_instances.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
+    cellSelectionShader = new Shader("shaders/cell/selection/cell_selection.comp"); // GPU selection shader
 
     // Initialize spatial grid shaders
     gridClearShader = new Shader("shaders/spatial/grid_clear.comp");
@@ -140,6 +141,11 @@ void CellManager::cleanup()
         glDeleteBuffers(1, &stagingCellBuffer);
         stagingCellBuffer = 0;
     }
+    if (selectionResultBuffer != 0)
+    {
+        glDeleteBuffers(1, &selectionResultBuffer);
+        selectionResultBuffer = 0;
+    }
     if (cellAdditionBuffer != 0)
     {
         glDeleteBuffers(1, &cellAdditionBuffer);
@@ -182,6 +188,12 @@ void CellManager::cleanup()
         positionUpdateShader->destroy();
         delete positionUpdateShader;
         positionUpdateShader = nullptr;
+    }
+    if (cellSelectionShader)
+    {
+        cellSelectionShader->destroy();
+        delete cellSelectionShader;
+        cellSelectionShader = nullptr;
     }
 
     // Cleanup spatial grid shaders
@@ -364,6 +376,9 @@ void CellManager::initializeGPUBuffers()
     );
     mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+
+    // GPU selection result buffer for ray casting
+    initializeSelectionBuffer();
 
     // Create unique ID counter buffer
     glCreateBuffers(1, &uniqueIdBuffer);
@@ -2322,4 +2337,76 @@ void CellManager::saveGlobalFlagellocyteSettings()
     
     file.close();
     std::cout << "Saved global flagellocyte settings to " << filename << "\n";
+}
+
+// ============================================================================
+// GPU CELL SELECTION
+// ============================================================================
+
+void CellManager::initializeSelectionBuffer()
+{
+    // Create selection result buffer
+    glCreateBuffers(1, &selectionResultBuffer);
+    glNamedBufferData(
+        selectionResultBuffer,
+        sizeof(SelectionResult),
+        nullptr,
+        GL_DYNAMIC_READ  // GPU writes, CPU reads
+    );
+    
+    std::cout << "Initialized GPU selection buffer\n";
+}
+
+int CellManager::selectCellAtPositionGPU(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection)
+{
+    if (totalCellCount == 0) {
+        return -1;
+    }
+
+    // Initialize selection result with default values
+    SelectionResult defaultResult;
+    defaultResult.closestCellIndex = uint32_t(-1);
+    defaultResult.intersectionDistance = 1000.0f; // Large max distance
+    defaultResult.intersectionCount = 0;
+    defaultResult._padding = 0;
+    
+    glNamedBufferSubData(selectionResultBuffer, 0, sizeof(SelectionResult), &defaultResult);
+    
+    // Bind buffers for the selection shader
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());  // Cell data
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, selectionResultBuffer); // Selection result
+    
+    // Use the selection shader
+    cellSelectionShader->use();
+    
+    // Set uniforms
+    cellSelectionShader->setVec3("u_rayOrigin", rayOrigin);
+    cellSelectionShader->setVec3("u_rayDirection", rayDirection);
+    cellSelectionShader->setInt("u_cellCount", totalCellCount);
+    cellSelectionShader->setFloat("u_maxDistance", 1000.0f);
+    
+    // Calculate work groups (256 threads per group as defined in shader)
+    int workGroups = (totalCellCount + 255) / 256;
+    
+    // Dispatch compute shader
+    glDispatchCompute(workGroups, 1, 1);
+    
+    // Ensure shader completion before reading results
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
+    // Read back the selection result
+    SelectionResult result;
+    glGetNamedBufferSubData(selectionResultBuffer, 0, sizeof(SelectionResult), &result);
+    
+    // Debug output
+    std::cout << "GPU Selection: tested " << totalCellCount << " cells, found " 
+              << result.intersectionCount << " intersections\n";
+    
+    if (result.closestCellIndex != uint32_t(-1)) {
+        std::cout << "Selected cell " << result.closestCellIndex 
+                  << " at distance " << result.intersectionDistance << "\n";
+        return static_cast<int>(result.closestCellIndex);
+    }
+    
+    return -1; // No cell selected
 }
