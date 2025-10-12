@@ -1442,6 +1442,11 @@ void CellManager::spawnCells(int count)
         newCell.velocity = glm::vec4(velocity, 0.);
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
         
+        // Initialize padding to zero for new cells
+        for (int i = 0; i < 6; i++) {
+            newCell._padding[i] = 0.0f;
+        }
+        
         // Assign lineage ID for root cells
         newCell.parentLineageId = 0;  // Root cells have no parent
         newCell.uniqueId = nextUniqueId++;
@@ -1610,7 +1615,7 @@ void CellManager::logDiagnosticEvent(DiagnosticEventType eventType, uint32_t cel
             entry.velocityA[2] = cell.velocity.z;
             entry.massA = cell.positionAndMass.w;
             entry.ageA = cell.age;
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 13; i++) {
                 entry._padding[i] = 0.0f;  // Initialize padding to zero
             }
             

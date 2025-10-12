@@ -393,6 +393,9 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.ageA = cellDataA.age;
         entry._padding[0] = 0.0; entry._padding[1] = 0.0; entry._padding[2] = 0.0;
         entry._padding[3] = 0.0; entry._padding[4] = 0.0; entry._padding[5] = 0.0;
+        entry._padding[6] = 0.0; entry._padding[7] = 0.0; entry._padding[8] = 0.0;
+        entry._padding[9] = 0.0; entry._padding[10] = 0.0; entry._padding[11] = 0.0;
+        entry._padding[12] = 0.0;
     } else {
         // Initialize cell A lineage data to invalid values
         entry.lineageA_parentId = 0xFFFFFFFF;
@@ -420,6 +423,9 @@ void logEnhancedDiagnostic(uint eventType, uint cellALineageId, uint cellBLineag
         entry.ageB = cellDataB.age;
         entry._padding[0] = 0.0; entry._padding[1] = 0.0; entry._padding[2] = 0.0;
         entry._padding[3] = 0.0; entry._padding[4] = 0.0; entry._padding[5] = 0.0;
+        entry._padding[6] = 0.0; entry._padding[7] = 0.0; entry._padding[8] = 0.0;
+        entry._padding[9] = 0.0; entry._padding[10] = 0.0; entry._padding[11] = 0.0;
+        entry._padding[12] = 0.0;
     } else {
         // Initialize cell B lineage data to invalid values
         entry.lineageB_parentId = 0xFFFFFFFF;
@@ -742,6 +748,9 @@ void main() {
     ComputeCell cell = inputCells[index];
     GPUMode mode = modes[cell.modeIndex];
 
+    // Age the cell by deltaTime
+    cell.age += u_deltaTime;
+
     outputCells[index] = cell; // Default output is the same cell
 
     if (cell.age < mode.splitInterval) return;
@@ -836,6 +845,10 @@ void main() {
     childA.age = startAge;
     childA.modeIndex = mode.childModes.x;
     childA.orientation = q_childA;
+    // Initialize padding to zero for new cell
+    for (int i = 0; i < 6; ++i) {
+        childA._padding[i] = 0.0;
+    }
     // Lineage tracking: Child A inherits parent's unique ID and becomes child 1
     childA.parentLineageId = cell.uniqueId;  // Parent's unique ID becomes child's parent lineage ID
     childA.uniqueId = atomicAdd(nextUniqueId, 1); // Get next unique ID atomically
@@ -849,6 +862,10 @@ void main() {
     childB.age = startAge + 0.001;
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
+    // Initialize padding to zero for new cell
+    for (int i = 0; i < 6; ++i) {
+        childB._padding[i] = 0.0;
+    }
     // Lineage tracking: Child B gets new unique ID and becomes child 2
     childB.parentLineageId = cell.uniqueId;  // Parent's unique ID becomes child's parent lineage ID
     childB.uniqueId = atomicAdd(nextUniqueId, 1); // Get next unique ID atomically
