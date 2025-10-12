@@ -691,59 +691,66 @@ void main() {
         // Determine neighbor's role in the original connection
         bool neighborWasCellA = (oldConnection.cellAIndex == neighborIndex);
         
-        // Get the neighbor's original anchor direction from the bond
-        vec3 neighborOriginalAnchor = neighborWasCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
-
         // Create new adhesion connections for inheriting children
         // Zone C bonds can create connections for both children, polar bonds create connections for specific children
 
+        // Cache neighbor transform data for reuse across inheritance branches
+        ComputeCell neighborCellCurrent = inputCells[neighborIndex];
+        vec4 neighborOrientation = neighborCellCurrent.orientation;
+        vec4 invNeighborOrientation = quatInverse(neighborOrientation);
+        float inheritedRestLength = modes[oldConnection.modeIndex].adhesionSettings.restLength;
+
+        vec3 bondDir_parent = normalize(localAnchorDirection);
+        vec3 splitDir_parent = mode.splitDirection.xyz;
+        float splitLen = length(splitDir_parent);
+        if (splitLen < 0.0001) {
+            splitDir_parent = vec3(0.0, 0.0, 1.0);
+        } else {
+            splitDir_parent /= splitLen;
+        }
+
+        vec3 planeNormal = cross(bondDir_parent, splitDir_parent);
+        if (length(planeNormal) < 0.0001) {
+            planeNormal = cross(bondDir_parent, vec3(0.0, 1.0, 0.0));
+            if (length(planeNormal) < 0.0001) {
+                planeNormal = cross(bondDir_parent, vec3(1.0, 0.0, 0.0));
+            }
+        }
+        planeNormal = normalize(planeNormal);
+
+        vec3 perpBasis_parent = cross(planeNormal, bondDir_parent);
+        if (length(perpBasis_parent) < 0.0001) {
+            perpBasis_parent = cross(bondDir_parent, vec3(1.0, 0.0, 0.0));
+            if (length(perpBasis_parent) < 0.0001) {
+                perpBasis_parent = cross(bondDir_parent, vec3(0.0, 1.0, 0.0));
+            }
+        }
+        perpBasis_parent = normalize(perpBasis_parent);
+
         // Child A inheritance
         if (childAInherits) {
-            // Pure geometric calculation using ONLY genome data
-            // Work in parent's local frame, then transform to each cell's local frame
-            
-            // Split offset in parent's local frame (genome parameter)
             vec3 offsetLocal = mode.splitDirection.xyz * 0.5;
-            
-            // Neighbor is at: localAnchorDirection * restLength (in parent's local frame)
-            // Child A is at: offsetLocal (in parent's local frame)
-            // Direction from child A to neighbor:
-            vec3 neighborRelativeToChildA_parentLocal = localAnchorDirection * mode.adhesionSettings.restLength - offsetLocal;
-            
-            // Transform to child A's local space using genome delta
-            vec4 invDeltaA = quatInverse(mode.orientationA);
-            vec3 childAnchorDirection_raw = normalize(rotateVectorByQuaternion(neighborRelativeToChildA_parentLocal, invDeltaA));
-            
-            // Snap to nearest angle increment for child A (skip for Zone C to preserve intermediate geometry)
-            GPUMode childAMode = modes[mode.childModes.x];
-            vec3 childAnchorDirection = (parentZone == 2u) ? childAnchorDirection_raw : snapAnchorToAngleIncrement(childAnchorDirection_raw, childAMode.orientationA);
-            
-            // Calculate neighbor's anchor direction pointing toward Child A
-            // Direction from neighbor to Child A in parent's local frame:
-            vec3 neighborToChildA_parentLocal = offsetLocal - localAnchorDirection * mode.adhesionSettings.restLength;
-            
-            // Transform to neighbor's local frame using the bond axis relationship
-            // localAnchorDirection (parent→neighbor) and neighborOriginalAnchor (neighbor→parent) define the bond axis
-            vec3 bondAxis_parent = normalize(localAnchorDirection);
-            vec3 bondAxis_neighbor = normalize(-neighborOriginalAnchor);
-            
-            // Component along bond axis (scalar, frame-independent)
-            float alongBond = dot(neighborToChildA_parentLocal, bondAxis_parent);
-            
-            // Component perpendicular to bond axis (in parent's frame)
-            vec3 perpComponent_parent = neighborToChildA_parentLocal - alongBond * bondAxis_parent;
-            
-            // Transform perpendicular component: assume aligned (genome-only approximation)
-            vec3 perpComponent_neighbor = perpComponent_parent;
-            
-            // Reconstruct in neighbor's frame
-            vec3 neighborToChildA_neighborLocal = alongBond * bondAxis_neighbor + perpComponent_neighbor;
-            vec3 neighborAnchorDirection_raw = normalize(neighborToChildA_neighborLocal);
-            
-            // Snap to nearest angle increment for the neighbor (skip for Zone C to preserve intermediate geometry)
-            ComputeCell neighborCell = inputCells[neighborIndex];
-            GPUMode neighborMode = modes[neighborCell.modeIndex];
-            vec3 neighborAnchorDirection = (parentZone == 2u) ? neighborAnchorDirection_raw : snapAnchorToAngleIncrement(neighborAnchorDirection_raw, neighborMode.orientationA);
+            vec3 neighborRelativeToChildA_parentLocal = localAnchorDirection * inheritedRestLength - offsetLocal;
+
+            float radialLength = length(neighborRelativeToChildA_parentLocal);
+            if (radialLength > 0.0001) {
+                float parallelComponent = dot(neighborRelativeToChildA_parentLocal, bondDir_parent);
+                float perpendicularComponent = dot(neighborRelativeToChildA_parentLocal, perpBasis_parent);
+                float originalAngle = atan(perpendicularComponent, parallelComponent);
+                float doubledAngle = originalAngle * 2.0;
+                float newParallel = radialLength * cos(doubledAngle);
+                float newPerpendicular = radialLength * sin(doubledAngle);
+                neighborRelativeToChildA_parentLocal = newParallel * bondDir_parent + newPerpendicular * perpBasis_parent;
+            }
+
+            vec3 neighborRelativeToChildA_world = rotateVectorByQuaternion(neighborRelativeToChildA_parentLocal, cell.orientation);
+
+            vec3 connectionDirWorld = normalize(neighborRelativeToChildA_world);
+
+            ComputeCell childACell = outputCells[childAIndex];
+            vec4 invChildOrientation = quatInverse(childACell.orientation);
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, invChildOrientation));
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-connectionDirWorld, invNeighborOrientation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -770,51 +777,28 @@ void main() {
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
-            // Pure geometric calculation using ONLY genome data
-            // Work in parent's local frame, then transform to each cell's local frame
-            
-            // Split offset in parent's local frame (genome parameter)
             vec3 offsetLocal = mode.splitDirection.xyz * 0.5;
-            
-            // Neighbor is at: localAnchorDirection * restLength (in parent's local frame)
-            // Child B is at: -offsetLocal (in parent's local frame)
-            // Direction from child B to neighbor:
-            vec3 neighborRelativeToChildB_parentLocal = localAnchorDirection * mode.adhesionSettings.restLength + offsetLocal;
-            
-            // Transform to child B's local space using genome delta
-            vec4 invDeltaB = quatInverse(mode.orientationB);
-            vec3 childAnchorDirection_raw = normalize(rotateVectorByQuaternion(neighborRelativeToChildB_parentLocal, invDeltaB));
-            
-            // Snap to nearest angle increment for child B (skip for Zone C to preserve intermediate geometry)
-            GPUMode childBMode = modes[mode.childModes.y];
-            vec3 childAnchorDirection = (parentZone == 2u) ? childAnchorDirection_raw : snapAnchorToAngleIncrement(childAnchorDirection_raw, childBMode.orientationA);
-            
-            // Calculate neighbor's anchor direction pointing toward Child B
-            // Direction from neighbor to Child B in parent's local frame:
-            vec3 neighborToChildB_parentLocal = -offsetLocal - localAnchorDirection * mode.adhesionSettings.restLength;
-            
-            // Transform to neighbor's local frame using the bond axis relationship
-            // localAnchorDirection (parent→neighbor) and neighborOriginalAnchor (neighbor→parent) define the bond axis
-            vec3 bondAxis_parent = normalize(localAnchorDirection);
-            vec3 bondAxis_neighbor = normalize(-neighborOriginalAnchor);
-            
-            // Component along bond axis (scalar, frame-independent)
-            float alongBond = dot(neighborToChildB_parentLocal, bondAxis_parent);
-            
-            // Component perpendicular to bond axis (in parent's frame)
-            vec3 perpComponent_parent = neighborToChildB_parentLocal - alongBond * bondAxis_parent;
-            
-            // Transform perpendicular component: assume aligned (genome-only approximation)
-            vec3 perpComponent_neighbor = perpComponent_parent;
-            
-            // Reconstruct in neighbor's frame
-            vec3 neighborToChildB_neighborLocal = alongBond * bondAxis_neighbor + perpComponent_neighbor;
-            vec3 neighborAnchorDirection_raw = normalize(neighborToChildB_neighborLocal);
-            
-            // Snap to nearest angle increment for the neighbor (skip for Zone C to preserve intermediate geometry)
-            ComputeCell neighborCell = inputCells[neighborIndex];
-            GPUMode neighborMode = modes[neighborCell.modeIndex];
-            vec3 neighborAnchorDirection = (parentZone == 2u) ? neighborAnchorDirection_raw : snapAnchorToAngleIncrement(neighborAnchorDirection_raw, neighborMode.orientationA);
+            vec3 neighborRelativeToChildB_parentLocal = localAnchorDirection * inheritedRestLength + offsetLocal;
+
+            float radialLength = length(neighborRelativeToChildB_parentLocal);
+            if (radialLength > 0.0001) {
+                float parallelComponent = dot(neighborRelativeToChildB_parentLocal, bondDir_parent);
+                float perpendicularComponent = dot(neighborRelativeToChildB_parentLocal, perpBasis_parent);
+                float originalAngle = atan(perpendicularComponent, parallelComponent);
+                float doubledAngle = originalAngle * 2.0;
+                float newParallel = radialLength * cos(doubledAngle);
+                float newPerpendicular = radialLength * sin(doubledAngle);
+                neighborRelativeToChildB_parentLocal = newParallel * bondDir_parent + newPerpendicular * perpBasis_parent;
+            }
+
+            vec3 neighborRelativeToChildB_world = rotateVectorByQuaternion(neighborRelativeToChildB_parentLocal, cell.orientation);
+
+            vec3 connectionDirWorld = normalize(neighborRelativeToChildB_world);
+
+            ComputeCell childBCell = outputCells[childBIndex];
+            vec4 invChildOrientation = quatInverse(childBCell.orientation);
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, invChildOrientation));
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-connectionDirWorld, invNeighborOrientation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
