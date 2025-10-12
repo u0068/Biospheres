@@ -18,10 +18,9 @@ struct ComputeCell {
     float toxins;
     float nitrates;
     int adhesionIndices[20];
-    uint parentLineageId;
-    uint uniqueId;
-    uint childNumber;
-    uint _lineagePadding;
+    
+    // Padding to maintain 16-byte alignment for the entire struct
+    uint _padding[8];
 };
 
 // GPU Mode structure for colors

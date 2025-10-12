@@ -55,13 +55,7 @@ void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& scen
         ImGui::Text("Absolute Mode Index: %i", modeIndex);
         ImGui::Text("Age: %.2f", age);
         
-        // Lineage information
-        std::string lineageStr = cellManager.getCellLineageString(selectedCell.cellIndex);
-        ImGui::Text("Lineage: %s", lineageStr.c_str());
-        ImGui::Text("Parent ID: %u", selectedCell.cellData.parentLineageId);
-        ImGui::Text("Unique ID: %u", selectedCell.cellData.uniqueId);
-        ImGui::Text("Child Number: %u", selectedCell.cellData.childNumber);
-
+                                
         ImGui::Separator();
         ImGui::Text("Adhesion Indices:");
         for (int i = 0; i < 20; ++i) {

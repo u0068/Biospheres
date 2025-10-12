@@ -9,13 +9,13 @@
 #include "../../core/config.h"
 
 // GPU compute cell structure matching the compute shader
-struct ComputeCell {
+struct alignas(16) ComputeCell {
     // Physics:
     glm::vec4 positionAndMass{ 0, 0, 0, 1 };   // x, y, z, mass
     glm::vec4 velocity{};                               // x, y, z, padding
     glm::vec4 acceleration{};                           // x, y, z, padding
     glm::vec4 prevAcceleration{};                       // x, y, z, padding
-    glm::quat orientation{ 1., 0., 0., 0. };   // Quaternion to prevent gimbal lock
+    glm::vec4 orientation{ 1., 0., 0., 0. };   // Quaternion to prevent gimbal lock
     glm::vec4 angularVelocity{};                        // yz, zx, xy, padding
     glm::vec4 angularAcceleration{};                    // yz, zx, xy, padding
     glm::vec4 prevAngularAcceleration{};                // yz, zx, xy, padding
@@ -27,33 +27,17 @@ struct ComputeCell {
     float toxins{ 0 };
     float nitrates{ 1 };
     int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1 };
+    
+    // Padding to maintain 16-byte alignment for the entire struct
+    uint32_t _padding[8]{ 0 };
 
-    // Lineage tracking (AA.BB.C format)
-    uint32_t parentLineageId{ 0 };      // AA: Parent's unique ID (0 for root cells)
-    uint32_t uniqueId{ 0 };             // BB: This cell's unique ID
-    uint32_t childNumber{ 0 };          // C: Child number (1 or 2, 0 for root cells)
-    uint32_t _lineagePadding{ 0 };      // Padding to maintain 16-byte alignment
-
+    
     float getRadius() const
     {
         return pow(positionAndMass.w, 1.0f / 3.0f);
     }
     
-    // Generate lineage string in A.B.C format where:
-    // A = parent unique ID, B = cell unique ID, C = child number (1 or 2)
-    std::string getLineageString() const
-    {
-        if (parentLineageId == 0) {
-            // Root cell: parent ID=0, cell unique ID, child number=0
-            return std::to_string(0) + "." +
-                   std::to_string(uniqueId) + "." +
-                   std::to_string(0);
-        }
-        return std::to_string(parentLineageId) + "." +
-               std::to_string(uniqueId) + "." +
-               std::to_string(childNumber);
-    }
-};
+    };
 
 struct alignas(4) AdhesionSettings
 {

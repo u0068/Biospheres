@@ -21,12 +21,10 @@ struct ComputeCell {
     float nitrates;
     int adhesionIndices[20];
     
-    // Lineage tracking (AA.BB.C format)
-    uint parentLineageId;       // AA: Parent's unique ID (0 for root cells)
-    uint uniqueId;              // BB: This cell's unique ID
-    uint childNumber;           // C: Child number (1 or 2, 0 for root cells)
-    uint _lineagePadding;       // Padding to maintain 16-byte alignment
-};
+    // Padding to maintain 16-byte alignment for the entire struct
+    uint _padding[8];
+    
+    };
 
 struct GPUModeAdhesionSettings
 {
@@ -116,9 +114,6 @@ layout(std430, binding = 6) coherent buffer freeAdhesionSlotBuffer {
 
 
 
-layout(std430, binding = 9) coherent buffer UniqueIdBuffer {
-    uint nextUniqueId;
-};
 
 uniform float u_deltaTime;
 uniform int u_maxCells;
@@ -269,14 +264,6 @@ vec4 smallRandomQuat(float angle, uint seed) {
     return normalize(vec4(axis * s, cos(halfAngle)));
 }
 
-// Helper function to convert cell index to lineage ID (A.B.C format packed into uint)
-uint getLineageIdFromIndex(uint cellIndex) {
-    if (cellIndex >= inputCells.length()) return 0u;
-
-    ComputeCell cell = inputCells[cellIndex];
-    // Pack lineage ID as: (parentLineageId << 16) | (uniqueId << 8) | childNumber
-    return (cell.parentLineageId << 16) | (cell.uniqueId << 8) | cell.childNumber;
-}
 
 uint getNewAdhesionIndex() {
     // Try to reserve a free adhesion slot
@@ -626,11 +613,7 @@ void main() {
     childA.age = startAge;
     childA.modeIndex = mode.childModes.x;
     childA.orientation = q_childA;
-    // Lineage tracking: Child A inherits parent's unique ID and becomes child 1
-    childA.parentLineageId = cell.uniqueId;  // Parent's unique ID becomes child's parent lineage ID
-    childA.uniqueId = atomicAdd(nextUniqueId, 1); // Get next unique ID atomically
-    childA.childNumber = 1;  // First child
-    for (int i = 0; i < 20; ++i) {
+        for (int i = 0; i < 20; ++i) {
         childA.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
 
@@ -639,11 +622,7 @@ void main() {
     childB.age = startAge + 0.001;
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
-    // Lineage tracking: Child B gets new unique ID and becomes child 2
-    childB.parentLineageId = cell.uniqueId;  // Parent's unique ID becomes child's parent lineage ID
-    childB.uniqueId = atomicAdd(nextUniqueId, 1); // Get next unique ID atomically
-    childB.childNumber = 2;  // Second child
-    for (int i = 0; i < 20; ++i) {
+        for (int i = 0; i < 20; ++i) {
         childB.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
 

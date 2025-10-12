@@ -152,12 +152,7 @@ void CellManager::cleanup()
         glDeleteBuffers(1, &freeAdhesionSlotBuffer);
         freeAdhesionSlotBuffer = 0;
     }
-    if (uniqueIdBuffer != 0)
-    {
-        glDeleteBuffers(1, &uniqueIdBuffer);
-        uniqueIdBuffer = 0;
-    }
-
+    
     cleanupSpatialGrid();
     cleanupLODSystem();
     cleanupUnifiedCulling();
@@ -345,23 +340,12 @@ void CellManager::initializeGPUBuffers()
         stagingCellBuffer,
         cellLimit * sizeof(ComputeCell),
         nullptr,
-        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT | GL_DYNAMIC_STORAGE_BIT
+        GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
     );
     mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
 
-    // Create unique ID counter buffer
-    glCreateBuffers(1, &uniqueIdBuffer);
-    glNamedBufferStorage(
-        uniqueIdBuffer,
-        sizeof(GLuint),
-        nullptr,
-        GL_DYNAMIC_STORAGE_BIT
-    );
-    // Initialize with 1 (0 reserved for root cells)
-    GLuint initialId = 1;
-    glNamedBufferSubData(uniqueIdBuffer, 0, sizeof(GLuint), &initialId);
-
+    
     // Cell addition queue buffer - FIXED: Increased size for 100k cells
     glCreateBuffers(1, &cellAdditionBuffer);
     glNamedBufferData(cellAdditionBuffer,
@@ -616,23 +600,10 @@ void CellManager::updateCellData(int index, const ComputeCell &newData)
             glNamedBufferSubData(cellBuffer[i],
                                  index * sizeof(ComputeCell),
                                  sizeof(ComputeCell),
-                                 &cpuCells[index]);
+                                 &newData);
         }
     }
 }
-
-std::string CellManager::getCellLineageString(int index) const
-{
-    if (index >= 0 && index < totalCellCount && index < static_cast<int>(cpuCells.size()))
-    {
-        return cpuCells[index].getLineageString();
-    }
-    return "Invalid";
-}
-
-// ============================================================================
-// CELL UPDATE & SIMULATION
-// ============================================================================
 
 void CellManager::applyForces(float deltaTime)
 {
@@ -1168,8 +1139,7 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, adhesionConnectionBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, freeCellSlotBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, freeAdhesionSlotBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, uniqueIdBuffer);
-
+    
     // Dispatch compute shader - OPTIMIZED for 256 work group size
     GLuint numGroups = (totalCellCount + 255) / 256; // Changed from 64 to 256 for better GPU utilization
     internalUpdateShader->dispatch(numGroups, 1, 1);
@@ -1204,8 +1174,7 @@ void CellManager::applyCellAdditions()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gpuCellCountBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, uniqueIdBuffer);
-
+    
     // Dispatch compute shader
     GLuint numGroups = (pendingCellCount + 63) / 64;
     cellAdditionShader->dispatch(numGroups, 1, 1);
@@ -1237,10 +1206,7 @@ void CellManager::resetSimulation()
     // Clear selection state
     clearSelection();
     
-    // Reset lineage tracking
-    nextUniqueId = 1;
-    
-    // Clear GPU buffers by setting them to zero
+    // Reset GPU buffers by setting them to zero
     GLuint zero = 0;
     
     // Reset cell count buffers
@@ -1279,12 +1245,7 @@ void CellManager::resetSimulation()
         glClearNamedBufferData(cellAdditionBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     }
     
-    // Reset unique ID buffer
-    if (uniqueIdBuffer != 0) {
-        GLuint initialId = 1;
-        glNamedBufferSubData(uniqueIdBuffer, 0, sizeof(GLuint), &initialId);
-    }
-    
+        
     // Clear spatial grid buffers
     if (gridBuffer != 0) {
         glClearNamedBufferData(gridBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
@@ -1382,11 +1343,7 @@ void CellManager::spawnCells(int count)
         newCell.velocity = glm::vec4(velocity, 0.);
         newCell.acceleration = glm::vec4(0.0f); // Reset acceleration
         
-        // Assign lineage ID for root cells
-        newCell.parentLineageId = 0;  // Root cells have no parent
-        newCell.uniqueId = nextUniqueId++;
-        newCell.childNumber = 0;      // Root cells are not children
-
+        
         addCellToStagingBuffer(newCell);
     }
 }

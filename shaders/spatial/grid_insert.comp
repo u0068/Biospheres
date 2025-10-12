@@ -1,4 +1,4 @@
-﻿#version 430
+#version 430
 
 // Optimized work group size for better memory coalescing  
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -22,11 +22,8 @@ struct ComputeCell {
     float nitrates;
     int adhesionIndices[20];
     
-    // Lineage tracking (AA.BB.C format)
-    uint parentLineageId;       // AA: Parent's unique ID (0 for root cells)
-    uint uniqueId;              // BB: This cell's unique ID
-    uint childNumber;           // C: Child number (1 or 2, 0 for root cells)
-    uint _lineagePadding;       // Padding to maintain 16-byte alignment
+    // Padding to maintain 16-byte alignment for the entire struct
+    uint _padding[8];
 };
 
 // Shader storage buffer objects

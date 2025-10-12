@@ -43,7 +43,7 @@ void UIManager::updateDebouncedGenomeResimulation(CellManager& cellManager, Scen
             newCell.modeIndex = currentGenome.initialMode;
             // Set initial cell orientation to the genome's initial orientation
             // This keeps the initial cell orientation independent of Child A/B settings
-            newCell.orientation = currentGenome.initialOrientation;
+            newCell.orientation = glm::vec4(currentGenome.initialOrientation.x, currentGenome.initialOrientation.y, currentGenome.initialOrientation.z, currentGenome.initialOrientation.w);
             cellManager.addCellToStagingBuffer(newCell);
             cellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
             
