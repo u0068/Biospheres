@@ -669,7 +669,34 @@ void main() {
 
         // Use the stored zone information from the original connection instead of recalculating
         // The original connection already has the correct zone classification
-        uint parentZone = isParentCellA ? oldConnection.zoneA : oldConnection.zoneB;
+        ComputeCell neighborCellCurrent = inputCells[neighborIndex];
+        vec4 parentOrientation = cell.orientation;
+        vec4 invNeighborOrientation = quatInverse(neighborCellCurrent.orientation);
+
+        float splitMagnitude = length(mode.splitDirection.xyz);
+        vec3 splitDir_parent;
+        float splitOffset;
+        if (splitMagnitude < 0.0001) {
+            splitDir_parent = vec3(0.0, 0.0, 1.0);
+            splitOffset = 0.0;
+        } else {
+            splitDir_parent = mode.splitDirection.xyz / splitMagnitude;
+            splitOffset = splitMagnitude * 0.5;
+        }
+
+        vec3 bondDir_parent = normalize(localAnchorDirection);
+
+        float dotSplitBond = dot(splitDir_parent, bondDir_parent);
+        float equatorialThreshold = sin(radians(10.0));
+
+        uint parentZone;
+        if (abs(dotSplitBond) <= equatorialThreshold) {
+            parentZone = 2u;
+        } else if (dotSplitBond > 0.0) {
+            parentZone = 1u;
+        } else {
+            parentZone = 0u;
+        }
 
         // Apply inheritance logic - simple zone-based rules
         bool childAInherits = false;
@@ -694,20 +721,11 @@ void main() {
         // Create new adhesion connections for inheriting children
         // Zone C bonds can create connections for both children, polar bonds create connections for specific children
 
-        // Cache neighbor transform data for reuse across inheritance branches
-        ComputeCell neighborCellCurrent = inputCells[neighborIndex];
-        vec4 neighborOrientation = neighborCellCurrent.orientation;
-        vec4 invNeighborOrientation = quatInverse(neighborOrientation);
         float inheritedRestLength = modes[oldConnection.modeIndex].adhesionSettings.restLength;
 
-        vec3 bondDir_parent = normalize(localAnchorDirection);
-        vec3 splitDir_parent = mode.splitDirection.xyz;
-        float splitLen = length(splitDir_parent);
-        if (splitLen < 0.0001) {
-            splitDir_parent = vec3(0.0, 0.0, 1.0);
-        } else {
-            splitDir_parent /= splitLen;
-        }
+        vec3 neighborPositionPseudo = bondDir_parent * inheritedRestLength;
+        vec3 childPositionPseudoA = splitDir_parent * splitOffset;
+        vec3 childPositionPseudoB = -splitDir_parent * splitOffset;
 
         vec3 planeNormal = cross(bondDir_parent, splitDir_parent);
         if (length(planeNormal) < 0.0001) {
@@ -729,8 +747,7 @@ void main() {
 
         // Child A inheritance
         if (childAInherits) {
-            vec3 offsetLocal = mode.splitDirection.xyz * 0.5;
-            vec3 neighborRelativeToChildA_parentLocal = localAnchorDirection * inheritedRestLength - offsetLocal;
+            vec3 neighborRelativeToChildA_parentLocal = neighborPositionPseudo - childPositionPseudoA;
 
             float radialLength = length(neighborRelativeToChildA_parentLocal);
             if (radialLength > 0.0001) {
@@ -743,13 +760,10 @@ void main() {
                 neighborRelativeToChildA_parentLocal = newParallel * bondDir_parent + newPerpendicular * perpBasis_parent;
             }
 
-            vec3 neighborRelativeToChildA_world = rotateVectorByQuaternion(neighborRelativeToChildA_parentLocal, cell.orientation);
+            vec3 connectionDirPseudo = normalize(neighborRelativeToChildA_parentLocal);
+            vec3 connectionDirWorld = normalize(rotateVectorByQuaternion(connectionDirPseudo, parentOrientation));
 
-            vec3 connectionDirWorld = normalize(neighborRelativeToChildA_world);
-
-            ComputeCell childACell = outputCells[childAIndex];
-            vec4 invChildOrientation = quatInverse(childACell.orientation);
-            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, invChildOrientation));
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, quatInverse(outputCells[childAIndex].orientation)));
             vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-connectionDirWorld, invNeighborOrientation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
@@ -777,8 +791,7 @@ void main() {
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
-            vec3 offsetLocal = mode.splitDirection.xyz * 0.5;
-            vec3 neighborRelativeToChildB_parentLocal = localAnchorDirection * inheritedRestLength + offsetLocal;
+            vec3 neighborRelativeToChildB_parentLocal = neighborPositionPseudo - childPositionPseudoB;
 
             float radialLength = length(neighborRelativeToChildB_parentLocal);
             if (radialLength > 0.0001) {
@@ -791,13 +804,10 @@ void main() {
                 neighborRelativeToChildB_parentLocal = newParallel * bondDir_parent + newPerpendicular * perpBasis_parent;
             }
 
-            vec3 neighborRelativeToChildB_world = rotateVectorByQuaternion(neighborRelativeToChildB_parentLocal, cell.orientation);
+            vec3 connectionDirPseudo = normalize(neighborRelativeToChildB_parentLocal);
+            vec3 connectionDirWorld = normalize(rotateVectorByQuaternion(connectionDirPseudo, parentOrientation));
 
-            vec3 connectionDirWorld = normalize(neighborRelativeToChildB_world);
-
-            ComputeCell childBCell = outputCells[childBIndex];
-            vec4 invChildOrientation = quatInverse(childBCell.orientation);
-            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, invChildOrientation));
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, quatInverse(outputCells[childBIndex].orientation)));
             vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-connectionDirWorld, invNeighborOrientation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
