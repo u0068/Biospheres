@@ -24,7 +24,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     // Set window size and position for a long horizontal resizable window
-    ImGui::SetNextWindowPos(ImVec2(50, 680), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(1398, 15), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);
     
     int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);

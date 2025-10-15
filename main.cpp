@@ -325,7 +325,15 @@ int main()
     Shader sphereShader("shaders/rendering/cell_types/phagocyte/sphere.vert", 
                         "shaders/rendering/cell_types/phagocyte/sphere.frag");
 
-	const ImGuiIO &io = initImGui(window); // This also initialises ImGui io
+	// Initialize ImGui
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+	ImGui::StyleColorsDark();
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	ImGui_ImplOpenGL3_Init("#version 330");
 	Input input;		input.init(window);		// Initialise the cameras - separate camera for each scene
 	Camera previewCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start further back to see more cells
 	Camera mainCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start at same position for consistent view
@@ -490,8 +498,10 @@ int main()
 		}
 	}
 	}
-	// destroy and terminate everything before ending the ID
-	shutdownImGui();
+	// Shutdown ImGui
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 	glfwDestroyWindow(window);
 	glfwTerminate();
 

@@ -73,6 +73,7 @@ namespace config
 	// ========== Runtime Configuration Variables ==========
 	// These can be modified at runtime
 	inline bool showDemoWindow{true};
+	inline bool showCircularSliderDemo{true};
 	inline float physicsTimeStep{ 0.01f };	// The size of a physics time step for live simulation (accurate physics)
 	inline float fastForwardTimeStep{ 0.1f };	// DEPRECATED: Previously used for fast-forward
 	inline float resimulationTimeStep{ 0.01f };	// Time step for resimulation (same as physics for perfect accuracy)

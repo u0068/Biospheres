@@ -2,6 +2,7 @@
 #include "../simulation/cell/cell_manager.h"
 #include "../core/config.h"
 #include "imgui.h"
+#include "imgui_helpers.h"
 #include <algorithm>
 #include <string>
 #include <cmath>
@@ -23,7 +24,7 @@
 void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager)
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
-    ImGui::SetNextWindowPos(ImVec2(840, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(4, 13), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     
     // Set minimum window size constraints
@@ -304,57 +305,60 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::PushID(modeIndex * 2); // Unique ID for Child A
             // Move mode selection dropdown to the top
             drawChildSettings("Child A", mode.childA);
-            // Pitch
-            ImGui::Text("Pitch");
-            float newP = lastPitchA[modeIndex];
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool pitchChanged = ImGui::SliderFloat("##PitchSlider", &newP, -180.0f, 180.0f, "%.0f");
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            ImGui::PushItemWidth(90.0f);
-            if (ImGui::InputFloat("##PitchInput", &newP, 1.0f, 10.0f, "%.0f")) pitchChanged = true;
-            ImGui::PopItemWidth();
-            newP = std::round(newP); // enforce integer
-            if (pitchChanged) {
-                float delta = newP - lastPitchA[modeIndex];
-                applyLocalRotation(mode.childA.orientation, glm::vec3(1,0,0), delta);
-                lastPitchA[modeIndex] = newP;
-                genomeChanged = true;
+            
+            // Orientation Controls with Circular Sliders
+            ImGui::Text("Child A Orientation:");
+            ImGui::Spacing();
+            
+            if (ImGui::BeginTable("ChildAOrientation", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
+                ImGui::TableSetupColumn("Pitch", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ImGui::TableSetupColumn("Yaw", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ImGui::TableSetupColumn("Roll", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ImGui::TableHeadersRow();
+                
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Dummy(ImVec2(0, 20)); // Top padding
+                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+                ImGui::SameLine();
+                float pitchA = lastPitchA[modeIndex];
+                if (CircularSliderFloat("##PitchA", &pitchA, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+                    float delta = pitchA - lastPitchA[modeIndex];
+                    applyLocalRotation(mode.childA.orientation, glm::vec3(1,0,0), delta);
+                    lastPitchA[modeIndex] = pitchA;
+                    genomeChanged = true;
+                }
+                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+                
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Dummy(ImVec2(0, 20)); // Top padding
+                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+                ImGui::SameLine();
+                float yawA = lastYawA[modeIndex];
+                if (CircularSliderFloat("##YawA", &yawA, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+                    float delta = yawA - lastYawA[modeIndex];
+                    applyLocalRotation(mode.childA.orientation, glm::vec3(0,1,0), delta);
+                    lastYawA[modeIndex] = yawA;
+                    genomeChanged = true;
+                }
+                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+                
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Dummy(ImVec2(0, 20)); // Top padding
+                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+                ImGui::SameLine();
+                float rollA = lastRollA[modeIndex];
+                if (CircularSliderFloat("##RollA", &rollA, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+                    float delta = rollA - lastRollA[modeIndex];
+                    applyLocalRotation(mode.childA.orientation, glm::vec3(0,0,1), delta);
+                    lastRollA[modeIndex] = rollA;
+                    genomeChanged = true;
+                }
+                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+                
+                ImGui::EndTable();
             }
-            // Yaw
-            ImGui::Text("Yaw");
-            float newY = lastYawA[modeIndex];
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool yawChanged = ImGui::SliderFloat("##YawSlider", &newY, -180.0f, 180.0f, "%.0f");
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            ImGui::PushItemWidth(90.0f);
-            if (ImGui::InputFloat("##YawInput", &newY, 1.0f, 10.0f, "%.0f")) yawChanged = true;
-            ImGui::PopItemWidth();
-            newY = std::round(newY);
-            if (yawChanged) {
-                float delta = newY - lastYawA[modeIndex];
-                applyLocalRotation(mode.childA.orientation, glm::vec3(0,1,0), delta);
-                lastYawA[modeIndex] = newY;
-                genomeChanged = true;
-            }
-            // Roll
-            ImGui::Text("Roll");
-            float newR = lastRollA[modeIndex];
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool rollChanged = ImGui::SliderFloat("##RollSlider", &newR, -180.0f, 180.0f, "%.0f");
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            ImGui::PushItemWidth(90.0f);
-            if (ImGui::InputFloat("##RollInput", &newR, 1.0f, 10.0f, "%.0f")) rollChanged = true;
-            ImGui::PopItemWidth();
-            newR = std::round(newR);
-            if (rollChanged) {
-                float delta = newR - lastRollA[modeIndex];
-                applyLocalRotation(mode.childA.orientation, glm::vec3(0,0,1), delta);
-                lastRollA[modeIndex] = newR;
-                genomeChanged = true;
-            }
+            
             // Reset Orientation Button
             if (ImGui::Button("Reset Orientation (Child A)")) {
                 mode.childA.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset to identity
@@ -375,57 +379,60 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             ImGui::PushID(modeIndex * 2 + 1); // Unique ID for Child B
             // Move mode selection dropdown to the top
             drawChildSettings("Child B", mode.childB);
-            // Pitch
-            ImGui::Text("Pitch");
-            float newP = lastPitchB[modeIndex];
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool pitchChanged = ImGui::SliderFloat("##PitchSliderB", &newP, -180.0f, 180.0f, "%.0f");
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            ImGui::PushItemWidth(90.0f);
-            if (ImGui::InputFloat("##PitchInputB", &newP, 1.0f, 10.0f, "%.0f")) pitchChanged = true;
-            ImGui::PopItemWidth();
-            newP = std::round(newP);
-            if (pitchChanged) {
-                float delta = newP - lastPitchB[modeIndex];
-                applyLocalRotation(mode.childB.orientation, glm::vec3(1,0,0), delta);
-                lastPitchB[modeIndex] = newP;
-                genomeChanged = true;
+            
+            // Orientation Controls with Circular Sliders
+            ImGui::Text("Child B Orientation:");
+            ImGui::Spacing();
+            
+            if (ImGui::BeginTable("ChildBOrientation", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
+                ImGui::TableSetupColumn("Pitch", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ImGui::TableSetupColumn("Yaw", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ImGui::TableSetupColumn("Roll", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ImGui::TableHeadersRow();
+                
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Dummy(ImVec2(0, 20)); // Top padding
+                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+                ImGui::SameLine();
+                float pitchB = lastPitchB[modeIndex];
+                if (CircularSliderFloat("##PitchB", &pitchB, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+                    float delta = pitchB - lastPitchB[modeIndex];
+                    applyLocalRotation(mode.childB.orientation, glm::vec3(1,0,0), delta);
+                    lastPitchB[modeIndex] = pitchB;
+                    genomeChanged = true;
+                }
+                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+                
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Dummy(ImVec2(0, 20)); // Top padding
+                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+                ImGui::SameLine();
+                float yawB = lastYawB[modeIndex];
+                if (CircularSliderFloat("##YawB", &yawB, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+                    float delta = yawB - lastYawB[modeIndex];
+                    applyLocalRotation(mode.childB.orientation, glm::vec3(0,1,0), delta);
+                    lastYawB[modeIndex] = yawB;
+                    genomeChanged = true;
+                }
+                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+                
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Dummy(ImVec2(0, 20)); // Top padding
+                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+                ImGui::SameLine();
+                float rollB = lastRollB[modeIndex];
+                if (CircularSliderFloat("##RollB", &rollB, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+                    float delta = rollB - lastRollB[modeIndex];
+                    applyLocalRotation(mode.childB.orientation, glm::vec3(0,0,1), delta);
+                    lastRollB[modeIndex] = rollB;
+                    genomeChanged = true;
+                }
+                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+                
+                ImGui::EndTable();
             }
-            // Yaw
-            ImGui::Text("Yaw");
-            float newY = lastYawB[modeIndex];
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool yawChanged = ImGui::SliderFloat("##YawSliderB", &newY, -180.0f, 180.0f, "%.0f");
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            ImGui::PushItemWidth(90.0f);
-            if (ImGui::InputFloat("##YawInputB", &newY, 1.0f, 10.0f, "%.0f")) yawChanged = true;
-            ImGui::PopItemWidth();
-            newY = std::round(newY);
-            if (yawChanged) {
-                float delta = newY - lastYawB[modeIndex];
-                applyLocalRotation(mode.childB.orientation, glm::vec3(0,1,0), delta);
-                lastYawB[modeIndex] = newY;
-                genomeChanged = true;
-            }
-            // Roll
-            ImGui::Text("Roll");
-            float newR = lastRollB[modeIndex];
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-            bool rollChanged = ImGui::SliderFloat("##RollSliderB", &newR, -180.0f, 180.0f, "%.0f");
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            ImGui::PushItemWidth(90.0f);
-            if (ImGui::InputFloat("##RollInputB", &newR, 1.0f, 10.0f, "%.0f")) rollChanged = true;
-            ImGui::PopItemWidth();
-            newR = std::round(newR);
-            if (rollChanged) {
-                float delta = newR - lastRollB[modeIndex];
-                applyLocalRotation(mode.childB.orientation, glm::vec3(0,0,1), delta);
-                lastRollB[modeIndex] = newR;
-                genomeChanged = true;
-            }
+            
             // Reset Orientation Button
             if (ImGui::Button("Reset Orientation (Child B)")) {
                 mode.childB.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset to identity
@@ -539,6 +546,13 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     ImGui::Separator();
     ImGui::Spacing();
 
+    // Parent Make Adhesion checkbox
+    if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
+    {
+        genomeChanged = true;
+    }
+    addTooltip("Whether the parent cell creates adhesive connections with its children");
+
     drawSliderWithInput("Split Mass", &mode.splitMass, 0.1f, 10.0f, "%.2f");
     addTooltip("The mass threshold at which the cell will split into two child cells");
     
@@ -550,21 +564,34 @@ void UIManager::drawParentSettings(ModeSettings &mode)
 
     ImGui::Text("Parent Split Angle:");
     addTooltip("Controls the vector direction that child cells split along relative to the parent");
-      drawSliderWithInput("Pitch", &mode.parentSplitDirection.x, -180.0f, 180.0f, "%.0f°", 1.0f);
-    addTooltip("Vertical angle of the split vector (up/down direction for child cell placement)");
     
-    drawSliderWithInput("Yaw", &mode.parentSplitDirection.y, -180.0f, 180.0f, "%.0f°", 1.0f);
-    addTooltip("Horizontal angle of the split vector (left/right direction for child cell placement)");
-
-    // Add divider before Parent Make Adhesion checkbox
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-	if (ImGui::Checkbox("Parent Make Adhesion", &mode.parentMakeAdhesion))
-    {
-        genomeChanged = true;
+    // Circular sliders for parent split direction
+    if (ImGui::BeginTable("ParentSplitAngle", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
+        ImGui::TableSetupColumn("Pitch", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+        ImGui::TableSetupColumn("Yaw", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+        ImGui::TableHeadersRow();
+        
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::Dummy(ImVec2(0, 20)); // Top padding
+        ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+        ImGui::SameLine();
+        if (CircularSliderFloat("##ParentPitch", &mode.parentSplitDirection.x, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+            genomeChanged = true;
+        }
+        ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+        
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Dummy(ImVec2(0, 20)); // Top padding
+        ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
+        ImGui::SameLine();
+        if (CircularSliderFloat("##ParentYaw", &mode.parentSplitDirection.y, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+            genomeChanged = true;
+        }
+        ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
+        
+        ImGui::EndTable();
     }
-    addTooltip("Whether the parent cell creates adhesive connections with its children");
 
     drawSliderWithInput("Max Adhesions", &mode.maxAdhesions, 0, config::MAX_ADHESIONS_PER_CELL);
     addTooltip("Maximum adhesion connections. Prevents cell from splitting if the maximum would be exceeded.");
@@ -623,13 +650,13 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     drawSliderWithInput("Linear Spring Stiffness", &adhesion.linearSpringStiffness, 0.1f, 500.0f);
     addTooltip("How strongly the adhesionSettings resists stretching or compression");
     
-    drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 1.0f);
+    drawSliderWithInput("Linear Spring Damping", &adhesion.linearSpringDamping, 0.0f, 10.0f);
     addTooltip("Damping factor that reduces oscillations in the adhesive connection");
 
     drawSliderWithInput("Angular Spring Stiffness", &adhesion.orientationSpringStiffness, 0.1f, 100.0f);
     addTooltip("How strongly the adhesionSettings resists rotational changes between connected cells");
 
-    drawSliderWithInput("Angular Spring Damping", &adhesion.orientationSpringDamping, 0.0f, 1.0f);
+    drawSliderWithInput("Angular Spring Damping", &adhesion.orientationSpringDamping, 0.0f, 10.0f);
     addTooltip("Damping factor that reduces oscillations in the adhesive connection");
     
     drawSliderWithInput("Max Angular Deviation", &adhesion.maxAngularDeviation, 0.0f, 180.0f, "%.0f°", 1.0f);
@@ -647,6 +674,6 @@ void UIManager::drawAdhesionSettings(AdhesionSettings &adhesion)
     drawSliderWithInput("Twist Constraint Stiffness", &adhesion.twistConstraintStiffness, 0.0f, 2.0f, "%.3f");
     addTooltip("How strongly cells resist twisting around connections (higher = more rigid snake body, lower = more flexible)");
     
-    drawSliderWithInput("Twist Constraint Damping", &adhesion.twistConstraintDamping, 0.0f, 1.0f, "%.3f");
+    drawSliderWithInput("Twist Constraint Damping", &adhesion.twistConstraintDamping, 0.0f, 10.0f, "%.3f");
     addTooltip("Damping prevents oscillation and maintains stable alignment (higher = more stable snake body)");
 }

@@ -23,8 +23,8 @@
 void UIManager::renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager)
 {
     // Set window position on first use - top center
-    ImGui::SetNextWindowPos(ImVec2(400, 20), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(320, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(3072, 46), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(320, 413), ImGuiCond_FirstUseEver);
     int flags = windowsLocked ? getWindowFlags(ImGuiWindowFlags_None) : getWindowFlags(ImGuiWindowFlags_None);
     if (ImGui::Begin("Scene Manager", nullptr, flags))
     {
