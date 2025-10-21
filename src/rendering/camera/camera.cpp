@@ -80,12 +80,8 @@ void Camera::processInput(Input &input, float deltaTime)
         up = up * cosRoll - oldRight * sinRoll;
     }
 
-    // Handle mouse scroll for zoom (Space Engineers style)
-    if (input.hasScrollInput())
-    {
-        float scrollDelta = input.getScrollDelta();
-        processMouseScroll(scrollDelta);
-    }
+    // Scroll wheel functionality removed permanently (Requirement 7.1)
+    // Scroll wheel is now handled by the injection system for mode-specific distance control
 
     // Movement controls (Space Engineers style - all movement relative to camera orientation)
     // WASD for forward/back/left/right, Space/C for up/down relative to camera view
@@ -153,18 +149,9 @@ void Camera::processMouseMovement(float xOffset, float yOffset)
 
 void Camera::processMouseScroll(float yOffset)
 {
-    // Space Engineers style zoom - move camera forward/backward along view direction
-    float zoomDistance = zoomSpeed * yOffset * 0.01f; // Scale down for smoother zoom
-    
-    // Calculate new position
-    glm::vec3 newPosition = position + front * zoomDistance;
-    
-    // Clamp distance to prevent getting too close or too far
-    float distanceFromOrigin = glm::length(newPosition);
-    if (distanceFromOrigin >= minDistance && distanceFromOrigin <= maxDistance)
-    {
-        position = newPosition;
-    }
+    // Camera zoom functionality permanently removed (Requirement 7.1)
+    // Scroll wheel is now handled by injection system for mode-specific distance control
+    // This method is kept for compatibility but does nothing
 }
 
 glm::mat4 Camera::getViewMatrix() const

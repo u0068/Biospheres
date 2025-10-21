@@ -15,8 +15,9 @@
 #include "../cell/common_structs.h"
 #include "../../rendering/systems/frustum_culling.h"
 
-// Forward declaration
+// Forward declarations
 class Camera;
+class SpatialGridSystem;
 
 // Ensure struct alignment is correct for GPU usage
 static_assert(sizeof(ComputeCell) % 16 == 0, "ComputeCell must be 16-byte aligned for GPU usage");
@@ -35,6 +36,9 @@ struct CellManager
     // GPU-based cell management using compute shaders
     // This replaces the CPU-based vectors with GPU buffer objects
     // The compute shaders handle physics calculations and position updates
+
+    // Spatial grid system integration (NEW)
+    SpatialGridSystem* spatialGridSystem = nullptr;
 
     // GPU buffer objects - Triple buffered for performance
     GLuint cellBuffer[3]{};         // SSBO for compute cell data (double buffered)
@@ -57,15 +61,9 @@ struct CellManager
     // It might be a good idea in the future to switch from a flattened mode array to genome structs that contain their own mode arrays
     GLuint modeBuffer{};
 
-    // Spatial partitioning buffers - Double buffered
-    GLuint gridBuffer{};       // SSBO for grid cell data (stores cell indices)
-    GLuint gridCountBuffer{};  // SSBO for grid cell counts
-    GLuint gridOffsetBuffer{}; // SSBO for grid cell starting offsets
-    
-    // PERFORMANCE OPTIMIZATION: Additional buffers for 100k cells
-    GLuint gridHashBuffer{};   // Hash-based lookup for sparse grids
-    GLuint activeCellsBuffer{}; // Buffer containing only active grid cells
-    uint32_t activeGridCount{0}; // Number of active grid cells
+    // Spatial partitioning buffers - MOVED TO SpatialGridSystem
+    // These buffers are now managed by SpatialGridSystem
+    // Access them through spatialGridSystem->getCellGridBuffer(), etc.
 
     // Sphere mesh for instanced rendering
     SphereMesh sphereMesh;
@@ -150,11 +148,8 @@ struct CellManager
     Shader* internalUpdateShader = nullptr;
     Shader* cellAdditionShader = nullptr;
 
-    // Spatial partitioning compute shaders
-    Shader* gridClearShader = nullptr;     // Clear grid counts
-    Shader* gridAssignShader = nullptr;    // Assign cells to grid
-    Shader* gridPrefixSumShader = nullptr; // Calculate grid offsets
-    Shader* gridInsertShader = nullptr;    // Insert cells into grid
+    // Spatial partitioning compute shaders - MOVED TO SpatialGridSystem
+    // These shaders are now managed by SpatialGridSystem
     
     // CPU-side storage for initialization and debugging
     // Note: cpuCells is deprecated in favor of GPU buffers, should be removed after refactoring
@@ -306,10 +301,8 @@ struct CellManager
     void updateCellsFastForward(float deltaTime); // Optimized update for resimulation
     void cleanup();
 
-    // Spatial partitioning functions
-    void initializeSpatialGrid();
-    void updateSpatialGrid();
-    void cleanupSpatialGrid();
+    // Spatial partitioning functions - MOVED TO SpatialGridSystem
+    // These methods are now handled by SpatialGridSystem
 
     // Getter functions for debug information
     int getCellCount() const { return totalCellCount; }
@@ -546,9 +539,6 @@ private:
     void runAdhesionPhysics(float deltaTime);
     void applyCellAdditions();
 
-    // Spatial grid helper functions
-    void runGridClear();
-    void runGridAssign();
-    void runGridPrefixSum();
-    void runGridInsert();
+    // Spatial grid helper functions - MOVED TO SpatialGridSystem
+    // These methods are now handled by SpatialGridSystem
 };

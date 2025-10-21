@@ -1,4 +1,5 @@
 #include "cell_manager.h"
+#include "../spatial/spatial_grid_system.h"
 #include "../../rendering/camera/camera.h"
 #include "../../utils/timer.h"
 #include <iostream>
@@ -188,9 +189,9 @@ void CellManager::updateParticles(float deltaTime)
     
     // Bind buffers for unified grid insertion
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);     // Particle data
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);         // Unified grid buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridOffsetBuffer);    // Grid offsets
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gridCountBuffer);     // Grid counts
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, this->spatialGridSystem->getCellGridBuffer());         // Unified grid buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, this->spatialGridSystem->getCellOffsetBuffer());    // Grid offsets
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, this->spatialGridSystem->getCellCountBuffer());     // Grid counts
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, particleCountBuffer); // Particle count buffer
     
     // Dispatch compute shader (one thread per particle)

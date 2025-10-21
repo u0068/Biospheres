@@ -1,0 +1,34 @@
+#version 460 core
+
+// Update indirect draw commands compute shader
+// Updates instance counts in indirect draw commands after voxel compaction
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+// Atomic counter for active voxel count
+layout (binding = 0, offset = 0) uniform atomic_uint u_activeVoxelCount;
+
+// Indirect draw commands buffer
+layout (std430, binding = 1) restrict writeonly buffer IndirectDrawBuffer {
+    uint wireframeDrawCommand[5]; // count, instanceCount, firstIndex, baseVertex, baseInstance
+    uint flowLineDrawCommand[5];  // count, instanceCount, firstIndex, baseVertex, baseInstance
+};
+
+void main() {
+    // Read the total number of active voxels
+    uint totalActiveVoxels = atomicCounter(u_activeVoxelCount);
+    
+    // Update wireframe draw command
+    wireframeDrawCommand[0] = 24; // 24 indices for wireframe cube
+    wireframeDrawCommand[1] = totalActiveVoxels; // instanceCount
+    wireframeDrawCommand[2] = 0;  // firstIndex
+    wireframeDrawCommand[3] = 0;  // baseVertex
+    wireframeDrawCommand[4] = 0;  // baseInstance
+    
+    // Update flow line draw command
+    flowLineDrawCommand[0] = 2;   // 2 vertices per line
+    flowLineDrawCommand[1] = totalActiveVoxels; // instanceCount
+    flowLineDrawCommand[2] = 0;   // firstIndex
+    flowLineDrawCommand[3] = 0;   // baseVertex
+    flowLineDrawCommand[4] = 0;   // baseInstance
+}

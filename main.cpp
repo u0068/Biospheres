@@ -22,12 +22,15 @@
 
 // Simulation includes
 #include "src/simulation/cell/cell_manager.h"
+#include "src/simulation/spatial/spatial_grid_system.h"
 
 // Rendering includes
 #include "src/rendering/core/shader_class.h"
 #include "src/rendering/core/glad_helpers.h"
 #include "src/rendering/core/glfw_helpers.h"
 #include "src/rendering/camera/camera.h"
+#include "src/rendering/systems/brush_renderer.h"
+#include "src/rendering/systems/visualization_renderer.h"
 
 // UI includes
 #include "src/ui/ui_manager.h"
@@ -35,6 +38,7 @@
 
 // Input includes
 #include "src/input/input.h"
+#include "src/input/injection_system.h"
 
 // Utility includes
 #include "src/utils/timer.h"
@@ -126,7 +130,8 @@ void updatePerformanceMonitoring(PerformanceMonitor& perfMonitor, UIManager& uiM
 
 // Input processing
 void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellManager& previewCellManager, CellManager& mainCellManager, 
-				  SceneManager& sceneManager, float deltaTime, int width, int height, SynthEngine& synthEngine)
+				  SceneManager& sceneManager, float deltaTime, int width, int height, SynthEngine& synthEngine, 
+				  InjectionSystem& injectionSystem, SpatialGridSystem& spatialGrid)
 {
 	glfwPollEvents();
 	input.update();
@@ -147,18 +152,78 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 		activeCellManager = &mainCellManager;
 	}
 	
+	// Handle keyboard input for injection mode switching (always process, even if ImGui wants keyboard)
+	// Use static variables to track key state for "just pressed" behavior
+	static bool key1WasPressed = false;
+	static bool key2WasPressed = false;
+	static bool key3WasPressed = false;
+	
+	bool key1IsPressed = input.isKeyPressed(GLFW_KEY_1);
+	bool key2IsPressed = input.isKeyPressed(GLFW_KEY_2);
+	bool key3IsPressed = input.isKeyPressed(GLFW_KEY_3);
+	
+	if (key1IsPressed && !key1WasPressed) {
+		injectionSystem.handleKeyInput(GLFW_KEY_1);
+	}
+	if (key2IsPressed && !key2WasPressed) {
+		injectionSystem.handleKeyInput(GLFW_KEY_2);
+	}
+	if (key3IsPressed && !key3WasPressed) {
+		injectionSystem.handleKeyInput(GLFW_KEY_3);
+	}
+	
+	key1WasPressed = key1IsPressed;
+	key2WasPressed = key2IsPressed;
+	key3WasPressed = key3IsPressed;
+	
 	if (!ImGui::GetIO().WantCaptureMouse && activeCamera && activeCellManager)
 	{
 		TimerCPU cpuTimer("Input Processing");
-		activeCamera->processInput(input, deltaTime);
 		
+		// Handle injection system input first
 		glm::vec2 mousePos = input.getMousePosition(false);
 		bool isLeftMousePressed = input.isMouseJustPressed(GLFW_MOUSE_BUTTON_LEFT);
 		bool isLeftMouseDown = input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
 		float scrollDelta = input.getScrollDelta();
-
-		activeCellManager->handleMouseInput(mousePos, glm::vec2(width, height), *activeCamera,
-											isLeftMousePressed, isLeftMouseDown, scrollDelta);
+		
+		// Update brush position continuously with mouse movement
+		injectionSystem.handleMouseMove(mousePos, *activeCamera, glm::vec2(width, height));
+		
+		// Handle mouse clicks for injection
+		if (isLeftMousePressed) {
+			injectionSystem.handleMouseClick(mousePos, *activeCamera, spatialGrid, glm::vec2(width, height));
+		}
+		if (isLeftMouseDown) {
+			injectionSystem.handleMouseDrag(mousePos, *activeCamera, spatialGrid, glm::vec2(width, height));
+		}
+		
+		// Handle scroll wheel - injection system will route appropriately based on mode
+		if (input.hasScrollInput()) {
+			InjectionMode currentMode = injectionSystem.getCurrentMode();
+			if (currentMode == InjectionMode::Density || currentMode == InjectionMode::Velocity) {
+				// Route to injection system for plane distance adjustment
+				injectionSystem.handleScrollWheel(scrollDelta);
+			} else {
+				// Route to camera for zoom (existing behavior)
+				activeCamera->processMouseScroll(scrollDelta);
+			}
+		}
+		
+		// Process camera input (but skip scroll if handled by injection system)
+		if (injectionSystem.getCurrentMode() == InjectionMode::CellSelection) {
+			activeCamera->processInput(input, deltaTime);
+		} else {
+			// Process camera input without scroll wheel
+			// We need to create a modified version that doesn't handle scroll
+			// For now, just process normally - the scroll handling above takes precedence
+			activeCamera->processInput(input, deltaTime);
+		}
+		
+		// Handle cell manager input only in cell selection mode
+		if (injectionSystem.getCurrentMode() == InjectionMode::CellSelection) {
+			activeCellManager->handleMouseInput(mousePos, glm::vec2(width, height), *activeCamera,
+												isLeftMousePressed, isLeftMouseDown, scrollDelta);
+		}
 	}
 	
 	synthEngine.generateSample();
@@ -166,7 +231,8 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 
 // Rendering pipeline
 void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, Camera& previewCamera, Camera& mainCamera,
-				 UIManager& uiManager, Shader& sphereShader, PerformanceMonitor& perfMonitor, SceneManager& sceneManager, int width, int height)
+				 UIManager& uiManager, Shader& sphereShader, PerformanceMonitor& perfMonitor, SceneManager& sceneManager, int width, int height,
+				 InjectionSystem& injectionSystem, BrushRenderer& brushRenderer, SpatialGridSystem& spatialGrid, VisualizationRenderer& visualizationRenderer)
 {
 	Scene currentScene = sceneManager.getCurrentScene();
 	CellManager* activeCellManager = nullptr;
@@ -209,6 +275,24 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			// Render adhesionSettings lines if enabled
 			activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
 			checkGLError("renderAdhesionLines");
+			
+			// Render injection brush if visible
+			if (injectionSystem.isBrushVisible()) {
+				brushRenderer.renderBrush(injectionSystem.getBrushPosition(), 
+										 injectionSystem.getInjectionRadius(),
+										 injectionSystem.getCurrentMode(),
+										 *activeCamera, glm::vec2(width, height),
+										 injectionSystem.isCurrentlyInjecting());
+				checkGLError("renderBrush");
+			}
+			
+			// Render fluid visualization
+			glm::mat4 viewMatrix = activeCamera->getViewMatrix();
+			glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), 
+														 static_cast<float>(width) / static_cast<float>(height), 
+														 0.1f, 1000.0f);
+			visualizationRenderer.render(spatialGrid, viewMatrix, projectionMatrix);
+			checkGLError("renderVisualization");
 		}
 		catch (const std::exception &e)
 		{
@@ -218,6 +302,9 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		uiManager.renderCellInspector(*activeCellManager, sceneManager);
 		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
 		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
+		
+		// Show injection controls
+		uiManager.renderInjectionControls(injectionSystem, spatialGrid, visualizationRenderer);
 
 		// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
@@ -367,6 +454,21 @@ int main()
 	audioEngine.start();
 	SynthEngine synthEngine;
 
+	// Initialize spatial grid system and injection system
+	SpatialGridSystem spatialGrid;
+	// Re-enable spatial grid initialization to test
+	spatialGrid.initialize();
+	// Re-enable injection system to test
+	InjectionSystem injectionSystem;
+	
+	// Initialize brush renderer
+	BrushRenderer brushRenderer;
+	brushRenderer.initialize();
+	
+	// Initialize visualization renderer
+	VisualizationRenderer visualizationRenderer;
+	visualizationRenderer.initialize(config::GRID_RESOLUTION, config::WORLD_SIZE, glm::vec3(0.0f));
+
 	// Timing variables
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
@@ -441,7 +543,7 @@ int main()
 		/// Then we handle input
 		// I should probably put this stuff in a separate function instead of having it in the main loop
 		// Take care of all GLFW events
-		processInput(input, previewCamera, mainCamera, previewCellManager, mainCellManager, sceneManager, deltaTime, width, height, synthEngine);
+		processInput(input, previewCamera, mainCamera, previewCellManager, mainCellManager, sceneManager, deltaTime, width, height, synthEngine, injectionSystem, spatialGrid);
 
 		/// Handle debounced genome resimulation for preview simulation
 		if (sceneManager.getCurrentScene() == Scene::PreviewSimulation)
@@ -456,7 +558,7 @@ int main()
 			accumulator -= tickPeriod;
 		}
 		/// Then we handle rendering
-		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height);
+		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height, injectionSystem, brushRenderer, spatialGrid, visualizationRenderer);
 
 		// Update all the timers
 		TimerManager::instance().finalizeFrame();
@@ -497,6 +599,15 @@ int main()
 			}
 		}
 	}
+	
+	// Cleanup spatial grid system
+	spatialGrid.cleanup();
+	
+	// Cleanup brush renderer
+	brushRenderer.cleanup();
+	
+	// Cleanup visualization renderer
+	visualizationRenderer.cleanup();
 	}
 	// Shutdown ImGui
 	ImGui_ImplOpenGL3_Shutdown();

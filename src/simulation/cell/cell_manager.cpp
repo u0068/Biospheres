@@ -1,4 +1,5 @@
 #include "cell_manager.h"
+#include "../spatial/spatial_grid_system.h"
 #include "../../rendering/camera/camera.h"
 #include "../../core/config.h"
 #include "../../ui/ui_manager.h"
@@ -34,7 +35,12 @@ CellManager::CellManager()
     sphereMesh.setupBuffers();
 
     initializeGPUBuffers();
-    initializeSpatialGrid();
+    
+    // Initialize SpatialGridSystem (NEW)
+    this->spatialGridSystem = new SpatialGridSystem();
+    this->spatialGridSystem->initialize();
+    
+    // Spatial grid initialization is now handled by SpatialGridSystem
 
     // Initialize compute shaders
     physicsShader = new Shader("shaders/cell/physics/cell_physics_spatial.comp"); // Use spatial partitioning version
@@ -44,11 +50,7 @@ CellManager::CellManager()
     extractShader = new Shader("shaders/cell/management/extract_instances.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
 
-    // Initialize spatial grid shaders
-    gridClearShader = new Shader("shaders/spatial/grid_clear.comp");
-    gridAssignShader = new Shader("shaders/spatial/grid_assign.comp");
-    gridPrefixSumShader = new Shader("shaders/spatial/grid_prefix_sum.comp");
-    gridInsertShader = new Shader("shaders/spatial/grid_insert.comp");
+    // Spatial grid shaders are now managed by SpatialGridSystem
     
     // Initialize gizmo shaders
     gizmoExtractShader = new Shader("shaders/rendering/debug/gizmo_extract.comp");
@@ -153,7 +155,14 @@ void CellManager::cleanup()
         freeAdhesionSlotBuffer = 0;
     }
     
-    cleanupSpatialGrid();
+    // Cleanup SpatialGridSystem (NEW)
+    if (this->spatialGridSystem) {
+        this->spatialGridSystem->cleanup();
+        delete this->spatialGridSystem;
+        this->spatialGridSystem = nullptr;
+    }
+    
+    // Spatial grid cleanup is now handled by SpatialGridSystem
     cleanupLODSystem();
     cleanupUnifiedCulling();
 
@@ -176,31 +185,7 @@ void CellManager::cleanup()
         positionUpdateShader = nullptr;
     }
 
-    // Cleanup spatial grid shaders
-    if (gridClearShader)
-    {
-        gridClearShader->destroy();
-        delete gridClearShader;
-        gridClearShader = nullptr;
-    }
-    if (gridAssignShader)
-    {
-        gridAssignShader->destroy();
-        delete gridAssignShader;
-        gridAssignShader = nullptr;
-    }
-    if (gridPrefixSumShader)
-    {
-        gridPrefixSumShader->destroy();
-        delete gridPrefixSumShader;
-        gridPrefixSumShader = nullptr;
-    }
-    if (gridInsertShader)
-    {
-        gridInsertShader->destroy();
-        delete gridInsertShader;
-        gridInsertShader = nullptr;
-    }
+    // Spatial grid shaders are now cleaned up by SpatialGridSystem
     
     // Cleanup gizmo shaders
     if (gizmoExtractShader)
@@ -631,7 +616,7 @@ void CellManager::verletIntegration(float deltaTime)
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // Update spatial grid because cells have moved
-    updateSpatialGrid(); // This handles its own barriers internally
+    this->spatialGridSystem->updateCellGrid(getCellReadBuffer(), totalCellCount, gpuCellCountBuffer);
 
     addBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -1011,8 +996,8 @@ void CellManager::runCollisionCompute()
     physicsShader->setFloat("u_worldSize", config::WORLD_SIZE);
     physicsShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID); // Bind buffers (read from previous buffer, write to current buffer for stable simulation)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer()); // Read from previous frame
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridCountBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, this->spatialGridSystem->getCellGridBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, this->spatialGridSystem->getCellCountBuffer());
 
     // Also bind current buffer as output for physics results
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, getCellWriteBuffer()); // Write to current frame
@@ -1246,22 +1231,8 @@ void CellManager::resetSimulation()
     }
     
         
-    // Clear spatial grid buffers
-    if (gridBuffer != 0) {
-        glClearNamedBufferData(gridBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    if (gridCountBuffer != 0) {
-        glClearNamedBufferData(gridCountBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    if (gridOffsetBuffer != 0) {
-        glClearNamedBufferData(gridOffsetBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    if (gridHashBuffer != 0) {
-        glClearNamedBufferData(gridHashBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
-    if (activeCellsBuffer != 0) {
-        glClearNamedBufferData(activeCellsBuffer, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-    }
+    // Clear spatial grid buffers - now handled by SpatialGridSystem
+    // The spatial grid buffers will be cleared when SpatialGridSystem is reset
     
     // Clear adhesionSettings line buffer to prevent lingering lines after reset
     if (adhesionLineBuffer != 0) {

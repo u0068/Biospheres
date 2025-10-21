@@ -1,0 +1,110 @@
+#version 460 core
+
+// Density visualization compute shader
+// Generates visualization data for density field with configurable thresholds
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Input: 3D density texture
+uniform sampler3D u_densityTexture;
+
+// Output: Visualization data buffer
+layout (std430, binding = 1) restrict writeonly buffer VisualizationBuffer {
+    vec4 visualizationData[]; // [position.xyz, density] [color.rgba]
+};
+
+// Uniforms
+uniform int u_gridResolution;
+uniform float u_worldSize;
+uniform vec3 u_worldCenter;
+uniform float u_densityThreshold;
+uniform float u_maxDensity;
+uniform vec4 u_baseColor;
+uniform int u_enableColorMapping;
+uniform int u_enableVisualization;
+uniform float u_alphaMultiplier;
+
+// Convert grid coordinates to texture coordinates
+vec3 gridToTexCoord(ivec3 gridPos) {
+    return (vec3(gridPos) + 0.5) / float(u_gridResolution);
+}
+
+// Convert grid coordinates to world coordinates
+vec3 gridToWorld(ivec3 gridPos) {
+    vec3 normalized = vec3(gridPos) / float(u_gridResolution - 1);
+    return normalized * u_worldSize - vec3(u_worldSize * 0.5);
+}
+
+// Color mapping function - maps density to RGBA color
+vec4 densityToColor(float density) {
+    if (u_enableColorMapping == 0) {
+        float alpha = clamp(density / u_maxDensity, 0.0, 1.0) * u_alphaMultiplier;
+        return vec4(u_baseColor.rgb, alpha);
+    }
+    
+    // Normalize density to [0, 1] range
+    float normalizedDensity = clamp(density / u_maxDensity, 0.0, 1.0);
+    
+    // Color gradient with alpha based on density
+    vec3 color;
+    if (normalizedDensity < 0.33) {
+        // Blue to cyan
+        float t = normalizedDensity * 3.0;
+        color = mix(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 1.0), t);
+    } else if (normalizedDensity < 0.66) {
+        // Cyan to yellow
+        float t = (normalizedDensity - 0.33) * 3.0;
+        color = mix(vec3(0.0, 1.0, 1.0), vec3(1.0, 1.0, 0.0), t);
+    } else {
+        // Yellow to red
+        float t = (normalizedDensity - 0.66) * 3.0;
+        color = mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), t);
+    }
+    
+    // Alpha increases with density
+    float alpha = normalizedDensity * u_alphaMultiplier;
+    
+    return vec4(color, alpha);
+}
+
+void main() {
+    if (u_enableVisualization == 0) {
+        return;
+    }
+    
+    ivec3 gridPos = ivec3(gl_GlobalInvocationID.xyz);
+    
+    // Bounds check
+    if (any(greaterThanEqual(gridPos, ivec3(u_gridResolution)))) {
+        return;
+    }
+    
+    // Calculate linear index for output buffer
+    uint index = gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution;
+    uint dataIndex = index * 2; // Two vec4s per voxel
+    
+    // Sample density at this voxel
+    vec3 texCoord = gridToTexCoord(gridPos);
+    float density = texture(u_densityTexture, texCoord).r;
+    
+    // Skip if density is below threshold
+    if (density < u_densityThreshold) {
+        // Write empty visualization data
+        visualizationData[dataIndex] = vec4(0.0);
+        visualizationData[dataIndex + 1] = vec4(0.0);
+        return;
+    }
+    
+    // Calculate world position
+    vec3 worldPos = gridToWorld(gridPos);
+    
+    // Calculate color based on density
+    vec4 color = densityToColor(density);
+    
+    // Store visualization data
+    // First vec4: position (xyz) and density (w)
+    visualizationData[dataIndex] = vec4(worldPos, density);
+    
+    // Second vec4: color (rgba)
+    visualizationData[dataIndex + 1] = color;
+}

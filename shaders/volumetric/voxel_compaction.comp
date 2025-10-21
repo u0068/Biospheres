@@ -1,0 +1,96 @@
+#version 460 core
+
+// Voxel compaction compute shader
+// Generates a compact list of non-empty voxels for efficient rendering
+// Skips voxels that don't meet density or velocity thresholds
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Input: 3D density and velocity textures
+uniform sampler3D u_densityTexture;
+uniform sampler3D u_velocityTexture;
+
+// Output: Separate buffers for wireframe and flow line data
+layout (std430, binding = 0) restrict writeonly buffer WireframeBuffer {
+    vec4 wireframeData[];  // [position.xyz, density] for wireframes
+};
+
+layout (std430, binding = 2) restrict writeonly buffer FlowLineBuffer {
+    vec4 flowLineData[];   // Interleaved: [position.xyz, length] [direction.xyz, magnitude] per voxel
+};
+
+// Atomic counter for tracking number of active voxels
+layout (binding = 0, offset = 0) uniform atomic_uint u_activeVoxelCount;
+
+// Indirect draw commands buffer
+layout (std430, binding = 1) restrict writeonly buffer IndirectDrawBuffer {
+    uint wireframeDrawCommand[5]; // count, instanceCount, firstIndex, baseVertex, baseInstance
+    uint flowLineDrawCommand[5];  // count, instanceCount, firstIndex, baseVertex, baseInstance
+};
+
+// Uniforms
+uniform int u_gridResolution;
+uniform float u_worldSize;
+uniform vec3 u_worldCenter;
+uniform float u_densityThreshold;
+uniform float u_minVelocityThreshold;
+
+// Convert grid coordinates to texture coordinates
+vec3 gridToTexCoord(ivec3 gridPos) {
+    return (vec3(gridPos) + 0.5) / float(u_gridResolution);
+}
+
+// Convert grid coordinates to world coordinates
+vec3 gridToWorld(ivec3 gridPos) {
+    vec3 normalized = vec3(gridPos) / float(u_gridResolution - 1);
+    return normalized * u_worldSize - vec3(u_worldSize * 0.5);
+}
+
+void main() {
+    ivec3 gridPos = ivec3(gl_GlobalInvocationID.xyz);
+    
+    // Bounds check
+    if (any(greaterThanEqual(gridPos, ivec3(u_gridResolution)))) {
+        return;
+    }
+    
+    // Sample density and velocity at this voxel
+    vec3 texCoord = gridToTexCoord(gridPos);
+    float density = texture(u_densityTexture, texCoord).r;
+    vec3 velocity = texture(u_velocityTexture, texCoord).rgb;
+    float velocityMagnitude = length(velocity);
+    
+    // Check if this voxel should be included in visualization
+    bool hasDensity = density >= u_densityThreshold;
+    bool hasVelocity = velocityMagnitude >= u_minVelocityThreshold;
+    
+    // Skip completely empty voxels
+    if (!hasDensity && !hasVelocity) {
+        return;
+    }
+    
+    // This voxel is non-empty, add it to compact list
+    uint voxelIndex = atomicCounterIncrement(u_activeVoxelCount);
+    
+    // Calculate world position
+    vec3 worldPos = gridToWorld(gridPos);
+    
+    // Store wireframe data: [position.xyz, density]
+    wireframeData[voxelIndex] = vec4(worldPos, density);
+    
+    // Store flow line data
+    vec3 direction = velocityMagnitude > 0.0 ? normalize(velocity) : vec3(0.0);
+    float lineLength = min(velocityMagnitude * 2.0, 5.0); // Scale velocity to reasonable line length
+    
+    // Flow line data is stored as two consecutive vec4s per voxel
+    uint flowIndex = voxelIndex * 2;
+    
+    // Flow line start: [position.xyz, length]
+    flowLineData[flowIndex] = vec4(worldPos, lineLength);
+    
+    // Flow line direction: [direction.xyz, magnitude]
+    flowLineData[flowIndex + 1] = vec4(direction, velocityMagnitude);
+    
+    // Note: Indirect draw command instance counts will be updated by a separate compute pass
+    // after all voxels have been processed, since we can't synchronize across all work groups
+}

@@ -72,6 +72,7 @@ public:
     void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager);
     void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager); // New time scrubber window
     void renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager); // Scene switcher window
+    void renderInjectionControls(class InjectionSystem& injectionSystem, class SpatialGridSystem& spatialGrid, class VisualizationRenderer& visualizationRenderer); // Injection system controls
 
     // Preview simulation time control
     void updatePreviewSimulation(CellManager& previewCellManager);

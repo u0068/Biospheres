@@ -1,5 +1,6 @@
 #include "ui_manager.h"
 #include "../simulation/cell/cell_manager.h"
+#include "../simulation/spatial/spatial_grid_system.h"
 #include "../core/config.h"
 #include "imgui.h"
 #include <algorithm>
@@ -132,7 +133,9 @@ void UIManager::restoreFromKeyframe(CellManager& cellManager, int keyframeIndex)
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
         
         // Force update of spatial grid after restoration
-        cellManager.updateSpatialGrid();
+        if (cellManager.spatialGridSystem) {
+            cellManager.spatialGridSystem->updateCellGrid(cellManager.getCellReadBuffer(), cellManager.getCellCount(), cellManager.gpuCellCountBuffer);
+        }
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
     

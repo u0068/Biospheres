@@ -170,8 +170,11 @@
     <ClCompile Include="src\simulation\cell\cell_manager.cpp" />
     <ClCompile Include="src\simulation\cell\gizmos.cpp" />
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
-    <ClCompile Include="src\simulation\cell\spatial_grid.cpp" />
+    <ClCompile Include="src\rendering\systems\brush_renderer.cpp" />
+    <ClCompile Include="src\rendering\systems\visualization_renderer.cpp" />
+
     <ClCompile Include="src\simulation\cell\particle_system.cpp" />
+    <ClCompile Include="src\simulation\spatial\spatial_grid_system.cpp" />
     <ClCompile Include="src\simulation\cell\cell_selection.cpp" />
     <ClCompile Include="third_party\glad.c" />
     <ClCompile Include="src\rendering\core\glad_helpers.cpp" />
@@ -186,6 +189,7 @@
     <ClCompile Include="src\ui\ui_time_scrubber.cpp" />
     <ClCompile Include="src\ui\ui_scene_switcher.cpp" />
     <ClCompile Include="src\ui\ui_keyframe_manager.cpp" />
+    <ClCompile Include="src\ui\ui_injection_controls.cpp" />
     <ClCompile Include="src\ui\imgui_helpers.cpp" />
     <ClCompile Include="third_party\imgui\imgui.cpp" />
     <ClCompile Include="third_party\imgui\imgui_demo.cpp" />
@@ -195,6 +199,7 @@
     <ClCompile Include="third_party\imgui\imgui_tables.cpp" />
     <ClCompile Include="third_party\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\input\input.cpp" />
+    <ClCompile Include="src\input\injection_system.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="src\rendering\core\shader_class.cpp" />
     <ClCompile Include="src\rendering\core\mesh\sphere_mesh.cpp" />
@@ -204,8 +209,11 @@
     <ClInclude Include="src\rendering\camera\camera.h" />
     <ClInclude Include="src\simulation\cell\cell_manager.h" />
     <ClInclude Include="src\simulation\cell\cell_selection.h" />
+    <ClInclude Include="src\simulation\spatial\spatial_grid_system.h" />
     <ClInclude Include="src\core\config.h" />
     <ClInclude Include="src\rendering\systems\frustum_culling.h" />
+    <ClInclude Include="src\rendering\systems\brush_renderer.h" />
+    <ClInclude Include="src\rendering\systems\visualization_renderer.h" />
     <ClInclude Include="src\simulation\cell\common_structs.h" />
     <ClInclude Include="src\rendering\core\glad_helpers.h" />
     <ClInclude Include="src\rendering\core\glfw_helpers.h" />
@@ -224,6 +232,7 @@
     <ClInclude Include="third_party\imgui\imstb_textedit.h" />
     <ClInclude Include="third_party\imgui\imstb_truetype.h" />
     <ClInclude Include="src\input\input.h" />
+    <ClInclude Include="src\input\injection_system.h" />
     <ClInclude Include="third_party\include\glad\glad.h" />
     <ClInclude Include="src\core\resource.h" />
     <ClInclude Include="src\rendering\core\shader_class.h" />
@@ -244,6 +253,8 @@
     <None Include="shaders\rendering\culling\unified_cull.comp" />
     <None Include="shaders\rendering\debug\anchor_gizmo.frag" />
     <None Include="shaders\rendering\debug\anchor_gizmo.vert" />
+    <None Include="shaders\rendering\debug\brush.frag" />
+    <None Include="shaders\rendering\debug\brush.vert" />
     <None Include="shaders\rendering\debug\anchor_gizmo_extract.comp" />
     <None Include="shaders\rendering\debug\gizmo.frag" />
     <None Include="shaders\rendering\debug\gizmo.vert" />
@@ -272,6 +283,14 @@
     <None Include="shaders\particles\particle_extract.comp" />
     <None Include="shaders\particles\particle.vert" />
     <None Include="shaders\particles\particle.frag" />
+    <None Include="shaders\volumetric\density_visualization.comp" />
+    <None Include="shaders\volumetric\density_wireframe.frag" />
+    <None Include="shaders\volumetric\density_wireframe.vert" />
+    <None Include="shaders\volumetric\flow_line_generation.comp" />
+    <None Include="shaders\volumetric\flow_line_render.frag" />
+    <None Include="shaders\volumetric\flow_line_render.vert" />
+    <None Include="shaders\volumetric\voxel_compaction.comp" />
+    <None Include="shaders\volumetric\update_indirect_commands.comp" />
     <None Include="tools\sync_structs.ps1" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

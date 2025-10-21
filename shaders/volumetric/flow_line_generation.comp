@@ -1,0 +1,76 @@
+#version 460 core
+
+// Flow line generation compute shader
+// Generates line segments based on velocity field data for visualization
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Input: 3D velocity texture
+uniform sampler3D u_velocityTexture;
+
+// Output: Flow line data buffer
+layout (std430, binding = 1) restrict writeonly buffer FlowLineBuffer {
+    vec4 flowLineData[]; // [startPos.xyz, length] [direction.xyz, magnitude]
+};
+
+// Uniforms
+uniform int u_gridResolution;
+uniform float u_worldSize;
+uniform vec3 u_worldCenter;
+uniform float u_minVelocityThreshold;
+uniform float u_maxLineLength;
+uniform int u_enableFlowLines;
+
+// Convert grid coordinates to texture coordinates
+vec3 gridToTexCoord(ivec3 gridPos) {
+    return (vec3(gridPos) + 0.5) / float(u_gridResolution);
+}
+
+// Convert grid coordinates to world coordinates
+vec3 gridToWorld(ivec3 gridPos) {
+    vec3 normalized = vec3(gridPos) / float(u_gridResolution - 1);
+    return normalized * u_worldSize - vec3(u_worldSize * 0.5) + u_worldCenter;
+}
+
+void main() {
+    if (u_enableFlowLines == 0) {
+        return;
+    }
+    
+    ivec3 gridPos = ivec3(gl_GlobalInvocationID.xyz);
+    
+    // Bounds check
+    if (any(greaterThanEqual(gridPos, ivec3(u_gridResolution)))) {
+        return;
+    }
+    
+    // Calculate linear index for output buffer
+    uint index = gridPos.x + gridPos.y * u_gridResolution + gridPos.z * u_gridResolution * u_gridResolution;
+    uint dataIndex = index * 2; // Two vec4s per flow line
+    
+    // Sample velocity at this voxel
+    vec3 texCoord = gridToTexCoord(gridPos);
+    vec3 velocity = texture(u_velocityTexture, texCoord).rgb;
+    
+    float velocityMagnitude = length(velocity);
+    
+    // Skip if velocity is below threshold
+    if (velocityMagnitude < u_minVelocityThreshold) {
+        // Write empty flow line data
+        flowLineData[dataIndex] = vec4(0.0);
+        flowLineData[dataIndex + 1] = vec4(0.0);
+        return;
+    }
+    
+    // Calculate flow line properties
+    vec3 worldPos = gridToWorld(gridPos);
+    vec3 direction = normalize(velocity);
+    float lineLength = min(velocityMagnitude * u_maxLineLength, u_maxLineLength);
+    
+    // Store flow line data
+    // First vec4: start position (xyz) and line length (w)
+    flowLineData[dataIndex] = vec4(worldPos, lineLength);
+    
+    // Second vec4: direction (xyz) and velocity magnitude (w)
+    flowLineData[dataIndex + 1] = vec4(direction, velocityMagnitude);
+}
