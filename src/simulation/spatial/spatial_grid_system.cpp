@@ -64,11 +64,6 @@ void SpatialGridSystem::initialize() {
     // Initialize fluid textures (stubs for now)
     initializeFluidTextures();
     
-    std::cout << "SpatialGridSystem: Initialized spatial grid with " << TOTAL_GRID_CELLS
-        << " grid cells (" << GRID_RESOLUTION << "^3)\n";
-    std::cout << "SpatialGridSystem: Grid cell size: " << GRID_CELL_SIZE << "\n";
-    std::cout << "SpatialGridSystem: Max cells per grid: " << MAX_CELLS_PER_GRID << "\n";
-    
     // Report memory layout for fluid data
     reportMemoryLayout();
     
@@ -825,14 +820,6 @@ void SpatialGridSystem::initializeFluidTextures() {
     
     // Unbind texture to prevent state pollution
     glBindTexture(GL_TEXTURE_3D, 0);
-    
-    std::cout << "SpatialGridSystem: Initialized fluid 3D textures:" << std::endl;
-    std::cout << "  - Density texture (GL_R32F): " << GRID_RESOLUTION << "^3 = " 
-              << (GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION * 4 / (1024 * 1024)) << " MB" << std::endl;
-    std::cout << "  - Velocity texture (GL_RGB32F): " << GRID_RESOLUTION << "^3 = " 
-              << (GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION * 12 / (1024 * 1024)) << " MB" << std::endl;
-    std::cout << "  - Total GPU texture memory: " 
-              << (GRID_RESOLUTION * GRID_RESOLUTION * GRID_RESOLUTION * 16 / (1024 * 1024)) << " MB" << std::endl;
 }
 
 void SpatialGridSystem::cleanupFluidTextures() {
@@ -847,7 +834,6 @@ void SpatialGridSystem::cleanupFluidTextures() {
     if (velocityTexture3D != 0) {
         glDeleteTextures(1, &velocityTexture3D);
         velocityTexture3D = 0;
-        std::cout << "SpatialGridSystem: Cleaned up velocity 3D texture" << std::endl;
     }
 }
 
@@ -1008,8 +994,6 @@ bool SpatialGridSystem::validateInjectionPosition(const glm::vec3& worldPos) con
     if (worldPos.x < -halfWorldSize || worldPos.x > halfWorldSize ||
         worldPos.y < -halfWorldSize || worldPos.y > halfWorldSize ||
         worldPos.z < -halfWorldSize || worldPos.z > halfWorldSize) {
-        std::cerr << "SpatialGridSystem: Injection position outside world bounds: (" 
-                  << worldPos.x << ", " << worldPos.y << ", " << worldPos.z << ")" << std::endl;
         return false;
     }
     

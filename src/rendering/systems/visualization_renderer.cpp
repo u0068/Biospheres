@@ -179,36 +179,24 @@ void VisualizationRenderer::cleanup() {
 void VisualizationRenderer::initializeShaders() {
     try {
         // Initialize compute shader for flow line generation
-        std::cout << "Loading flow line generation compute shader..." << std::endl;
         flowLineGenerationShader = std::make_unique<Shader>("shaders/volumetric/flow_line_generation.comp");
-        std::cout << "Flow line generation shader ID: " << flowLineGenerationShader->ID << std::endl;
         
         // Initialize wireframe rendering shaders
-        std::cout << "Loading wireframe shaders..." << std::endl;
         densityWireframeShader = std::make_unique<Shader>("shaders/volumetric/density_wireframe.vert", 
                                                           "shaders/volumetric/density_wireframe.frag");
-        std::cout << "Wireframe shader ID: " << densityWireframeShader->ID << std::endl;
         
         // Initialize density visualization compute shader
-        std::cout << "Loading density visualization compute shader..." << std::endl;
         densityVisualizationShader = std::make_unique<Shader>("shaders/volumetric/density_visualization.comp");
-        std::cout << "Density visualization shader ID: " << densityVisualizationShader->ID << std::endl;
         
         // Initialize flow line rendering shaders
-        std::cout << "Loading flow line render shaders..." << std::endl;
         flowLineRenderShader = std::make_unique<Shader>("shaders/volumetric/flow_line_render.vert",
                                                         "shaders/volumetric/flow_line_render.frag");
-        std::cout << "Flow line render shader ID: " << flowLineRenderShader->ID << std::endl;
         
         // Initialize voxel compaction compute shader
-        std::cout << "Loading voxel compaction compute shader..." << std::endl;
         voxelCompactionShader = std::make_unique<Shader>("shaders/volumetric/voxel_compaction.comp");
-        std::cout << "Voxel compaction shader ID: " << voxelCompactionShader->ID << std::endl;
         
         // Initialize indirect command update compute shader
-        std::cout << "Loading indirect command update compute shader..." << std::endl;
         updateIndirectCommandsShader = std::make_unique<Shader>("shaders/volumetric/update_indirect_commands.comp");
-        std::cout << "Indirect command update shader ID: " << updateIndirectCommandsShader->ID << std::endl;
         
         // All visualization shaders loaded
     } catch (const std::exception& e) {
@@ -466,7 +454,6 @@ void VisualizationRenderer::renderFlowLines(const SpatialGridSystem& spatialGrid
     generateFlowLineGeometry(spatialGrid);
     
     if (lastFlowLineCount == 0) {
-        std::cout << "Flow line rendering: No flow lines to render" << std::endl;
         return; // Nothing to render
     }
     

@@ -142,8 +142,6 @@ void UIManager::renderInjectionControls(InjectionSystem& injectionSystem, Spatia
             // Apply config changes
             if (configChanged) {
                 visualizationRenderer.setVisualizationConfig(config);
-                std::cout << "Visualization config updated - Mode: " << config.visualizationMode 
-                         << ", Density threshold: " << config.densityThreshold << std::endl;
             }
             
             // Performance statistics

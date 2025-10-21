@@ -28,7 +28,8 @@
 // CONSTRUCTOR & DESTRUCTOR
 // ============================================================================
 
-CellManager::CellManager()
+CellManager::CellManager(SpatialGridSystem& spatialGrid)
+    : spatialGridSystem(&spatialGrid)
 {
     // Generate sphere mesh - optimized for high cell counts
     sphereMesh.generateSphere(8, 12, 1.0f); // Ultra-low poly: 8x12 = 96 triangles for maximum performance
@@ -36,11 +37,8 @@ CellManager::CellManager()
 
     initializeGPUBuffers();
     
-    // Initialize SpatialGridSystem (NEW)
-    this->spatialGridSystem = new SpatialGridSystem();
-    this->spatialGridSystem->initialize();
-    
-    // Spatial grid initialization is now handled by SpatialGridSystem
+    // SpatialGridSystem is now provided by the caller and already initialized
+    // No need to create or initialize it here
 
     // Initialize compute shaders
     physicsShader = new Shader("shaders/cell/physics/cell_physics_spatial.comp"); // Use spatial partitioning version
@@ -155,14 +153,9 @@ void CellManager::cleanup()
         freeAdhesionSlotBuffer = 0;
     }
     
-    // Cleanup SpatialGridSystem (NEW)
-    if (this->spatialGridSystem) {
-        this->spatialGridSystem->cleanup();
-        delete this->spatialGridSystem;
-        this->spatialGridSystem = nullptr;
-    }
-    
-    // Spatial grid cleanup is now handled by SpatialGridSystem
+    // SpatialGridSystem cleanup is now handled by the owner (main.cpp)
+    // We just hold a pointer, we don't own it
+    spatialGridSystem = nullptr;
     cleanupLODSystem();
     cleanupUnifiedCulling();
 

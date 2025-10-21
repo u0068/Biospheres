@@ -426,9 +426,16 @@ int main()
 	Camera mainCamera(glm::vec3(0.0f, 0.0f, 75.0f)); // Start at same position for consistent view
 	// Initialise the UI manager // We dont have any ui to manage yet
 	ToolState toolState;
-	UIManager uiManager;		// Initialise cells - create separate cell managers for each scene
-	CellManager previewCellManager;
-	CellManager mainCellManager;
+	UIManager uiManager;
+	
+	// Initialize spatial grid system BEFORE cell managers (required for proper initialization order)
+	SpatialGridSystem spatialGrid;
+	spatialGrid.initialize();
+	
+	// Initialise cells - create separate cell managers for each scene
+	// Pass spatial grid reference to both managers
+	CellManager previewCellManager(spatialGrid);
+	CellManager mainCellManager(spatialGrid);
 	
 	// Mark preview simulation (disables thrust force for genome editing)
 	previewCellManager.isPreviewSimulation = true;
@@ -454,11 +461,7 @@ int main()
 	audioEngine.start();
 	SynthEngine synthEngine;
 
-	// Initialize spatial grid system and injection system
-	SpatialGridSystem spatialGrid;
-	// Re-enable spatial grid initialization to test
-	spatialGrid.initialize();
-	// Re-enable injection system to test
+	// Initialize injection system (spatial grid already initialized above)
 	InjectionSystem injectionSystem;
 	
 	// Initialize brush renderer

@@ -178,7 +178,7 @@ struct CellManager
 	int getAdhesionLimit() const { return cellLimit * config::MAX_ADHESIONS_PER_CELL / 2; } // Maximum number of adhesion connections
 
     // Constructor and destructor
-    CellManager();
+    CellManager(SpatialGridSystem& spatialGrid);
     ~CellManager();
 
     // We declare functions in the struct, but we will define them in the cell_manager.cpp file.
