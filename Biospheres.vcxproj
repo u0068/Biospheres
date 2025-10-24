@@ -169,8 +169,11 @@
     <ClCompile Include="src\simulation\cell\lod_manager.cpp" />
     <ClCompile Include="src\simulation\cell\cell_manager.cpp" />
     <ClCompile Include="src\simulation\cell\gizmos.cpp" />
-    <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
+    <ClCompile Include="src\rendering\systems\blend_curve_loader.cpp" />
+    <ClCompile Include="src\rendering\systems\bridge_rendering_system.cpp" />
     <ClCompile Include="src\rendering\systems\brush_renderer.cpp" />
+    <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
+    <ClCompile Include="src\rendering\systems\mesh_library.cpp" />
     <ClCompile Include="src\rendering\systems\visualization_renderer.cpp" />
 
     <ClCompile Include="src\simulation\cell\particle_system.cpp" />
@@ -211,8 +214,11 @@
     <ClInclude Include="src\simulation\cell\cell_selection.h" />
     <ClInclude Include="src\simulation\spatial\spatial_grid_system.h" />
     <ClInclude Include="src\core\config.h" />
-    <ClInclude Include="src\rendering\systems\frustum_culling.h" />
+    <ClInclude Include="src\rendering\systems\blend_curve_loader.h" />
+    <ClInclude Include="src\rendering\systems\bridge_rendering_system.h" />
     <ClInclude Include="src\rendering\systems\brush_renderer.h" />
+    <ClInclude Include="src\rendering\systems\frustum_culling.h" />
+    <ClInclude Include="src\rendering\systems\mesh_library.h" />
     <ClInclude Include="src\rendering\systems\visualization_renderer.h" />
     <ClInclude Include="src\simulation\cell\common_structs.h" />
     <ClInclude Include="src\rendering\core\glad_helpers.h" />
@@ -237,6 +243,7 @@
     <ClInclude Include="src\core\resource.h" />
     <ClInclude Include="src\rendering\core\shader_class.h" />
     <ClInclude Include="src\rendering\core\mesh\sphere_mesh.h" />
+    <ClInclude Include="tools\baker\marching_cubes_tables.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\shared_structs.glsl" />

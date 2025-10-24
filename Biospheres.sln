@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36121.58
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Biospheres", "Biospheres.vcxproj", "{D94349FD-5460-401F-9D7A-1CEDAAC766A5}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BakerTool", "tools\baker\BakerTool.vcxproj", "{B8F7D8A2-1234-5678-9ABC-DEF012345678}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{D94349FD-5460-401F-9D7A-1CEDAAC766A5}.Release|x64.Build.0 = Release|x64
 		{D94349FD-5460-401F-9D7A-1CEDAAC766A5}.Release|x86.ActiveCfg = Release|Win32
 		{D94349FD-5460-401F-9D7A-1CEDAAC766A5}.Release|x86.Build.0 = Release|Win32
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Debug|x64.ActiveCfg = Debug|x64
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Debug|x64.Build.0 = Debug|x64
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Debug|x86.ActiveCfg = Debug|Win32
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Debug|x86.Build.0 = Debug|Win32
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Release|x64.ActiveCfg = Release|x64
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Release|x64.Build.0 = Release|x64
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Release|x86.ActiveCfg = Release|Win32
+		{B8F7D8A2-1234-5678-9ABC-DEF012345678}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
