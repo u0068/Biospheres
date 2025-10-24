@@ -59,138 +59,398 @@ bool MeshLibrary::loadMesh(const std::string& filepath)
 
 void MeshLibrary::loadMeshDirectory(const std::string& directory)
 {
+    // Reset loading statistics (Requirement 4.4)
+    m_lastLoadingStats = LoadingStats();
+    
+    // Validate directory exists
     if (!std::filesystem::exists(directory)) {
-        std::cerr << "MeshLibrary: Directory does not exist: " << directory << std::endl;
+        std::string error = "Directory does not exist: " + directory;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return;
     }
     
-    int loadedCount = 0;
-    int failedCount = 0;
+    if (!std::filesystem::is_directory(directory)) {
+        std::string error = "Path is not a directory: " + directory;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.errorMessages.push_back(error);
+        return;
+    }
     
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".mesh") {
-            if (loadMesh(entry.path().string())) {
-                loadedCount++;
-            } else {
-                failedCount++;
+    std::cout << "MeshLibrary: Scanning directory: " << directory << std::endl;
+    
+    // Collect all .mesh files (Requirement 4.4)
+    std::vector<std::filesystem::path> meshFiles;
+    try {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".mesh") {
+                meshFiles.push_back(entry.path());
+                m_lastLoadingStats.totalFiles++;
             }
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::string error = "Filesystem error while scanning: " + std::string(e.what());
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.errorMessages.push_back(error);
+        return;
+    }
+    
+    if (meshFiles.empty()) {
+        std::cout << "MeshLibrary: No .mesh files found in " << directory << std::endl;
+        return;
+    }
+    
+    std::cout << "MeshLibrary: Found " << meshFiles.size() << " .mesh files" << std::endl;
+    
+    // Sort files for consistent loading order
+    std::sort(meshFiles.begin(), meshFiles.end());
+    
+    // Load each mesh file with progress reporting (Requirement 4.4)
+    int progressInterval = std::max(1, static_cast<int>(meshFiles.size()) / 10);
+    
+    for (size_t i = 0; i < meshFiles.size(); ++i) {
+        const auto& filepath = meshFiles[i];
+        
+        // Report progress every 10%
+        if ((i + 1) % progressInterval == 0 || i == meshFiles.size() - 1) {
+            float progress = (static_cast<float>(i + 1) / meshFiles.size()) * 100.0f;
+            std::cout << "MeshLibrary: Loading progress: " << static_cast<int>(progress) 
+                      << "% (" << (i + 1) << "/" << meshFiles.size() << ")" << std::endl;
+        }
+        
+        // Attempt to load mesh
+        if (loadMesh(filepath.string())) {
+            m_lastLoadingStats.loadedSuccessfully++;
+        }
+        // Error tracking is handled in loadMesh() and loadMeshFromFile()
+    }
+    
+    // Report final statistics (Requirement 4.4)
+    std::cout << "\n=== Mesh Loading Summary ===" << std::endl;
+    std::cout << "Total files found: " << m_lastLoadingStats.totalFiles << std::endl;
+    std::cout << "Loaded successfully: " << m_lastLoadingStats.loadedSuccessfully << std::endl;
+    std::cout << "Failed validation: " << m_lastLoadingStats.failedValidation << std::endl;
+    std::cout << "Failed loading: " << m_lastLoadingStats.failedLoading << std::endl;
+    
+    if (!m_lastLoadingStats.errorMessages.empty()) {
+        std::cout << "\nErrors encountered:" << std::endl;
+        for (const auto& error : m_lastLoadingStats.errorMessages) {
+            std::cout << "  - " << error << std::endl;
         }
     }
     
-    std::cout << "MeshLibrary: Loaded " << loadedCount << " meshes from " << directory;
-    if (failedCount > 0) {
-        std::cout << " (" << failedCount << " failed)";
-    }
-    std::cout << std::endl;
+    std::cout << "===========================\n" << std::endl;
 }
 
 bool MeshLibrary::loadMeshFromFile(const std::string& filepath, MeshVariation& mesh)
 {
+    // Open file (Requirement 4.4)
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "MeshLibrary: Failed to open file: " << filepath << std::endl;
+        std::string error = "Failed to open file: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedLoading++;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return false;
     }
     
-    // Read header
+    // Get file size for validation
+    file.seekg(0, std::ios::end);
+    std::streamsize fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    // Validate minimum file size
+    if (fileSize < static_cast<std::streamsize>(sizeof(MeshFileHeader))) {
+        std::string error = "File too small to contain valid header: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedValidation++;
+        m_lastLoadingStats.errorMessages.push_back(error);
+        return false;
+    }
+    
+    // Read header (Requirement 12.1)
     MeshFileHeader header;
     file.read(reinterpret_cast<char*>(&header), sizeof(MeshFileHeader));
     
     if (!file.good()) {
-        std::cerr << "MeshLibrary: Failed to read header from " << filepath << std::endl;
+        std::string error = "Failed to read header from: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedLoading++;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return false;
     }
     
-    // Validate header
+    // Validate header (Requirement 12.1)
     if (!validateMeshFile(header)) {
-        std::cerr << "MeshLibrary: Invalid mesh file: " << filepath << std::endl;
+        std::string error = "Invalid mesh file header: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedValidation++;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return false;
     }
     
-    // Read vertex positions
+    // Validate expected file size
+    size_t expectedSize = sizeof(MeshFileHeader) +
+                         header.vertexCount * sizeof(glm::vec3) * 2 +  // positions + normals
+                         header.indexCount * sizeof(uint32_t);
+    
+    if (fileSize < static_cast<std::streamsize>(expectedSize)) {
+        std::string error = "File size mismatch (expected " + std::to_string(expectedSize) + 
+                          " bytes, got " + std::to_string(fileSize) + "): " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedValidation++;
+        m_lastLoadingStats.errorMessages.push_back(error);
+        return false;
+    }
+    
+    // Read vertex positions (Requirement 4.4)
     std::vector<glm::vec3> positions(header.vertexCount);
     file.read(reinterpret_cast<char*>(positions.data()), 
               header.vertexCount * sizeof(glm::vec3));
     
     if (!file.good()) {
-        std::cerr << "MeshLibrary: Failed to read positions from " << filepath << std::endl;
+        std::string error = "Failed to read positions from: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedLoading++;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return false;
     }
     
-    // Read vertex normals
+    // Read vertex normals (Requirement 4.4)
     std::vector<glm::vec3> normals(header.vertexCount);
     file.read(reinterpret_cast<char*>(normals.data()), 
               header.vertexCount * sizeof(glm::vec3));
     
     if (!file.good()) {
-        std::cerr << "MeshLibrary: Failed to read normals from " << filepath << std::endl;
+        std::string error = "Failed to read normals from: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedLoading++;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return false;
     }
     
-    // Read triangle indices
+    // Read triangle indices (Requirement 4.4)
     std::vector<uint32_t> indices(header.indexCount);
     file.read(reinterpret_cast<char*>(indices.data()), 
               header.indexCount * sizeof(uint32_t));
     
     if (!file.good()) {
-        std::cerr << "MeshLibrary: Failed to read indices from " << filepath << std::endl;
+        std::string error = "Failed to read indices from: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedLoading++;
+        m_lastLoadingStats.errorMessages.push_back(error);
         return false;
     }
     
     file.close();
+    
+    // Validate mesh topology (Requirement 12.1)
+    if (!validateMeshTopology(positions, normals, indices)) {
+        std::string error = "Mesh topology validation failed: " + filepath;
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedValidation++;
+        m_lastLoadingStats.errorMessages.push_back(error);
+        return false;
+    }
     
     // Store parameters
     mesh.sizeRatio = header.sizeRatio;
     mesh.distanceRatio = header.distanceRatio;
     mesh.indexCount = header.indexCount;
     
-    // Create VAO and upload to GPU
-    createVAO(mesh, positions, normals, indices);
+    // Create VAO and upload to GPU (Requirement 4.4)
+    try {
+        createVAO(mesh, positions, normals, indices);
+    } catch (const std::exception& e) {
+        std::string error = "Failed to create VAO for: " + filepath + " - " + e.what();
+        std::cerr << "MeshLibrary: " << error << std::endl;
+        m_lastLoadingStats.failedLoading++;
+        m_lastLoadingStats.errorMessages.push_back(error);
+        return false;
+    }
     
     return true;
 }
 
 bool MeshLibrary::validateMeshFile(const MeshFileHeader& header) const
 {
-    // Check magic number
+    // Check magic number (Requirement 12.1)
     if (header.magic != MESH_MAGIC) {
         std::cerr << "MeshLibrary: Invalid magic number: 0x" << std::hex << header.magic 
                   << " (expected 0x" << MESH_MAGIC << ")" << std::dec << std::endl;
         return false;
     }
     
-    // Check version
+    // Check version (Requirement 12.1)
     if (header.version != MESH_VERSION) {
         std::cerr << "MeshLibrary: Unsupported version: " << header.version 
                   << " (expected " << MESH_VERSION << ")" << std::endl;
         return false;
     }
     
-    // Validate vertex count
+    // Validate vertex count (Requirement 12.1)
     if (header.vertexCount == 0) {
         std::cerr << "MeshLibrary: Invalid vertex count: 0" << std::endl;
         return false;
     }
     
-    // Validate index count (must be multiple of 3 for triangles)
+    // Validate reasonable vertex count (prevent memory issues)
+    if (header.vertexCount > 10000000) {  // 10 million vertices max
+        std::cerr << "MeshLibrary: Vertex count too large: " << header.vertexCount << std::endl;
+        return false;
+    }
+    
+    // Validate index count (must be multiple of 3 for triangles) (Requirement 12.1)
     if (header.indexCount == 0 || header.indexCount % 3 != 0) {
         std::cerr << "MeshLibrary: Invalid index count: " << header.indexCount << std::endl;
         return false;
     }
     
-    // Validate size ratio (must be >= 1.0)
+    // Validate reasonable index count
+    if (header.indexCount > 30000000) {  // 30 million indices max (10 million triangles)
+        std::cerr << "MeshLibrary: Index count too large: " << header.indexCount << std::endl;
+        return false;
+    }
+    
+    // Validate size ratio (must be >= 1.0) (Requirement 12.1)
     if (header.sizeRatio < 1.0f || header.sizeRatio > 10.0f) {
         std::cerr << "MeshLibrary: Invalid size ratio: " << header.sizeRatio << std::endl;
         return false;
     }
     
-    // Validate distance ratio (must be > 0)
+    // Validate distance ratio (must be > 0) (Requirement 12.1)
     if (header.distanceRatio <= 0.0f || header.distanceRatio > 3.0f) {
         std::cerr << "MeshLibrary: Invalid distance ratio: " << header.distanceRatio << std::endl;
         return false;
     }
     
     return true;
+}
+
+bool MeshLibrary::validateMeshTopology(const std::vector<glm::vec3>& positions,
+                                       const std::vector<glm::vec3>& normals,
+                                       const std::vector<uint32_t>& indices) const
+{
+    // Validate data sizes match (Requirement 12.1)
+    if (positions.size() != normals.size()) {
+        std::cerr << "MeshLibrary: Position count (" << positions.size() 
+                  << ") does not match normal count (" << normals.size() << ")" << std::endl;
+        return false;
+    }
+    
+    // Validate all indices are within bounds (Requirement 12.1)
+    uint32_t maxIndex = static_cast<uint32_t>(positions.size());
+    for (size_t i = 0; i < indices.size(); ++i) {
+        if (indices[i] >= maxIndex) {
+            std::cerr << "MeshLibrary: Index out of bounds at position " << i 
+                      << ": " << indices[i] << " (max: " << maxIndex - 1 << ")" << std::endl;
+            return false;
+        }
+    }
+    
+    // Validate normals are normalized (with tolerance) (Requirement 12.1)
+    int invalidNormalCount = 0;
+    for (size_t i = 0; i < normals.size(); ++i) {
+        float length = glm::length(normals[i]);
+        if (length < 0.9f || length > 1.1f) {
+            invalidNormalCount++;
+            if (invalidNormalCount <= 5) {  // Only report first 5
+                std::cerr << "MeshLibrary: Warning - Normal at index " << i 
+                          << " has invalid length: " << length << std::endl;
+            }
+        }
+    }
+    
+    if (invalidNormalCount > 0) {
+        std::cerr << "MeshLibrary: Warning - " << invalidNormalCount 
+                  << " normals have invalid length (expected ~1.0)" << std::endl;
+        // Don't fail on this, just warn
+    }
+    
+    // Check for degenerate triangles (Requirement 12.1)
+    int degenerateCount = 0;
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        uint32_t i0 = indices[i];
+        uint32_t i1 = indices[i + 1];
+        uint32_t i2 = indices[i + 2];
+        
+        // Check for duplicate indices in triangle
+        if (i0 == i1 || i1 == i2 || i2 == i0) {
+            degenerateCount++;
+            if (degenerateCount <= 5) {  // Only report first 5
+                std::cerr << "MeshLibrary: Warning - Degenerate triangle at index " << i 
+                          << ": [" << i0 << ", " << i1 << ", " << i2 << "]" << std::endl;
+            }
+        }
+    }
+    
+    if (degenerateCount > 0) {
+        std::cerr << "MeshLibrary: Warning - " << degenerateCount 
+                  << " degenerate triangles found" << std::endl;
+        // Don't fail on this, just warn
+    }
+    
+    // Check for NaN or infinite values in positions (Requirement 12.1)
+    for (size_t i = 0; i < positions.size(); ++i) {
+        const glm::vec3& pos = positions[i];
+        if (std::isnan(pos.x) || std::isnan(pos.y) || std::isnan(pos.z) ||
+            std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
+            std::cerr << "MeshLibrary: Invalid position at index " << i 
+                      << ": [" << pos.x << ", " << pos.y << ", " << pos.z << "]" << std::endl;
+            return false;
+        }
+    }
+    
+    // Check for NaN or infinite values in normals (Requirement 12.1)
+    for (size_t i = 0; i < normals.size(); ++i) {
+        const glm::vec3& normal = normals[i];
+        if (std::isnan(normal.x) || std::isnan(normal.y) || std::isnan(normal.z) ||
+            std::isinf(normal.x) || std::isinf(normal.y) || std::isinf(normal.z)) {
+            std::cerr << "MeshLibrary: Invalid normal at index " << i 
+                      << ": [" << normal.x << ", " << normal.y << ", " << normal.z << "]" << std::endl;
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+bool MeshLibrary::parseFilenameParameters(const std::string& filename, 
+                                         float& sizeRatio, float& distanceRatio) const
+{
+    // Expected format: bridge_r{sizeRatio}_d{distanceRatio}.mesh
+    // Example: bridge_r1.5_d2.0.mesh
+    
+    size_t rPos = filename.find("_r");
+    size_t dPos = filename.find("_d");
+    
+    if (rPos == std::string::npos || dPos == std::string::npos) {
+        return false;
+    }
+    
+    try {
+        // Extract size ratio
+        size_t rStart = rPos + 2;
+        size_t rEnd = filename.find('_', rStart);
+        if (rEnd == std::string::npos) {
+            return false;
+        }
+        std::string sizeStr = filename.substr(rStart, rEnd - rStart);
+        sizeRatio = std::stof(sizeStr);
+        
+        // Extract distance ratio
+        size_t dStart = dPos + 2;
+        size_t dEnd = filename.find('.', dStart);
+        if (dEnd == std::string::npos) {
+            return false;
+        }
+        std::string distStr = filename.substr(dStart, dEnd - dStart);
+        distanceRatio = std::stof(distStr);
+        
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 void MeshLibrary::createVAO(MeshVariation& mesh, const std::vector<glm::vec3>& positions,

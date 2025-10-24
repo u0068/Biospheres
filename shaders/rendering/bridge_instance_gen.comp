@@ -1,0 +1,174 @@
+#version 460 core
+
+// Work group size optimized for GTX 1080 (32-thread warps)
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+// Include shared structures
+// Note: We'll define the structures inline since GLSL doesn't support #include
+
+// Cell data structure (matching ComputeCell from shared_structs.glsl)
+struct ComputeCell {
+    vec4 positionAndMass;
+    vec4 velocity;
+    vec4 acceleration;
+    vec4 prevAcceleration;
+    vec4 orientation;
+    vec4 angularVelocity;
+    vec4 angularAcceleration;
+    vec4 prevAngularAcceleration;
+    vec4 signallingSubstances;
+    int modeIndex;
+    float age;
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+    uint _padding[8];
+};
+
+// Adhesion connection structure (matching AdhesionConnection from shared_structs.glsl)
+struct AdhesionConnection {
+    uint cellAIndex;
+    uint cellBIndex;
+    uint modeIndex;
+    uint isActive;
+    uint zoneA;
+    uint zoneB;
+    vec3 anchorDirectionA;
+    float paddingA;
+    vec3 anchorDirectionB;
+    float paddingB;
+    vec4 twistReferenceA;
+    vec4 twistReferenceB;
+    uint _padding[2];
+};
+
+// Bridge instance structure for rendering
+struct BridgeInstance {
+    vec3 position;          // Midpoint between cells (12 bytes)
+    float scale;            // Based on smaller cell radius (4 bytes) -> 16 bytes total
+    vec3 orientation;       // Direction from cell A to B (12 bytes)
+    float distance;         // Distance between cells (4 bytes) -> 16 bytes total
+    float sizeRatio;        // Ratio of radii (larger / smaller) (4 bytes)
+    float distanceRatio;    // Distance ratio for mesh selection (4 bytes)
+    int cellAID;            // Cell A index for debugging (4 bytes)
+    int cellBID;            // Cell B index for debugging (4 bytes) -> 16 bytes total
+    // Total: 48 bytes, 16-byte aligned, zero padding waste
+};
+
+// Input buffers
+layout (std430, binding = 0) restrict readonly buffer CellBuffer {
+    ComputeCell cells[];
+};
+
+layout (std430, binding = 1) restrict readonly buffer AdhesionBuffer {
+    AdhesionConnection adhesions[];
+};
+
+// Output buffers
+layout (std430, binding = 2) restrict writeonly buffer InstanceBuffer {
+    BridgeInstance instances[];
+};
+
+layout (std430, binding = 3) restrict buffer CounterBuffer {
+    uint instanceCount;
+    uint maxInstances;
+    uint _padding1;
+    uint _padding2;
+};
+
+// Uniforms
+uniform int u_numAdhesions;
+uniform int u_enableBridgeGeneration;
+
+// Helper function to extract position from cell data
+vec3 getCellPosition(ComputeCell cell) {
+    return cell.positionAndMass.xyz;
+}
+
+// Helper function to extract radius from cell mass
+// Assuming radius is derived from mass (you may need to adjust this based on your simulation)
+float getCellRadius(ComputeCell cell) {
+    float mass = cell.positionAndMass.w;
+    // Assuming density is constant, radius = cbrt(3*mass / (4*pi*density))
+    // For simplicity, we'll use a linear relationship: radius = mass^(1/3)
+    // Adjust this formula based on your actual cell radius calculation
+    return pow(mass, 0.333333);
+}
+
+void main() {
+    uint adhesionIndex = gl_GlobalInvocationID.x;
+    
+    // Early exit if beyond adhesion count or bridge generation disabled
+    if (adhesionIndex >= u_numAdhesions || u_enableBridgeGeneration == 0) {
+        return;
+    }
+    
+    // Read adhesion connection
+    AdhesionConnection adhesion = adhesions[adhesionIndex];
+    
+    // Skip inactive connections
+    if (adhesion.isActive == 0) {
+        return;
+    }
+    
+    // Get connected cells
+    uint cellAIndex = adhesion.cellAIndex;
+    uint cellBIndex = adhesion.cellBIndex;
+    
+    ComputeCell cellA = cells[cellAIndex];
+    ComputeCell cellB = cells[cellBIndex];
+    
+    // Extract cell positions
+    vec3 posA = getCellPosition(cellA);
+    vec3 posB = getCellPosition(cellB);
+    
+    // Calculate bridge parameters
+    vec3 direction = posB - posA;
+    float distance = length(direction);
+    
+    // Skip if cells are at same position (shouldn't happen, but safety check)
+    if (distance < 0.0001) {
+        return;
+    }
+    
+    vec3 orientation = normalize(direction);
+    
+    // Calculate midpoint position
+    vec3 midpoint = (posA + posB) * 0.5;
+    
+    // Extract cell radii
+    float radiusA = getCellRadius(cellA);
+    float radiusB = getCellRadius(cellB);
+    
+    // Calculate size ratio (larger / smaller)
+    float smallerRadius = min(radiusA, radiusB);
+    float largerRadius = max(radiusA, radiusB);
+    float sizeRatio = largerRadius / smallerRadius;
+    
+    // Calculate distance ratio (distance / combined radius)
+    float combinedRadius = radiusA + radiusB;
+    float distanceRatio = distance / combinedRadius;
+    
+    // Calculate scale from smaller cell radius
+    float scale = smallerRadius;
+    
+    // Atomically allocate instance slot
+    uint instanceSlot = atomicAdd(instanceCount, 1);
+    
+    // Check if we exceeded maximum instance count
+    if (instanceSlot >= maxInstances) {
+        // Decrement counter to maintain consistency
+        atomicAdd(instanceCount, -1);
+        return;
+    }
+    
+    // Write instance data
+    instances[instanceSlot].position = midpoint;
+    instances[instanceSlot].scale = scale;
+    instances[instanceSlot].orientation = orientation;
+    instances[instanceSlot].distance = distance;
+    instances[instanceSlot].sizeRatio = sizeRatio;
+    instances[instanceSlot].distanceRatio = distanceRatio;
+    instances[instanceSlot].cellAID = int(cellAIndex);
+    instances[instanceSlot].cellBID = int(cellBIndex);
+}

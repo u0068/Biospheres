@@ -184,6 +184,7 @@
     <ClCompile Include="src\rendering\core\glfw_helpers.cpp" />
     <ClCompile Include="src\audio\synthesizer.cpp" />
     <ClCompile Include="src\utils\timer.cpp" />
+    <ClCompile Include="src\ui\ui_bridge_rendering.cpp" />
     <ClCompile Include="src\ui\ui_manager.cpp" />
     <ClCompile Include="src\ui\ui_performance_monitor.cpp" />
     <ClCompile Include="src\ui\ui_camera_controls.cpp" />
@@ -280,6 +281,9 @@
     <None Include="shaders\rendering\debug\adhesion_line.frag" />
     <None Include="shaders\rendering\debug\adhesion_line.vert" />
     <None Include="shaders\rendering\debug\adhesion_line_extract.comp" />
+    <None Include="shaders\rendering\bridge_instance_gen.comp" />
+    <None Include="shaders\rendering\bridge_render.frag" />
+    <None Include="shaders\rendering\bridge_render.vert" />
     <None Include="shaders\rendering\sphere\sphere_lod.frag" />
     <None Include="shaders\rendering\sphere\sphere_lod.vert" />
     <None Include="shaders\rendering\sphere\sphere_lod.comp" />

@@ -20,6 +20,21 @@ struct BlendCurvePoint {
 };
 
 /**
+ * Blend curve specific to a size ratio
+ */
+struct SizeRatioBlendCurve {
+    float sizeRatio;
+    std::vector<BlendCurvePoint> curvePoints;
+    
+    // Default constructor
+    SizeRatioBlendCurve() : sizeRatio(1.0f) {}
+    
+    // Constructor with size ratio
+    SizeRatioBlendCurve(float ratio, const std::vector<BlendCurvePoint>& points)
+        : sizeRatio(ratio), curvePoints(points) {}
+};
+
+/**
  * Structure representing a baked mesh
  */
 struct BakedMesh {
@@ -31,7 +46,7 @@ struct BakedMesh {
     float sizeRatio;
     float distanceRatio;
     float baseBlendingStrength;
-    std::vector<BlendCurvePoint> blendCurve;
+    std::vector<BlendCurvePoint> blendCurve;  // Curve specific to this mesh's size ratio
     
     // Validation
     bool isValid() const {
@@ -55,6 +70,14 @@ public:
     BakedMesh bakeDumbbellMesh(float sizeRatio, float distanceRatio, int resolution, 
                                float baseBlendingStrength, const std::vector<BlendCurvePoint>& blendCurve);
     
+    // Get curve for specific size ratio (with interpolation if needed)
+    std::vector<BlendCurvePoint> getCurveForSizeRatio(float sizeRatio, 
+                                                      const std::vector<SizeRatioBlendCurve>& curves) const;
+    
+    // Multi-curve interpolation (public for UI preview)
+    float getRuntimeBlendMultiplier(float sizeRatio, float distanceRatio, 
+                                   const std::vector<SizeRatioBlendCurve>& curves) const;
+    
     // Batch baking
     // Progress callback returns true to continue, false to cancel
     void bakeAllVariations(
@@ -68,8 +91,8 @@ public:
     
     // Curve metadata I/O
     void writeCurveMetadata(const std::string& outputDirectory, float baseBlendingStrength, 
-                           const std::vector<BlendCurvePoint>& blendCurve);
-    static std::vector<BlendCurvePoint> loadCurveMetadata(const std::string& filepath, float& outBaseBlendingStrength);
+                           const std::vector<SizeRatioBlendCurve>& curves);
+    static std::vector<SizeRatioBlendCurve> loadCurveMetadata(const std::string& filepath, float& outBaseBlendingStrength);
     
 private:
     // SDF functions
@@ -79,6 +102,10 @@ private:
     // Curve interpolation
     float interpolateBlendMultiplier(float distanceRatio, const std::vector<BlendCurvePoint>& curve) const;
     float catmullRomInterpolate(float t, float p0, float p1, float p2, float p3) const;
+    
+    // Helper for finding exact curve match
+    const SizeRatioBlendCurve* findCurveForSizeRatio(float sizeRatio, 
+                                                     const std::vector<SizeRatioBlendCurve>& curves) const;
     
     // Marching cubes
     BakedMesh marchingCubes(const std::vector<float>& densityField, int resolution);

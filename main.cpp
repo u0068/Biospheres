@@ -31,6 +31,7 @@
 #include "src/rendering/camera/camera.h"
 #include "src/rendering/systems/brush_renderer.h"
 #include "src/rendering/systems/visualization_renderer.h"
+#include "src/rendering/systems/bridge_rendering_system.h"
 
 // UI includes
 #include "src/ui/ui_manager.h"
@@ -232,7 +233,8 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 // Rendering pipeline
 void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, Camera& previewCamera, Camera& mainCamera,
 				 UIManager& uiManager, Shader& sphereShader, PerformanceMonitor& perfMonitor, SceneManager& sceneManager, int width, int height,
-				 InjectionSystem& injectionSystem, BrushRenderer& brushRenderer, SpatialGridSystem& spatialGrid, VisualizationRenderer& visualizationRenderer)
+				 InjectionSystem& injectionSystem, BrushRenderer& brushRenderer, SpatialGridSystem& spatialGrid, VisualizationRenderer& visualizationRenderer,
+				 BridgeRenderingSystem& bridgeRenderingSystem)
 {
 	Scene currentScene = sceneManager.getCurrentScene();
 	CellManager* activeCellManager = nullptr;
@@ -305,6 +307,9 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		
 		// Show injection controls
 		uiManager.renderInjectionControls(injectionSystem, spatialGrid, visualizationRenderer);
+		
+		// Show bridge rendering controls
+		uiManager.renderBridgeRenderingControls(bridgeRenderingSystem);
 
 		// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
@@ -472,6 +477,10 @@ int main()
 	VisualizationRenderer visualizationRenderer;
 	visualizationRenderer.initialize(config::GRID_RESOLUTION, config::WORLD_SIZE, glm::vec3(0.0f));
 
+	// Initialize bridge rendering system
+	BridgeRenderingSystem bridgeRenderingSystem;
+	bridgeRenderingSystem.initialize();
+
 	// Timing variables
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
@@ -561,7 +570,7 @@ int main()
 			accumulator -= tickPeriod;
 		}
 		/// Then we handle rendering
-		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height, injectionSystem, brushRenderer, spatialGrid, visualizationRenderer);
+		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height, injectionSystem, brushRenderer, spatialGrid, visualizationRenderer, bridgeRenderingSystem);
 
 		// Update all the timers
 		TimerManager::instance().finalizeFrame();
@@ -611,6 +620,9 @@ int main()
 	
 	// Cleanup visualization renderer
 	visualizationRenderer.cleanup();
+	
+	// Cleanup bridge rendering system
+	bridgeRenderingSystem.cleanup();
 	}
 	// Shutdown ImGui
 	ImGui_ImplOpenGL3_Shutdown();

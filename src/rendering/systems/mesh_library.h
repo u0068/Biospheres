@@ -61,6 +61,20 @@ public:
     bool loadMesh(const std::string& filepath);
     void loadMeshDirectory(const std::string& directory);
     
+    // Mesh loading statistics (Requirement 4.4, 12.1)
+    struct LoadingStats {
+        int totalFiles;
+        int loadedSuccessfully;
+        int failedValidation;
+        int failedLoading;
+        std::vector<std::string> errorMessages;
+        
+        LoadingStats() : totalFiles(0), loadedSuccessfully(0), 
+                        failedValidation(0), failedLoading(0) {}
+    };
+    
+    const LoadingStats& getLastLoadingStats() const { return m_lastLoadingStats; }
+    
     // Mesh query (Requirement 12.1)
     const MeshVariation* getMesh(float sizeRatio, float distanceRatio) const;
     const MeshVariation* getNearestMesh(float sizeRatio, float distanceRatio) const;
@@ -121,6 +135,10 @@ private:
     // Helper methods
     bool loadMeshFromFile(const std::string& filepath, MeshVariation& mesh);
     bool validateMeshFile(const MeshFileHeader& header) const;
+    bool validateMeshTopology(const std::vector<glm::vec3>& positions,
+                             const std::vector<glm::vec3>& normals,
+                             const std::vector<uint32_t>& indices) const;
+    bool parseFilenameParameters(const std::string& filename, float& sizeRatio, float& distanceRatio) const;
     void createVAO(MeshVariation& mesh, const std::vector<glm::vec3>& positions,
                    const std::vector<glm::vec3>& normals, const std::vector<uint32_t>& indices);
     void buildUniqueRatioLists();
@@ -133,6 +151,7 @@ private:
     std::map<MeshKey, MeshVariation> m_meshes;      // All loaded mesh variations
     std::vector<float> m_uniqueSizeRatios;          // Sorted unique size ratios
     std::vector<float> m_uniqueDistanceRatios;      // Sorted unique distance ratios
+    LoadingStats m_lastLoadingStats;                // Statistics from last load operation
     
     // Constants
     static constexpr uint32_t MESH_MAGIC = 0x4D455348;  // 'MESH'

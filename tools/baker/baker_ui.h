@@ -21,6 +21,7 @@ class MeshBaker;
  */
 struct BakingConfig {
     // Output settings
+    // Path relative to working directory (usually project root when run from VS)
     std::string outputDirectory = "assets/meshes/bridges/";
     
     // Quality settings
@@ -37,14 +38,44 @@ struct BakingConfig {
     // SDF blending parameters
     float blendingStrength = 0.5f;     // Base blending strength (0.1 - 5.0)
     
-    // Blend strength curve control points (distance ratio -> blend multiplier)
-    // Using BlendCurvePoint from mesh_baker.h
-    std::vector<BlendCurvePoint> blendCurvePoints = {
+    // Size-ratio-specific blend curves
+    std::vector<SizeRatioBlendCurve> sizeRatioCurves;
+    
+    // Default curve (used as template for new size ratios)
+    std::vector<BlendCurvePoint> defaultCurve = {
         {0.1f, 0.5f},   // Close: reduced blending
         {1.0f, 1.0f},   // Medium: normal blending
         {2.0f, 1.5f},   // Far: increased blending
         {3.0f, 0.2f}    // Very far: minimal blending
     };
+    
+    // Initialize curves for all size ratios
+    void initializeSizeRatioCurves() {
+        sizeRatioCurves.clear();
+        for (float ratio : sizeRatios) {
+            sizeRatioCurves.push_back(SizeRatioBlendCurve(ratio, defaultCurve));
+        }
+    }
+    
+    // Get curve for specific size ratio
+    const std::vector<BlendCurvePoint>* getCurveForSizeRatio(float sizeRatio) const {
+        for (const auto& curve : sizeRatioCurves) {
+            if (std::abs(curve.sizeRatio - sizeRatio) < 0.001f) {
+                return &curve.curvePoints;
+            }
+        }
+        return nullptr;
+    }
+    
+    // Update curve for specific size ratio
+    void updateCurveForSizeRatio(float sizeRatio, const std::vector<BlendCurvePoint>& newCurve) {
+        for (auto& curve : sizeRatioCurves) {
+            if (std::abs(curve.sizeRatio - sizeRatio) < 0.001f) {
+                curve.curvePoints = newCurve;
+                return;
+            }
+        }
+    }
     
     // Validation methods
     bool validateSizeRatio(float ratio) const {
@@ -56,7 +87,7 @@ struct BakingConfig {
     }
     
     bool validateBlendingStrength(float strength) const {
-        return strength >= 0.1f && strength <= 10.0f;
+        return strength >= 0.1f && strength <= 20.0f;
     }
     
     bool validateDistanceScaling(float scaling) const {
@@ -152,6 +183,11 @@ private:
     float newDistanceRatio = 1.0f;
     char outputDirBuffer[512];
     
+    // Curve editor state
+    int selectedSizeRatioIndex = 0;
+    int draggedPointIndex = -1;
+    bool isDraggingPoint = false;
+    
     // UI rendering methods
     void renderMainMenuBar();
     void renderConfigPanel();
@@ -168,11 +204,18 @@ private:
     void renderDistanceRatioConfig();
     void renderQualitySettings();
     void renderOutputSettings();
+    void renderBlendCurveEditor();
+    void renderCurveEditorWidget(std::vector<BlendCurvePoint>& curvePoints);
+    void renderInterpolationPreview();
     
     // Configuration persistence
     bool saveConfiguration(const std::string& filepath);
     bool loadConfiguration(const std::string& filepath);
     std::string getDefaultConfigPath() const;
+    
+    // File dialogs
+    std::string openSaveFileDialog();
+    std::string openLoadFileDialog();
     
     // Utility methods
     void addSizeRatio();

@@ -3,6 +3,21 @@
 
 // Third-party includes
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
+// Windows includes for file dialog
+#define NOMINMAX  // Prevent Windows.h from defining min/max macros
+#include <windows.h>
+#include <commdlg.h>
+
+// Undefine min/max macros if they were defined by Windows headers
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 
 // Standard includes
 #include <iostream>
@@ -27,6 +42,9 @@ BakerUI::BakerUI()
 {
     // Initialize output directory buffer
     strncpy_s(outputDirBuffer, sizeof(outputDirBuffer), config.outputDirectory.c_str(), _TRUNCATE);
+    
+    // Initialize size ratio curves
+    config.initializeSizeRatioCurves();
     
     // Try to load last used configuration
     std::string configPath = getDefaultConfigPath();
@@ -72,6 +90,7 @@ void BakerUI::render(MeshBaker& meshBaker)
     // Render UI panels
     renderConfigPanel();
     renderParameterControls();
+    renderBlendCurveEditor();
     renderBakingControls(meshBaker);
     renderPreviewControls();
     renderPreviewViewport();
@@ -103,12 +122,20 @@ void BakerUI::renderMainMenuBar()
         {
             if (ImGui::MenuItem("Save Configuration"))
             {
-                saveConfiguration(getDefaultConfigPath());
+                std::string filepath = openSaveFileDialog();
+                if (!filepath.empty())
+                {
+                    saveConfiguration(filepath);
+                }
             }
             
             if (ImGui::MenuItem("Load Configuration"))
             {
-                loadConfiguration(getDefaultConfigPath());
+                std::string filepath = openLoadFileDialog();
+                if (!filepath.empty())
+                {
+                    loadConfiguration(filepath);
+                }
             }
             
             ImGui::Separator();
@@ -195,12 +222,60 @@ void BakerUI::renderParameterControls()
 {
     ImGui::Begin("Preview Parameters");
     
-    // Size ratio slider
-    ImGui::Text("Size Ratio (Larger / Smaller)");
-    if (ImGui::SliderFloat("##SizeRatio", &currentSizeRatio, 1.0f, 4.0f, "%.2f"))
+    // Size ratio slider with interpolation info
+    ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Size Ratio (Interpolated)");
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Blends between configured size ratio curves");
+    
+    // Get min/max from configured size ratios
+    float minSizeRatio = 1.0f;
+    float maxSizeRatio = 4.0f;
+    if (!config.sizeRatios.empty())
     {
-        // Real-time preview update
+        minSizeRatio = config.sizeRatios.front();
+        maxSizeRatio = config.sizeRatios.back();
     }
+    
+    if (ImGui::SliderFloat("##SizeRatio", &currentSizeRatio, minSizeRatio, maxSizeRatio, "%.2f"))
+    {
+        // Real-time preview update with interpolation
+    }
+    
+    // Show which curves are being interpolated
+    if (!config.sizeRatioCurves.empty())
+    {
+        // Find surrounding curves
+        int lowerIdx = -1;
+        int upperIdx = -1;
+        for (size_t i = 0; i < config.sizeRatioCurves.size(); ++i)
+        {
+            if (config.sizeRatioCurves[i].sizeRatio <= currentSizeRatio)
+            {
+                lowerIdx = static_cast<int>(i);
+            }
+            if (config.sizeRatioCurves[i].sizeRatio >= currentSizeRatio && upperIdx == -1)
+            {
+                upperIdx = static_cast<int>(i);
+            }
+        }
+        
+        if (lowerIdx == upperIdx && lowerIdx != -1)
+        {
+            ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), 
+                              "→ Using curve: %.2f (exact match)", 
+                              config.sizeRatioCurves[lowerIdx].sizeRatio);
+        }
+        else if (lowerIdx != -1 && upperIdx != -1)
+        {
+            float t = (currentSizeRatio - config.sizeRatioCurves[lowerIdx].sizeRatio) /
+                     (config.sizeRatioCurves[upperIdx].sizeRatio - config.sizeRatioCurves[lowerIdx].sizeRatio);
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), 
+                              "→ Interpolating: %.2f (%.0f%%) ↔ %.2f (%.0f%%)",
+                              config.sizeRatioCurves[lowerIdx].sizeRatio, (1.0f - t) * 100.0f,
+                              config.sizeRatioCurves[upperIdx].sizeRatio, t * 100.0f);
+        }
+    }
+    
+    ImGui::Separator();
     
     // Distance ratio slider
     ImGui::Text("Distance Ratio (Distance / Combined Radius)");
@@ -211,427 +286,36 @@ void BakerUI::renderParameterControls()
     
     ImGui::Separator();
     
-    // Preset buttons
-    ImGui::Text("Presets:");
+    // SDF Blending Info
+    ImGui::Text("SDF Blending");
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), 
+                      "Use 'Blend Curve Editor' window to adjust blend curves");
     
-    if (ImGui::Button("Touching (1:1, 1.0)"))
-    {
-        currentSizeRatio = 1.0f;
-        currentDistanceRatio = 1.0f;
-    }
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Separated (1:1, 2.0)"))
-    {
-        currentSizeRatio = 1.0f;
-        currentDistanceRatio = 2.0f;
-    }
-    
-    if (ImGui::Button("Small+Large (1:3, 1.0)"))
-    {
-        currentSizeRatio = 3.0f;
-        currentDistanceRatio = 1.0f;
-    }
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Distant (2:1, 2.5)"))
-    {
-        currentSizeRatio = 2.0f;
-        currentDistanceRatio = 2.5f;
-    }
+    // Calculate and display current effective blend strength
+    MeshBaker tempBaker;
+    float blendMultiplier = tempBaker.getRuntimeBlendMultiplier(currentSizeRatio, currentDistanceRatio, 
+                                                                config.sizeRatioCurves);
+    float effectiveBlendingStrength = config.blendingStrength * blendMultiplier;
     
     ImGui::Separator();
     
-    // Blend Strength Presets
-    ImGui::Text("Blend Presets:");
+    // Show current effective blend strength (read-only display)
+    ImGui::Text("Current Effective Blend:");
+    ImGui::Text("  %.2f (base) × %.2f (curve) = %.2f", 
+               config.blendingStrength, blendMultiplier, effectiveBlendingStrength);
     
-    if (ImGui::Button("Sharp"))
+    // Visual indicator
+    if (blendMultiplier < 0.95f)
     {
-        config.blendingStrength = 0.2f;
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "→ Thinner bridge");
     }
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Normal"))
+    else if (blendMultiplier > 1.05f)
     {
-        config.blendingStrength = 0.5f;
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "→ Thicker bridge");
     }
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Smooth"))
+    else
     {
-        config.blendingStrength = 1.0f;
-    }
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Very Smooth"))
-    {
-        config.blendingStrength = 1.5f;
-    }
-    
-    ImGui::Separator();
-    
-    // SDF Blending Controls
-    ImGui::Text("SDF Blending Controls");
-    
-    // Calculate effective blending strength for display
-    float effectiveBlendingStrength = config.blendingStrength;
-    if (!config.blendCurvePoints.empty())
-    {
-        float smallRadius = 1.0f;
-        float largeRadius = smallRadius * currentSizeRatio;
-        float combinedRadius = smallRadius + largeRadius;
-        float actualDistance = currentDistanceRatio * combinedRadius;
-        // Interpolate blend multiplier from control points using Catmull-Rom spline
-        float blendMultiplier = 1.0f;
-        if (!config.blendCurvePoints.empty())
-        {
-            if (currentDistanceRatio <= config.blendCurvePoints.front().distanceRatio)
-            {
-                blendMultiplier = config.blendCurvePoints.front().blendMultiplier;
-            }
-            else if (currentDistanceRatio >= config.blendCurvePoints.back().distanceRatio)
-            {
-                blendMultiplier = config.blendCurvePoints.back().blendMultiplier;
-            }
-            else
-            {
-                // Catmull-Rom spline interpolation
-                for (size_t i = 0; i < config.blendCurvePoints.size() - 1; ++i)
-                {
-                    if (currentDistanceRatio >= config.blendCurvePoints[i].distanceRatio &&
-                        currentDistanceRatio <= config.blendCurvePoints[i + 1].distanceRatio)
-                    {
-                        float t = (currentDistanceRatio - config.blendCurvePoints[i].distanceRatio) /
-                                 (config.blendCurvePoints[i + 1].distanceRatio - config.blendCurvePoints[i].distanceRatio);
-                        
-                        // Get 4 control points for Catmull-Rom
-                        float p0 = (i > 0) ? config.blendCurvePoints[i - 1].blendMultiplier : config.blendCurvePoints[i].blendMultiplier;
-                        float p1 = config.blendCurvePoints[i].blendMultiplier;
-                        float p2 = config.blendCurvePoints[i + 1].blendMultiplier;
-                        float p3 = (i + 2 < config.blendCurvePoints.size()) ? config.blendCurvePoints[i + 2].blendMultiplier : config.blendCurvePoints[i + 1].blendMultiplier;
-                        
-                        blendMultiplier = catmullRomInterpolate(t, p0, p1, p2, p3);
-                        break;
-                    }
-                }
-            }
-        }
-        effectiveBlendingStrength = config.blendingStrength * blendMultiplier;
-    }
-    
-    // Show the blend strength slider - displays effective value but controls base value
-    float displayValue = effectiveBlendingStrength;
-    if (ImGui::SliderFloat("Blend Strength", &displayValue, 0.1f, 10.0f, "%.2f"))
-    {
-        // When user drags, update the base strength to maintain the difference
-        config.blendingStrength = displayValue - (effectiveBlendingStrength - config.blendingStrength);
-        config.blendingStrength = std::max(0.1f, std::min(5.0f, config.blendingStrength));
-    }
-    if (ImGui::IsItemHovered())
-    {
-        if (effectiveBlendingStrength != config.blendingStrength)
-        {
-            float curveFactor = effectiveBlendingStrength / config.blendingStrength;
-            ImGui::SetTooltip("Effective blend strength (%.2f base × %.2f curve)\nDrag to adjust base strength", 
-                             config.blendingStrength, curveFactor);
-        }
-        else
-        {
-            ImGui::SetTooltip("Controls how smoothly the spheres blend together.\nLower = sharper transition, Higher = smoother/wider blend");
-        }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Reset##BlendingStrength"))
-    {
-        config.blendingStrength = 0.5f;
-    }
-    
-    // Blend curve control - simplified since dragging is primary interaction
-    ImGui::Text("Blend Strength Curve:");
-    ImGui::Text("Control Points: %d", static_cast<int>(config.blendCurvePoints.size()));
-    
-    if (ImGui::Button("Reset to Default Curve"))
-    {
-        config.blendCurvePoints = {
-            {0.1f, 0.5f},
-            {1.0f, 1.0f},
-            {2.0f, 1.5f},
-            {3.0f, 0.2f}
-        };
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Clear All Points"))
-    {
-        config.blendCurvePoints = {{1.5f, 1.0f}, {2.0f, 1.0f}};
-    }
-    
-    // Show dynamic effective blending strength analysis
-    if (!config.blendCurvePoints.empty())
-    {
-        ImGui::Separator();
-        ImGui::Text("Distance Scaling Analysis");
-        
-        // Calculate the actual distance between spheres based on current parameters
-        float smallRadius = 1.0f;
-        float largeRadius = smallRadius * currentSizeRatio;
-        float combinedRadius = smallRadius + largeRadius;
-        float actualDistance = currentDistanceRatio * combinedRadius;
-        
-        // Calculate the effective blending strength using the same formula as the shader
-        // Use same Catmull-Rom interpolation
-        float blendMultiplier = 1.0f;
-        if (!config.blendCurvePoints.empty())
-        {
-            if (currentDistanceRatio <= config.blendCurvePoints.front().distanceRatio)
-            {
-                blendMultiplier = config.blendCurvePoints.front().blendMultiplier;
-            }
-            else if (currentDistanceRatio >= config.blendCurvePoints.back().distanceRatio)
-            {
-                blendMultiplier = config.blendCurvePoints.back().blendMultiplier;
-            }
-            else
-            {
-                for (size_t i = 0; i < config.blendCurvePoints.size() - 1; ++i)
-                {
-                    if (currentDistanceRatio >= config.blendCurvePoints[i].distanceRatio &&
-                        currentDistanceRatio <= config.blendCurvePoints[i + 1].distanceRatio)
-                    {
-                        float t = (currentDistanceRatio - config.blendCurvePoints[i].distanceRatio) /
-                                 (config.blendCurvePoints[i + 1].distanceRatio - config.blendCurvePoints[i].distanceRatio);
-                        
-                        float p0 = (i > 0) ? config.blendCurvePoints[i - 1].blendMultiplier : config.blendCurvePoints[i].blendMultiplier;
-                        float p1 = config.blendCurvePoints[i].blendMultiplier;
-                        float p2 = config.blendCurvePoints[i + 1].blendMultiplier;
-                        float p3 = (i + 2 < config.blendCurvePoints.size()) ? config.blendCurvePoints[i + 2].blendMultiplier : config.blendCurvePoints[i + 1].blendMultiplier;
-                        
-                        blendMultiplier = catmullRomInterpolate(t, p0, p1, p2, p3);
-                        break;
-                    }
-                }
-            }
-        }
-        float calculatedEffectiveBlendingStrength = config.blendingStrength * blendMultiplier;
-        
-        ImGui::Text("Effective Blend Strength: %.2f", calculatedEffectiveBlendingStrength);
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "(Base: %.2f × Multiplier: %.2f)", 
-                          config.blendingStrength, blendMultiplier);
-        
-        // Visual progress bar showing the scaling effect
-        float maxBlendForBar = 10.0f; // Maximum expected blend strength for the bar
-        float barProgress = std::min(calculatedEffectiveBlendingStrength / maxBlendForBar, 1.0f);
-        
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.8f, 0.2f, 0.8f)); // Green
-        ImGui::ProgressBar(barProgress, ImVec2(-1, 0), "");
-        ImGui::PopStyleColor();
-        
-        // Show the breakdown
-        ImGui::Text("Distance Ratio: %.2f -> Blend Multiplier: %.2f", currentDistanceRatio, blendMultiplier);
-        ImGui::Text("Interpolated from %d control points", static_cast<int>(config.blendCurvePoints.size()));
-        
-        // Plot the curve
-        ImGui::Spacing();
-        ImGui::Text("Blend Curve Editor:");
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Drag red dots to adjust • Double-click to add • Right-click to delete");
-        
-        // Generate curve data
-        constexpr int numPoints = 100;
-        static float curveData[numPoints];
-        float minDistance = 0.1f;
-        float maxDistance = 3.0f;
-        
-        for (int i = 0; i < numPoints; ++i)
-        {
-            float distRatio = minDistance + (maxDistance - minDistance) * (i / float(numPoints - 1));
-            
-            // Catmull-Rom spline interpolation
-            float blendMult = 1.0f;
-            if (!config.blendCurvePoints.empty())
-            {
-                if (distRatio <= config.blendCurvePoints.front().distanceRatio)
-                {
-                    blendMult = config.blendCurvePoints.front().blendMultiplier;
-                }
-                else if (distRatio >= config.blendCurvePoints.back().distanceRatio)
-                {
-                    blendMult = config.blendCurvePoints.back().blendMultiplier;
-                }
-                else
-                {
-                    for (size_t j = 0; j < config.blendCurvePoints.size() - 1; ++j)
-                    {
-                        if (distRatio >= config.blendCurvePoints[j].distanceRatio &&
-                            distRatio <= config.blendCurvePoints[j + 1].distanceRatio)
-                        {
-                            float t = (distRatio - config.blendCurvePoints[j].distanceRatio) /
-                                     (config.blendCurvePoints[j + 1].distanceRatio - config.blendCurvePoints[j].distanceRatio);
-                            
-                            float p0 = (j > 0) ? config.blendCurvePoints[j - 1].blendMultiplier : config.blendCurvePoints[j].blendMultiplier;
-                            float p1 = config.blendCurvePoints[j].blendMultiplier;
-                            float p2 = config.blendCurvePoints[j + 1].blendMultiplier;
-                            float p3 = (j + 2 < config.blendCurvePoints.size()) ? config.blendCurvePoints[j + 2].blendMultiplier : config.blendCurvePoints[j + 1].blendMultiplier;
-                            
-                            blendMult = catmullRomInterpolate(t, p0, p1, p2, p3);
-                            break;
-                        }
-                    }
-                }
-            }
-            curveData[i] = blendMult;
-        }
-        
-        // Plot the curve with current position indicator
-        float maxAmplitude = 1.0f;
-        for (const auto& point : config.blendCurvePoints)
-        {
-            maxAmplitude = std::max(maxAmplitude, point.blendMultiplier);
-        }
-        maxAmplitude *= 1.1f; // Add 10% margin
-        
-        // Get plot position and size
-        ImVec2 plotPos = ImGui::GetCursorScreenPos();
-        ImVec2 plotSize(-1, 200);
-        if (plotSize.x < 0) plotSize.x = ImGui::GetContentRegionAvail().x;
-        
-        ImGui::PlotLines("##BellCurve", curveData, numPoints, 0, nullptr, 0.0f, maxAmplitude, plotSize);
-        
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        
-        // Handle dragging control points
-        static int draggedPointIndex = -1;
-        static bool isDragging = false;
-        
-        ImVec2 mousePos = ImGui::GetMousePos();
-        bool mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-        bool mouseClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-        bool mouseReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
-        
-        // Check if mouse is over the plot area
-        bool mouseOverPlot = mousePos.x >= plotPos.x && mousePos.x <= plotPos.x + plotSize.x &&
-                            mousePos.y >= plotPos.y && mousePos.y <= plotPos.y + plotSize.y;
-        
-        // Draw and handle control points
-        for (size_t i = 0; i < config.blendCurvePoints.size(); ++i)
-        {
-            float pointX = (config.blendCurvePoints[i].distanceRatio - minDistance) / (maxDistance - minDistance);
-            float pointY = 1.0f - (config.blendCurvePoints[i].blendMultiplier / maxAmplitude);
-            
-            if (pointX >= 0.0f && pointX <= 1.0f && pointY >= 0.0f && pointY <= 1.0f)
-            {
-                ImVec2 center(plotPos.x + pointX * plotSize.x, plotPos.y + pointY * plotSize.y);
-                float radius = 6.0f;
-                
-                // Check if mouse is over this point
-                float distToMouse = std::sqrt((mousePos.x - center.x) * (mousePos.x - center.x) +
-                                             (mousePos.y - center.y) * (mousePos.y - center.y));
-                bool mouseOverPoint = distToMouse < radius + 3.0f;
-                
-                // Start dragging
-                if (mouseOverPoint && mouseClicked && draggedPointIndex == -1)
-                {
-                    draggedPointIndex = static_cast<int>(i);
-                    isDragging = true;
-                }
-                
-                // Update point position while dragging
-                if (isDragging && draggedPointIndex == static_cast<int>(i) && mouseDown && mouseOverPlot)
-                {
-                    // Convert mouse position to distance ratio and multiplier
-                    float newX = (mousePos.x - plotPos.x) / plotSize.x;
-                    float newY = 1.0f - (mousePos.y - plotPos.y) / plotSize.y;
-                    
-                    config.blendCurvePoints[i].distanceRatio = minDistance + newX * (maxDistance - minDistance);
-                    config.blendCurvePoints[i].blendMultiplier = newY * maxAmplitude;
-                    
-                    // Clamp values
-                    config.blendCurvePoints[i].distanceRatio = std::max(minDistance, std::min(maxDistance, config.blendCurvePoints[i].distanceRatio));
-                    config.blendCurvePoints[i].blendMultiplier = std::max(0.0f, std::min(10.0f, config.blendCurvePoints[i].blendMultiplier));
-                }
-                
-                // Draw point
-                ImU32 pointColor = (mouseOverPoint || draggedPointIndex == static_cast<int>(i)) ? 
-                                  IM_COL32(255, 150, 150, 255) : IM_COL32(255, 100, 100, 255);
-                float drawRadius = (mouseOverPoint || draggedPointIndex == static_cast<int>(i)) ? radius + 1.0f : radius;
-                
-                drawList->AddCircleFilled(center, drawRadius, pointColor);
-                drawList->AddCircle(center, drawRadius, IM_COL32(255, 255, 255, 255), 0, 2.0f);
-                
-                // Show tooltip with values
-                if (mouseOverPoint && !isDragging)
-                {
-                    ImGui::SetTooltip("Distance: %.2f\nMultiplier: %.2f\nDrag to move\nRight-click to delete", 
-                                     config.blendCurvePoints[i].distanceRatio,
-                                     config.blendCurvePoints[i].blendMultiplier);
-                }
-                
-                // Right-click to delete (but keep at least 2 points)
-                if (mouseOverPoint && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && config.blendCurvePoints.size() > 2)
-                {
-                    config.blendCurvePoints.erase(config.blendCurvePoints.begin() + i);
-                    break;
-                }
-            }
-        }
-        
-        // Stop dragging
-        if (mouseReleased)
-        {
-            if (isDragging)
-            {
-                // Sort points by distance after dragging
-                std::sort(config.blendCurvePoints.begin(), config.blendCurvePoints.end(),
-                         [](const auto& a, const auto& b) { return a.distanceRatio < b.distanceRatio; });
-            }
-            draggedPointIndex = -1;
-            isDragging = false;
-        }
-        
-        // Double-click to add new point
-        if (mouseOverPlot && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !isDragging)
-        {
-            float newX = (mousePos.x - plotPos.x) / plotSize.x;
-            float newY = 1.0f - (mousePos.y - plotPos.y) / plotSize.y;
-            
-            float newDist = minDistance + newX * (maxDistance - minDistance);
-            float newMult = newY * maxAmplitude;
-            
-            config.blendCurvePoints.push_back({newDist, newMult});
-            std::sort(config.blendCurvePoints.begin(), config.blendCurvePoints.end(),
-                     [](const auto& a, const auto& b) { return a.distanceRatio < b.distanceRatio; });
-        }
-        
-        // Draw vertical line at current distance ratio
-        float currentPos = (currentDistanceRatio - minDistance) / (maxDistance - minDistance);
-        if (currentPos >= 0.0f && currentPos <= 1.0f)
-        {
-            float lineX = plotPos.x + currentPos * plotSize.x;
-            ImU32 lineColor = IM_COL32(255, 255, 0, 200); // Yellow
-            drawList->AddLine(ImVec2(lineX, plotPos.y), ImVec2(lineX, plotPos.y + plotSize.y), lineColor, 2.0f);
-            
-            // Add arrow at top
-            drawList->AddTriangleFilled(
-                ImVec2(lineX, plotPos.y - 5),
-                ImVec2(lineX - 5, plotPos.y),
-                ImVec2(lineX + 5, plotPos.y),
-                lineColor
-            );
-        }
-        
-        // Add labels
-        ImGui::Text("Distance Ratio: 0.1");
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 50);
-        ImGui::Text("3.0");
-        
-        // Highlight curve effect
-        if (blendMultiplier < 0.95f)
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "→ Blend strength reduced by curve - thinner bridge");
-        }
-        else if (blendMultiplier > 1.05f)
-        {
-            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "→ Blend strength boosted by curve - thicker bridge");
-        }
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "→ Normal blend");
     }
 
     
@@ -659,21 +343,57 @@ void BakerUI::renderBakingControls(MeshBaker& meshBaker)
     // Baking button
     bool canBake = validateConfiguration() && !bakingInProgress;
     
-    // Test single mesh button
-    if (ImGui::Button("Generate Test Mesh", ImVec2(-1, 30)))
+    // Single mesh generation button (for preview only)
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Generate mesh for preview (not exported)");
+    if (ImGui::Button("Generate Preview Mesh", ImVec2(-1, 30)))
     {
         std::cout << "\n=== Testing Single Mesh Generation ===\n";
         std::cout << "Size Ratio: " << currentSizeRatio << "\n";
         std::cout << "Distance Ratio: " << currentDistanceRatio << "\n";
         std::cout << "Resolution: " << config.resolution << "\n";
         
+        // Get the interpolated curve for the current size ratio
+        std::vector<BlendCurvePoint> curveForCurrentRatio = meshBaker.getCurveForSizeRatio(
+            currentSizeRatio, config.sizeRatioCurves);
+        
+        // Show interpolation info
+        bool exactMatch = false;
+        for (const auto& curve : config.sizeRatioCurves)
+        {
+            if (std::abs(curve.sizeRatio - currentSizeRatio) < 0.001f)
+            {
+                exactMatch = true;
+                std::cout << "Using exact curve match: " << curve.sizeRatio << "\n";
+                break;
+            }
+        }
+        
+        if (!exactMatch && config.sizeRatioCurves.size() >= 2)
+        {
+            // Find surrounding curves
+            for (size_t i = 0; i < config.sizeRatioCurves.size() - 1; ++i)
+            {
+                if (currentSizeRatio >= config.sizeRatioCurves[i].sizeRatio && 
+                    currentSizeRatio <= config.sizeRatioCurves[i + 1].sizeRatio)
+                {
+                    float t = (currentSizeRatio - config.sizeRatioCurves[i].sizeRatio) /
+                             (config.sizeRatioCurves[i + 1].sizeRatio - config.sizeRatioCurves[i].sizeRatio);
+                    std::cout << "Interpolating between curves: " 
+                              << config.sizeRatioCurves[i].sizeRatio << " (" << ((1.0f - t) * 100.0f) << "%) and "
+                              << config.sizeRatioCurves[i + 1].sizeRatio << " (" << (t * 100.0f) << "%)\n";
+                    break;
+                }
+            }
+        }
+        
+        std::cout << "Interpolated curve has " << curveForCurrentRatio.size() << " control points\n";
+        
         testMesh = meshBaker.bakeDumbbellMesh(
             currentSizeRatio, 
             currentDistanceRatio, 
             config.resolution,
             config.blendingStrength,
-            config.blendCurvePoints
-        );
+            curveForCurrentRatio);
         
         if (testMesh.isValid())
         {
@@ -694,13 +414,20 @@ void BakerUI::renderBakingControls(MeshBaker& meshBaker)
     }
     
     ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    
+    // Baking section header
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Export Mesh Files");
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
+                      "Generates and saves .mesh files to disk");
     
     if (!canBake)
     {
         ImGui::BeginDisabled();
     }
     
-    if (ImGui::Button("Bake Parameter Grid", ImVec2(-1, 40)))
+    if (ImGui::Button("Bake & Export Parameter Grid", ImVec2(-1, 40)))
     {
         startBaking(meshBaker);
     }
@@ -713,12 +440,13 @@ void BakerUI::renderBakingControls(MeshBaker& meshBaker)
     // Status information
     if (bakingInProgress)
     {
-        ImGui::Text("Baking in progress...");
+        ImGui::Text("Baking and exporting meshes...");
         ImGui::ProgressBar(bakingProgress, ImVec2(-1, 0), bakingStatus.c_str());
     }
     else
     {
-        ImGui::Text("Ready to bake %d mesh variations", config.getTotalMeshCount());
+        ImGui::Text("Will export %d mesh files to:", config.getTotalMeshCount());
+        ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "  %s", config.outputDirectory.c_str());
     }
     
     ImGui::Separator();
@@ -844,8 +572,8 @@ void BakerUI::renderPreviewControls()
     // Popup for no mesh available
     if (ImGui::BeginPopupModal("No Mesh", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("No mesh generated yet!");
-        ImGui::Text("Click 'Generate Test Mesh' to create a mesh.");
+        ImGui::Text("No preview mesh generated yet!");
+        ImGui::Text("Click 'Generate Preview Mesh' to create one.");
         if (ImGui::Button("OK", ImVec2(120, 0)))
         {
             ImGui::CloseCurrentPopup();
@@ -877,7 +605,7 @@ void BakerUI::renderPreviewControls()
     ImGui::Text("Size Ratio: %.2f", currentSizeRatio);
     ImGui::Text("Distance Ratio: %.2f", currentDistanceRatio);
     ImGui::Text("Blend Strength: %.2f", config.blendingStrength);
-    ImGui::Text("Curve Points: %d", static_cast<int>(config.blendCurvePoints.size()));
+    ImGui::Text("Size Ratio Curves: %d", static_cast<int>(config.sizeRatioCurves.size()));
     
     ImGui::End();
 }
@@ -937,6 +665,14 @@ void BakerUI::renderSizeRatioConfig()
         {
             // Set current size ratio to this value for preview
             currentSizeRatio = config.sizeRatios[i];
+        }
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Graph"))
+        {
+            // Set current size ratio and select this curve in the editor
+            currentSizeRatio = config.sizeRatios[i];
+            selectedSizeRatioIndex = static_cast<int>(i);
         }
         ImGui::SameLine();
         
@@ -1055,6 +791,13 @@ void BakerUI::addSizeRatio()
         {
             config.sizeRatios.push_back(newSizeRatio);
             std::sort(config.sizeRatios.begin(), config.sizeRatios.end());
+            
+            // Add a curve for the new size ratio
+            config.sizeRatioCurves.push_back(SizeRatioBlendCurve(newSizeRatio, config.defaultCurve));
+            
+            // Sort curves to match size ratios
+            std::sort(config.sizeRatioCurves.begin(), config.sizeRatioCurves.end(),
+                     [](const auto& a, const auto& b) { return a.sizeRatio < b.sizeRatio; });
         }
     }
 }
@@ -1063,7 +806,23 @@ void BakerUI::removeSizeRatio(size_t index)
 {
     if (index < config.sizeRatios.size() && config.sizeRatios.size() > 1)
     {
+        float removedRatio = config.sizeRatios[index];
         config.sizeRatios.erase(config.sizeRatios.begin() + index);
+        
+        // Remove the corresponding curve
+        auto curveIt = std::find_if(config.sizeRatioCurves.begin(), config.sizeRatioCurves.end(),
+            [removedRatio](const auto& curve) { return std::abs(curve.sizeRatio - removedRatio) < 0.001f; });
+        
+        if (curveIt != config.sizeRatioCurves.end())
+        {
+            config.sizeRatioCurves.erase(curveIt);
+        }
+        
+        // Adjust selected index if needed
+        if (selectedSizeRatioIndex >= static_cast<int>(config.sizeRatioCurves.size()))
+        {
+            selectedSizeRatioIndex = std::max(0, static_cast<int>(config.sizeRatioCurves.size()) - 1);
+        }
     }
 }
 
@@ -1457,11 +1216,29 @@ bool BakerUI::saveConfiguration(const std::string& filepath)
         // Blending parameters
         file << "[Blending]\n";
         file << "strength=" << config.blendingStrength << "\n";
-        file << "curvePointCount=" << config.blendCurvePoints.size() << "\n";
-        for (size_t i = 0; i < config.blendCurvePoints.size(); ++i)
+        file << "sizeRatioCurveCount=" << config.sizeRatioCurves.size() << "\n";
+        
+        // Write each size ratio curve
+        for (size_t i = 0; i < config.sizeRatioCurves.size(); ++i)
         {
-            file << "curvePoint" << i << "=" << config.blendCurvePoints[i].distanceRatio 
-                 << "," << config.blendCurvePoints[i].blendMultiplier << "\n";
+            const auto& curve = config.sizeRatioCurves[i];
+            file << "curve" << i << "_sizeRatio=" << curve.sizeRatio << "\n";
+            file << "curve" << i << "_pointCount=" << curve.curvePoints.size() << "\n";
+            
+            for (size_t j = 0; j < curve.curvePoints.size(); ++j)
+            {
+                file << "curve" << i << "_point" << j << "=" 
+                     << curve.curvePoints[j].distanceRatio << "," 
+                     << curve.curvePoints[j].blendMultiplier << "\n";
+            }
+        }
+        
+        // Write default curve
+        file << "defaultCurvePointCount=" << config.defaultCurve.size() << "\n";
+        for (size_t i = 0; i < config.defaultCurve.size(); ++i)
+        {
+            file << "defaultCurvePoint" << i << "=" << config.defaultCurve[i].distanceRatio 
+                 << "," << config.defaultCurve[i].blendMultiplier << "\n";
         }
         file << "\n";
         
@@ -1569,20 +1346,68 @@ bool BakerUI::loadConfiguration(const std::string& filepath)
                 {
                     tempConfig.blendingStrength = std::stof(value);
                 }
-                else if (key == "curvePointCount")
+                else if (key == "sizeRatioCurveCount")
                 {
                     size_t count = std::stoul(value);
-                    tempConfig.blendCurvePoints.clear();
-                    tempConfig.blendCurvePoints.reserve(count);
+                    tempConfig.sizeRatioCurves.clear();
+                    tempConfig.sizeRatioCurves.reserve(count);
                 }
-                else if (key.find("curvePoint") == 0)
+                else if (key.find("curve") == 0 && key.find("_sizeRatio") != std::string::npos)
+                {
+                    // Extract curve index
+                    size_t underscorePos = key.find('_');
+                    int curveIndex = std::stoi(key.substr(5, underscorePos - 5));
+                    
+                    // Ensure we have enough curves
+                    while (tempConfig.sizeRatioCurves.size() <= static_cast<size_t>(curveIndex))
+                    {
+                        tempConfig.sizeRatioCurves.push_back(SizeRatioBlendCurve());
+                    }
+                    
+                    tempConfig.sizeRatioCurves[curveIndex].sizeRatio = std::stof(value);
+                }
+                else if (key.find("curve") == 0 && key.find("_pointCount") != std::string::npos)
+                {
+                    // Extract curve index
+                    size_t underscorePos = key.find('_');
+                    int curveIndex = std::stoi(key.substr(5, underscorePos - 5));
+                    
+                    size_t count = std::stoul(value);
+                    if (curveIndex < static_cast<int>(tempConfig.sizeRatioCurves.size()))
+                    {
+                        tempConfig.sizeRatioCurves[curveIndex].curvePoints.clear();
+                        tempConfig.sizeRatioCurves[curveIndex].curvePoints.reserve(count);
+                    }
+                }
+                else if (key.find("curve") == 0 && key.find("_point") != std::string::npos)
+                {
+                    // Extract curve index and point index
+                    size_t firstUnderscore = key.find('_');
+                    size_t secondUnderscore = key.find('_', firstUnderscore + 1);
+                    int curveIndex = std::stoi(key.substr(5, firstUnderscore - 5));
+                    
+                    size_t commaPos = value.find(',');
+                    if (commaPos != std::string::npos && curveIndex < static_cast<int>(tempConfig.sizeRatioCurves.size()))
+                    {
+                        float distanceRatio = std::stof(value.substr(0, commaPos));
+                        float blendMultiplier = std::stof(value.substr(commaPos + 1));
+                        tempConfig.sizeRatioCurves[curveIndex].curvePoints.push_back({distanceRatio, blendMultiplier});
+                    }
+                }
+                else if (key == "defaultCurvePointCount")
+                {
+                    size_t count = std::stoul(value);
+                    tempConfig.defaultCurve.clear();
+                    tempConfig.defaultCurve.reserve(count);
+                }
+                else if (key.find("defaultCurvePoint") == 0)
                 {
                     size_t commaPos = value.find(',');
                     if (commaPos != std::string::npos)
                     {
                         float distanceRatio = std::stof(value.substr(0, commaPos));
                         float blendMultiplier = std::stof(value.substr(commaPos + 1));
-                        tempConfig.blendCurvePoints.push_back({distanceRatio, blendMultiplier});
+                        tempConfig.defaultCurve.push_back({distanceRatio, blendMultiplier});
                     }
                 }
             }
@@ -1601,6 +1426,12 @@ bool BakerUI::loadConfiguration(const std::string& filepath)
         
         // Apply loaded configuration
         config = tempConfig;
+        
+        // If no curves were loaded (legacy config), initialize them
+        if (config.sizeRatioCurves.empty())
+        {
+            config.initializeSizeRatioCurves();
+        }
         
         // Update UI buffers
         strncpy_s(outputDirBuffer, sizeof(outputDirBuffer), config.outputDirectory.c_str(), _TRUNCATE);
@@ -1622,3 +1453,402 @@ std::string BakerUI::getDefaultConfigPath() const
     return "baker_config.txt";
 }
 
+std::string BakerUI::openSaveFileDialog()
+{
+    OPENFILENAMEA ofn;
+    char szFile[260] = {0};
+    
+    // Initialize default filename
+    strncpy_s(szFile, sizeof(szFile), "baker_config.txt", _TRUNCATE);
+    
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = glfwGetWin32Window(glfwGetCurrentContext());
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = "Configuration Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = NULL;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = NULL;
+    ofn.lpstrTitle = "Save Configuration";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+    ofn.lpstrDefExt = "txt";
+    
+    if (GetSaveFileNameA(&ofn) == TRUE)
+    {
+        return std::string(ofn.lpstrFile);
+    }
+    
+    return "";
+}
+
+std::string BakerUI::openLoadFileDialog()
+{
+    OPENFILENAMEA ofn;
+    char szFile[260] = {0};
+    
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = glfwGetWin32Window(glfwGetCurrentContext());
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = "Configuration Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = NULL;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = NULL;
+    ofn.lpstrTitle = "Load Configuration";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+    
+    if (GetOpenFileNameA(&ofn) == TRUE)
+    {
+        return std::string(ofn.lpstrFile);
+    }
+    
+    return "";
+}
+
+
+
+void BakerUI::renderBlendCurveEditor()
+{
+    ImGui::Begin("Blend Curve Editor");
+    
+    ImGui::Text("Size-Ratio-Specific Blend Curves");
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
+                      "Each size ratio can have its own blend curve for optimal results");
+    
+    ImGui::Separator();
+    
+    // Size ratio selector
+    ImGui::Text("Edit curve for size ratio:");
+    
+    std::vector<std::string> sizeRatioLabels;
+    for (const auto& curve : config.sizeRatioCurves)
+    {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%.2f", curve.sizeRatio);
+        sizeRatioLabels.push_back(buffer);
+    }
+    
+    if (!config.sizeRatioCurves.empty())
+    {
+        if (selectedSizeRatioIndex >= static_cast<int>(config.sizeRatioCurves.size()))
+        {
+            selectedSizeRatioIndex = 0;
+        }
+        
+        if (ImGui::BeginCombo("##SizeRatioSelect", sizeRatioLabels[selectedSizeRatioIndex].c_str()))
+        {
+            for (size_t i = 0; i < config.sizeRatioCurves.size(); ++i)
+            {
+                bool isSelected = (selectedSizeRatioIndex == static_cast<int>(i));
+                if (ImGui::Selectable(sizeRatioLabels[i].c_str(), isSelected))
+                {
+                    selectedSizeRatioIndex = static_cast<int>(i);
+                    // Automatically update preview size ratio to match selected curve
+                    currentSizeRatio = config.sizeRatioCurves[i].sizeRatio;
+                }
+                if (isSelected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Copy from Default"))
+        {
+            config.sizeRatioCurves[selectedSizeRatioIndex].curvePoints = config.defaultCurve;
+        }
+        
+        ImGui::Separator();
+        
+        // Edit the selected curve
+        auto& currentCurve = config.sizeRatioCurves[selectedSizeRatioIndex];
+        renderCurveEditorWidget(currentCurve.curvePoints);
+        
+        ImGui::Separator();
+        
+        // Curve management buttons
+        if (ImGui::Button("Apply to All Size Ratios"))
+        {
+            for (auto& curve : config.sizeRatioCurves)
+            {
+                curve.curvePoints = currentCurve.curvePoints;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset All to Default"))
+        {
+            for (auto& curve : config.sizeRatioCurves)
+            {
+                curve.curvePoints = config.defaultCurve;
+            }
+        }
+        
+        ImGui::Separator();
+        
+        // Show interpolation preview
+        renderInterpolationPreview();
+    }
+    else
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), 
+                          "No size ratios configured! Add size ratios in the configuration panel.");
+    }
+    
+    ImGui::End();
+}
+
+void BakerUI::renderCurveEditorWidget(std::vector<BlendCurvePoint>& curvePoints)
+{
+    ImGui::Text("Control Points: %d", static_cast<int>(curvePoints.size()));
+    
+    if (ImGui::Button("Reset to Default"))
+    {
+        curvePoints = config.defaultCurve;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear (Keep 2)"))
+    {
+        curvePoints = {{0.5f, 1.0f}, {2.0f, 1.0f}};
+    }
+    
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
+                      "Drag red dots • Double-click to add • Right-click to delete");
+    
+    // Generate curve data for plotting
+    constexpr int numPlotPoints = 100;
+    static float curveData[numPlotPoints];
+    float minDistance = 0.1f;
+    float maxDistance = 3.0f;
+    
+    for (int i = 0; i < numPlotPoints; ++i)
+    {
+        float distRatio = minDistance + (maxDistance - minDistance) * (i / float(numPlotPoints - 1));
+        
+        // Catmull-Rom spline interpolation
+        float blendMult = 1.0f;
+        if (!curvePoints.empty())
+        {
+            if (distRatio <= curvePoints.front().distanceRatio)
+            {
+                blendMult = curvePoints.front().blendMultiplier;
+            }
+            else if (distRatio >= curvePoints.back().distanceRatio)
+            {
+                blendMult = curvePoints.back().blendMultiplier;
+            }
+            else
+            {
+                for (size_t j = 0; j < curvePoints.size() - 1; ++j)
+                {
+                    if (distRatio >= curvePoints[j].distanceRatio &&
+                        distRatio <= curvePoints[j + 1].distanceRatio)
+                    {
+                        float t = (distRatio - curvePoints[j].distanceRatio) /
+                                 (curvePoints[j + 1].distanceRatio - curvePoints[j].distanceRatio);
+                        
+                        float p0 = (j > 0) ? curvePoints[j - 1].blendMultiplier : curvePoints[j].blendMultiplier;
+                        float p1 = curvePoints[j].blendMultiplier;
+                        float p2 = curvePoints[j + 1].blendMultiplier;
+                        float p3 = (j + 2 < curvePoints.size()) ? curvePoints[j + 2].blendMultiplier : curvePoints[j + 1].blendMultiplier;
+                        
+                        blendMult = catmullRomInterpolate(t, p0, p1, p2, p3);
+                        break;
+                    }
+                }
+            }
+        }
+        curveData[i] = blendMult;
+    }
+    
+    // Calculate max amplitude for scaling
+    float maxAmplitude = 1.0f;
+    for (const auto& point : curvePoints)
+    {
+        maxAmplitude = std::max(maxAmplitude, point.blendMultiplier);
+    }
+    maxAmplitude *= 1.1f; // Add 10% margin
+    
+    // Get plot position and size
+    ImVec2 plotPos = ImGui::GetCursorScreenPos();
+    ImVec2 plotSize(-1, 200);
+    if (plotSize.x < 0) plotSize.x = ImGui::GetContentRegionAvail().x;
+    
+    ImGui::PlotLines("##CurveEditor", curveData, numPlotPoints, 0, nullptr, 0.0f, maxAmplitude, plotSize);
+    
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    
+    // Handle mouse interaction
+    ImVec2 mousePos = ImGui::GetMousePos();
+    bool mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    bool mouseClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+    bool mouseReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+    
+    bool mouseOverPlot = mousePos.x >= plotPos.x && mousePos.x <= plotPos.x + plotSize.x &&
+                        mousePos.y >= plotPos.y && mousePos.y <= plotPos.y + plotSize.y;
+    
+    // Draw and handle control points
+    for (size_t i = 0; i < curvePoints.size(); ++i)
+    {
+        float pointX = (curvePoints[i].distanceRatio - minDistance) / (maxDistance - minDistance);
+        float pointY = 1.0f - (curvePoints[i].blendMultiplier / maxAmplitude);
+        
+        if (pointX >= 0.0f && pointX <= 1.0f && pointY >= 0.0f && pointY <= 1.0f)
+        {
+            ImVec2 center(plotPos.x + pointX * plotSize.x, plotPos.y + pointY * plotSize.y);
+            float radius = 6.0f;
+            
+            float distToMouse = std::sqrt((mousePos.x - center.x) * (mousePos.x - center.x) +
+                                         (mousePos.y - center.y) * (mousePos.y - center.y));
+            bool mouseOverPoint = distToMouse < radius + 3.0f;
+            
+            // Start dragging
+            if (mouseOverPoint && mouseClicked && draggedPointIndex == -1)
+            {
+                draggedPointIndex = static_cast<int>(i);
+                isDraggingPoint = true;
+            }
+            
+            // Update point position while dragging
+            if (isDraggingPoint && draggedPointIndex == static_cast<int>(i) && mouseDown && mouseOverPlot)
+            {
+                float newX = (mousePos.x - plotPos.x) / plotSize.x;
+                float newY = 1.0f - (mousePos.y - plotPos.y) / plotSize.y;
+                
+                curvePoints[i].distanceRatio = minDistance + newX * (maxDistance - minDistance);
+                curvePoints[i].blendMultiplier = newY * maxAmplitude;
+                
+                // Clamp values
+                curvePoints[i].distanceRatio = std::max(minDistance, std::min(maxDistance, curvePoints[i].distanceRatio));
+                curvePoints[i].blendMultiplier = std::max(0.0f, std::min(20.0f, curvePoints[i].blendMultiplier));
+            }
+            
+            // Draw point
+            ImU32 pointColor = (mouseOverPoint || draggedPointIndex == static_cast<int>(i)) ? 
+                              IM_COL32(255, 150, 150, 255) : IM_COL32(255, 100, 100, 255);
+            float drawRadius = (mouseOverPoint || draggedPointIndex == static_cast<int>(i)) ? radius + 1.0f : radius;
+            
+            drawList->AddCircleFilled(center, drawRadius, pointColor);
+            drawList->AddCircle(center, drawRadius, IM_COL32(255, 255, 255, 255), 0, 2.0f);
+            
+            // Show tooltip
+            if (mouseOverPoint && !isDraggingPoint)
+            {
+                ImGui::SetTooltip("Distance: %.2f\nMultiplier: %.2f\nDrag to move\nRight-click to delete", 
+                                 curvePoints[i].distanceRatio,
+                                 curvePoints[i].blendMultiplier);
+            }
+            
+            // Right-click to delete (keep at least 2 points)
+            if (mouseOverPoint && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && curvePoints.size() > 2)
+            {
+                curvePoints.erase(curvePoints.begin() + i);
+                break;
+            }
+        }
+    }
+    
+    // Stop dragging
+    if (mouseReleased)
+    {
+        if (isDraggingPoint)
+        {
+            // Sort points by distance after dragging
+            std::sort(curvePoints.begin(), curvePoints.end(),
+                     [](const auto& a, const auto& b) { return a.distanceRatio < b.distanceRatio; });
+        }
+        draggedPointIndex = -1;
+        isDraggingPoint = false;
+    }
+    
+    // Double-click to add new point
+    if (mouseOverPlot && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !isDraggingPoint)
+    {
+        float newX = (mousePos.x - plotPos.x) / plotSize.x;
+        float newY = 1.0f - (mousePos.y - plotPos.y) / plotSize.y;
+        
+        float newDist = minDistance + newX * (maxDistance - minDistance);
+        float newMult = newY * maxAmplitude;
+        
+        curvePoints.push_back({newDist, newMult});
+        std::sort(curvePoints.begin(), curvePoints.end(),
+                 [](const auto& a, const auto& b) { return a.distanceRatio < b.distanceRatio; });
+    }
+    
+    // Draw vertical line at current distance ratio
+    float currentPos = (currentDistanceRatio - minDistance) / (maxDistance - minDistance);
+    if (currentPos >= 0.0f && currentPos <= 1.0f)
+    {
+        float lineX = plotPos.x + currentPos * plotSize.x;
+        ImU32 lineColor = IM_COL32(255, 255, 0, 200);
+        drawList->AddLine(ImVec2(lineX, plotPos.y), ImVec2(lineX, plotPos.y + plotSize.y), lineColor, 2.0f);
+        
+        drawList->AddTriangleFilled(
+            ImVec2(lineX, plotPos.y - 5),
+            ImVec2(lineX - 5, plotPos.y),
+            ImVec2(lineX + 5, plotPos.y),
+            lineColor
+        );
+    }
+    
+    // Add labels
+    ImGui::Text("Distance Ratio: 0.1");
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 50);
+    ImGui::Text("3.0");
+}
+
+void BakerUI::renderInterpolationPreview()
+{
+    ImGui::Text("Blend Multiplier Interpolation Preview");
+    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
+                      "Shows how blend multiplier varies across size ratios at current distance ratio");
+    
+    // Show how the blend multiplier varies across size ratios for current distance ratio
+    constexpr int numSamples = 100;
+    static float interpolationData[numSamples];
+    
+    if (config.sizeRatios.empty())
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "No size ratios configured!");
+        return;
+    }
+    
+    float minSize = config.sizeRatios.front();
+    float maxSize = config.sizeRatios.back();
+    
+    // Create a temporary MeshBaker to use its interpolation function
+    MeshBaker tempBaker;
+    
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float sizeRatio = minSize + (maxSize - minSize) * (i / float(numSamples - 1));
+        interpolationData[i] = tempBaker.getRuntimeBlendMultiplier(sizeRatio, currentDistanceRatio, 
+                                                                   config.sizeRatioCurves);
+    }
+    
+    // Find max value for scaling
+    float maxValue = 1.0f;
+    for (int i = 0; i < numSamples; ++i)
+    {
+        maxValue = std::max(maxValue, interpolationData[i]);
+    }
+    maxValue *= 1.1f;
+    
+    ImGui::PlotLines("##InterpolationPreview", interpolationData, numSamples, 
+                    0, nullptr, 0.0f, maxValue, ImVec2(-1, 150));
+    
+    ImGui::Text("At distance ratio: %.2f", currentDistanceRatio);
+    ImGui::Text("Size ratio range: %.2f to %.2f", minSize, maxSize);
+    
+    // Show current value
+    MeshBaker tempBaker2;
+    float currentValue = tempBaker2.getRuntimeBlendMultiplier(currentSizeRatio, currentDistanceRatio, 
+                                                              config.sizeRatioCurves);
+    ImGui::Text("Current blend multiplier: %.2f (at size ratio %.2f)", currentValue, currentSizeRatio);
+}

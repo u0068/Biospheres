@@ -257,16 +257,21 @@ void PreviewRenderer::setShaderUniforms(const BakingConfig& config, float sizeRa
     // SDF blending parameters
     raymarchShader->setFloat("u_blendingStrength", config.blendingStrength);
     
+    // Get the curve for the current size ratio
+    MeshBaker tempBaker;
+    std::vector<BlendCurvePoint> curveForCurrentRatio = tempBaker.getCurveForSizeRatio(
+        sizeRatio, config.sizeRatioCurves);
+    
     // Pass curve control points (up to 8)
-    int numPoints = std::min(static_cast<int>(config.blendCurvePoints.size()), 8);
+    int numPoints = std::min(static_cast<int>(curveForCurrentRatio.size()), 8);
     raymarchShader->setInt("u_numCurvePoints", numPoints);
     
     for (int i = 0; i < numPoints; ++i)
     {
         std::string distName = "u_curveDistances[" + std::to_string(i) + "]";
         std::string multName = "u_curveMultipliers[" + std::to_string(i) + "]";
-        raymarchShader->setFloat(distName, config.blendCurvePoints[i].distanceRatio);
-        raymarchShader->setFloat(multName, config.blendCurvePoints[i].blendMultiplier);
+        raymarchShader->setFloat(distName, curveForCurrentRatio[i].distanceRatio);
+        raymarchShader->setFloat(multName, curveForCurrentRatio[i].blendMultiplier);
     }
     
     // Raymarching parameters

@@ -84,12 +84,44 @@ void MeshBaker::bakeAllVariations(const BakingConfig& config,
     
     std::cout << "Starting batch baking of " << totalMeshes << " mesh variations\n";
     
+    // Show current working directory for debugging
+    std::filesystem::path currentPath = std::filesystem::current_path();
+    std::cout << "Current working directory: " << currentPath.string() << "\n";
+    
     // Create output directory if it doesn't exist
-    std::filesystem::create_directories(config.outputDirectory);
+    try
+    {
+        std::cout << "Creating output directory: " << config.outputDirectory << "\n";
+        
+        // Convert to absolute path to see what we're actually trying to create
+        std::filesystem::path targetPath = std::filesystem::absolute(config.outputDirectory);
+        std::cout << "Absolute target path: " << targetPath.string() << "\n";
+        
+        std::filesystem::create_directories(config.outputDirectory);
+        
+        // Verify directory was created
+        if (!std::filesystem::exists(config.outputDirectory))
+        {
+            throw std::runtime_error("Failed to create output directory: " + config.outputDirectory);
+        }
+        
+        // Get absolute path for confirmation
+        std::filesystem::path absPath = std::filesystem::absolute(config.outputDirectory);
+        std::cout << "Output directory created/verified: " << absPath.string() << "\n";
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "ERROR: Failed to create output directory: " << e.what() << "\n";
+        if (progressCallback)
+        {
+            progressCallback(0.0f, "ERROR: Failed to create output directory");
+        }
+        return;
+    }
     
     // Write curve metadata file once for the entire batch
-    writeCurveMetadata(config.outputDirectory, config.blendingStrength, config.blendCurvePoints);
-    std::cout << "Wrote blend curve metadata with " << config.blendCurvePoints.size() << " control points\n";
+    writeCurveMetadata(config.outputDirectory, config.blendingStrength, config.sizeRatioCurves);
+    std::cout << "Wrote blend curve metadata with " << config.sizeRatioCurves.size() << " size ratio curves\n";
     
     // Iterate through all size ratios
     for (float sizeRatio : config.sizeRatios)
@@ -123,9 +155,12 @@ void MeshBaker::bakeAllVariations(const BakingConfig& config,
             
             try
             {
+                // Get the curve for this specific size ratio
+                std::vector<BlendCurvePoint> curveForThisRatio = getCurveForSizeRatio(sizeRatio, config.sizeRatioCurves);
+                
                 // Bake mesh with curve data
                 BakedMesh mesh = bakeDumbbellMesh(sizeRatio, distanceRatio, config.resolution,
-                                                 config.blendingStrength, config.blendCurvePoints);
+                                                 config.blendingStrength, curveForThisRatio);
                 
                 if (mesh.isValid())
                 {
@@ -673,9 +708,9 @@ float MeshBaker::interpolateBlendMultiplier(float distanceRatio, const std::vect
 }
 
 void MeshBaker::writeCurveMetadata(const std::string& outputDirectory, float baseBlendingStrength,
-                                  const std::vector<BlendCurvePoint>& blendCurve)
+                                  const std::vector<SizeRatioBlendCurve>& curves)
 {
-    std::string filepath = outputDirectory + "blend_curve.meta";
+    std::string filepath = outputDirectory + "blend_curves.meta";
     std::ofstream file(filepath, std::ios::binary);
     
     if (!file.is_open())
@@ -687,23 +722,30 @@ void MeshBaker::writeCurveMetadata(const std::string& outputDirectory, float bas
     {
         // Write header
         uint32_t magic = 0x56525543; // 'CURV'
-        uint32_t version = 1;
-        uint32_t numPoints = static_cast<uint32_t>(blendCurve.size());
+        uint32_t version = 2;  // Version 2 for multi-curve support
+        uint32_t numSizeRatios = static_cast<uint32_t>(curves.size());
         
         file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
         file.write(reinterpret_cast<const char*>(&version), sizeof(version));
         file.write(reinterpret_cast<const char*>(&baseBlendingStrength), sizeof(baseBlendingStrength));
-        file.write(reinterpret_cast<const char*>(&numPoints), sizeof(numPoints));
+        file.write(reinterpret_cast<const char*>(&numSizeRatios), sizeof(numSizeRatios));
         
-        // Write curve points
-        for (const auto& point : blendCurve)
+        // Write each size ratio's curve
+        for (const auto& curve : curves)
         {
-            file.write(reinterpret_cast<const char*>(&point.distanceRatio), sizeof(point.distanceRatio));
-            file.write(reinterpret_cast<const char*>(&point.blendMultiplier), sizeof(point.blendMultiplier));
+            file.write(reinterpret_cast<const char*>(&curve.sizeRatio), sizeof(curve.sizeRatio));
+            uint32_t numPoints = static_cast<uint32_t>(curve.curvePoints.size());
+            file.write(reinterpret_cast<const char*>(&numPoints), sizeof(numPoints));
+            
+            for (const auto& point : curve.curvePoints)
+            {
+                file.write(reinterpret_cast<const char*>(&point.distanceRatio), sizeof(point.distanceRatio));
+                file.write(reinterpret_cast<const char*>(&point.blendMultiplier), sizeof(point.blendMultiplier));
+            }
         }
         
         file.close();
-        std::cout << "Wrote blend curve metadata: " << filepath << "\n";
+        std::cout << "Wrote blend curve metadata with " << curves.size() << " size ratio curves: " << filepath << "\n";
     }
     catch (const std::exception& e)
     {
@@ -713,9 +755,9 @@ void MeshBaker::writeCurveMetadata(const std::string& outputDirectory, float bas
     }
 }
 
-std::vector<BlendCurvePoint> MeshBaker::loadCurveMetadata(const std::string& filepath, float& outBaseBlendingStrength)
+std::vector<SizeRatioBlendCurve> MeshBaker::loadCurveMetadata(const std::string& filepath, float& outBaseBlendingStrength)
 {
-    std::vector<BlendCurvePoint> curve;
+    std::vector<SizeRatioBlendCurve> curves;
     std::ifstream file(filepath, std::ios::binary);
     
     if (!file.is_open())
@@ -726,11 +768,10 @@ std::vector<BlendCurvePoint> MeshBaker::loadCurveMetadata(const std::string& fil
     try
     {
         // Read header
-        uint32_t magic, version, numPoints;
+        uint32_t magic, version;
         file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
         file.read(reinterpret_cast<char*>(&version), sizeof(version));
         file.read(reinterpret_cast<char*>(&outBaseBlendingStrength), sizeof(outBaseBlendingStrength));
-        file.read(reinterpret_cast<char*>(&numPoints), sizeof(numPoints));
         
         // Validate magic number
         if (magic != 0x56525543)
@@ -738,18 +779,62 @@ std::vector<BlendCurvePoint> MeshBaker::loadCurveMetadata(const std::string& fil
             throw std::runtime_error("Invalid curve metadata file format");
         }
         
-        // Read curve points
-        curve.reserve(numPoints);
-        for (uint32_t i = 0; i < numPoints; ++i)
+        if (version == 2)
         {
-            BlendCurvePoint point;
-            file.read(reinterpret_cast<char*>(&point.distanceRatio), sizeof(point.distanceRatio));
-            file.read(reinterpret_cast<char*>(&point.blendMultiplier), sizeof(point.blendMultiplier));
-            curve.push_back(point);
+            // New multi-curve format
+            uint32_t numSizeRatios;
+            file.read(reinterpret_cast<char*>(&numSizeRatios), sizeof(numSizeRatios));
+            
+            curves.reserve(numSizeRatios);
+            for (uint32_t i = 0; i < numSizeRatios; ++i)
+            {
+                SizeRatioBlendCurve curve;
+                file.read(reinterpret_cast<char*>(&curve.sizeRatio), sizeof(curve.sizeRatio));
+                
+                uint32_t numPoints;
+                file.read(reinterpret_cast<char*>(&numPoints), sizeof(numPoints));
+                
+                curve.curvePoints.reserve(numPoints);
+                for (uint32_t j = 0; j < numPoints; ++j)
+                {
+                    BlendCurvePoint point;
+                    file.read(reinterpret_cast<char*>(&point.distanceRatio), sizeof(point.distanceRatio));
+                    file.read(reinterpret_cast<char*>(&point.blendMultiplier), sizeof(point.blendMultiplier));
+                    curve.curvePoints.push_back(point);
+                }
+                
+                curves.push_back(curve);
+            }
+            
+            std::cout << "Loaded blend curve metadata: " << numSizeRatios << " size ratio curves\n";
+        }
+        else if (version == 1)
+        {
+            // Legacy single-curve format - convert to multi-curve
+            uint32_t numPoints;
+            file.read(reinterpret_cast<char*>(&numPoints), sizeof(numPoints));
+            
+            std::vector<BlendCurvePoint> legacyCurve;
+            legacyCurve.reserve(numPoints);
+            for (uint32_t i = 0; i < numPoints; ++i)
+            {
+                BlendCurvePoint point;
+                file.read(reinterpret_cast<char*>(&point.distanceRatio), sizeof(point.distanceRatio));
+                file.read(reinterpret_cast<char*>(&point.blendMultiplier), sizeof(point.blendMultiplier));
+                legacyCurve.push_back(point);
+            }
+            
+            // Create a single curve with size ratio 1.0
+            curves.push_back(SizeRatioBlendCurve(1.0f, legacyCurve));
+            
+            std::cout << "Loaded legacy blend curve metadata (converted to multi-curve format)\n";
+        }
+        else
+        {
+            throw std::runtime_error("Unsupported curve metadata version: " + std::to_string(version));
         }
         
         file.close();
-        std::cout << "Loaded blend curve metadata: " << numPoints << " control points\n";
     }
     catch (const std::exception& e)
     {
@@ -757,5 +842,103 @@ std::vector<BlendCurvePoint> MeshBaker::loadCurveMetadata(const std::string& fil
         throw std::runtime_error("Error reading curve metadata: " + std::string(e.what()));
     }
     
-    return curve;
+    return curves;
+}
+
+std::vector<BlendCurvePoint> MeshBaker::getCurveForSizeRatio(float sizeRatio, 
+                                                             const std::vector<SizeRatioBlendCurve>& curves) const
+{
+    if (curves.empty())
+    {
+        // Return default curve
+        return {{0.1f, 0.5f}, {1.0f, 1.0f}, {2.0f, 1.5f}, {3.0f, 0.2f}};
+    }
+    
+    // Find exact match
+    for (const auto& curve : curves)
+    {
+        if (std::abs(curve.sizeRatio - sizeRatio) < 0.001f)
+        {
+            return curve.curvePoints;
+        }
+    }
+    
+    // Find surrounding curves for interpolation
+    const SizeRatioBlendCurve* lowerCurve = nullptr;
+    const SizeRatioBlendCurve* upperCurve = nullptr;
+    float t = 0.0f;
+    
+    // Before first curve
+    if (sizeRatio <= curves.front().sizeRatio)
+    {
+        return curves.front().curvePoints;
+    }
+    
+    // After last curve
+    if (sizeRatio >= curves.back().sizeRatio)
+    {
+        return curves.back().curvePoints;
+    }
+    
+    // Find surrounding curves
+    for (size_t i = 0; i < curves.size() - 1; ++i)
+    {
+        if (sizeRatio >= curves[i].sizeRatio && sizeRatio <= curves[i + 1].sizeRatio)
+        {
+            lowerCurve = &curves[i];
+            upperCurve = &curves[i + 1];
+            t = (sizeRatio - curves[i].sizeRatio) / (curves[i + 1].sizeRatio - curves[i].sizeRatio);
+            break;
+        }
+    }
+    
+    if (!lowerCurve || !upperCurve)
+    {
+        return curves.front().curvePoints;
+    }
+    
+    // Interpolate curves - create a new curve with interpolated control points
+    // Assume both curves have the same distance ratio points (they should from UI)
+    std::vector<BlendCurvePoint> interpolatedCurve;
+    
+    size_t minSize = std::min(lowerCurve->curvePoints.size(), upperCurve->curvePoints.size());
+    for (size_t i = 0; i < minSize; ++i)
+    {
+        BlendCurvePoint point;
+        point.distanceRatio = lowerCurve->curvePoints[i].distanceRatio * (1.0f - t) + 
+                             upperCurve->curvePoints[i].distanceRatio * t;
+        point.blendMultiplier = lowerCurve->curvePoints[i].blendMultiplier * (1.0f - t) + 
+                               upperCurve->curvePoints[i].blendMultiplier * t;
+        interpolatedCurve.push_back(point);
+    }
+    
+    return interpolatedCurve;
+}
+
+float MeshBaker::getRuntimeBlendMultiplier(float sizeRatio, float distanceRatio, 
+                                          const std::vector<SizeRatioBlendCurve>& curves) const
+{
+    if (curves.empty())
+    {
+        return 1.0f;
+    }
+    
+    // Get interpolated curve for this size ratio
+    std::vector<BlendCurvePoint> curve = getCurveForSizeRatio(sizeRatio, curves);
+    
+    // Evaluate blend multiplier on the curve
+    return interpolateBlendMultiplier(distanceRatio, curve);
+}
+
+const SizeRatioBlendCurve* MeshBaker::findCurveForSizeRatio(float sizeRatio, 
+                                                            const std::vector<SizeRatioBlendCurve>& curves) const
+{
+    for (const auto& curve : curves)
+    {
+        if (std::abs(curve.sizeRatio - sizeRatio) < 0.001f)
+        {
+            return &curve;
+        }
+    }
+    return nullptr;
 }

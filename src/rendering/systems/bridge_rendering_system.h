@@ -41,14 +41,20 @@ public:
     void setEnabled(bool enabled) { m_enabled = enabled; }
     bool isEnabled() const { return m_enabled; }
     
-    // Statistics
+    // Statistics (Requirement 16.1)
     int getInstanceCount() const { return m_currentInstanceCount; }
     float getLastFrameTime() const { return m_lastFrameTime; }
+    float getLastComputeTime() const { return m_lastComputeTime; }
+    float getLastRenderTime() const { return m_lastRenderTime; }
 
 private:
     // Initialization helpers
     void initializeBuffers();
     void initializeShaders();
+    
+    // Buffer management helpers (Requirement 14.1, 14.2)
+    void bindBuffersForCompute();
+    void bindBuffersForRendering();
     
     // GPU buffers (Requirement 11.1, 11.2)
     GLuint m_cellDataSSBO;              // Reference to CellManager's cell data (not owned)
@@ -73,8 +79,20 @@ private:
     bool m_initialized;
     bool m_enabled;
     
-    // Performance tracking
+    // Performance tracking (Requirement 16.1)
     float m_lastFrameTime;              // Last frame time in milliseconds
+    GLuint m_queryBegin;                // GPU timer query for frame start
+    GLuint m_queryEnd;                  // GPU timer query for frame end
+    GLuint m_computeQueryBegin;         // GPU timer query for compute shader start
+    GLuint m_computeQueryEnd;           // GPU timer query for compute shader end
+    float m_lastComputeTime;            // Last compute shader time in milliseconds
+    float m_lastRenderTime;             // Last rendering time in milliseconds
+    
+    // Performance monitoring helpers
+    void initializePerformanceQueries();
+    void beginPerformanceMeasurement();
+    void endPerformanceMeasurement();
+    void updatePerformanceMetrics();
     
     // Maximum capacities
     static constexpr int MAX_BRIDGE_INSTANCES = 100000;
