@@ -5,7 +5,8 @@ struct ComputeCell {
     vec4 velocity;          // x, y, z, padding
     vec4 acceleration;      // x, y, z, padding
     vec4 prevAcceleration;  // x, y, z, padding
-    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 orientation;       // Quaternion to (prevent gimbal lock) - affected by physics
+    vec4 genomeOrientation; // Quaternion for genome-derived orientation - NEVER affected by physics
     vec4 angularVelocity;   // Pseudo-vector for easy math
     vec4 angularAcceleration;       // Pseudo-vector for easy math
     vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
@@ -16,9 +17,9 @@ struct ComputeCell {
     float toxins;
     float nitrates;
     int adhesionIndices[20];
-    
+
     // Padding to maintain 16-byte alignment for the entire struct
-    uint _padding[8];
+    uint _padding[4];
 };
 
 struct GPUModeAdhesionSettings

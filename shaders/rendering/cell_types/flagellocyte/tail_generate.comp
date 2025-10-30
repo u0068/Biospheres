@@ -20,7 +20,7 @@ struct ComputeCell {
     int adhesionIndices[20];
     
     // Padding to maintain 16-byte alignment for the entire struct
-    uint _padding[8];
+    uint _padding[4];
 };
 
 // GPU Mode structure for colors

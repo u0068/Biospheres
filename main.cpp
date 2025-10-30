@@ -436,12 +436,16 @@ int main()
 	// Initialize Preview Simulation
 	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
 	ComputeCell previewCell{};
+	previewCell.orientation = glm::vec4(uiManager.currentGenome.initialOrientation.x, uiManager.currentGenome.initialOrientation.y, uiManager.currentGenome.initialOrientation.z, uiManager.currentGenome.initialOrientation.w);
+	previewCell.genomeOrientation = previewCell.orientation;
 	previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
 	previewCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
-	
+
 	// Initialize Main Simulation
 	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
 	ComputeCell mainCell{};
+	mainCell.orientation = glm::vec4(uiManager.currentGenome.initialOrientation.x, uiManager.currentGenome.initialOrientation.y, uiManager.currentGenome.initialOrientation.z, uiManager.currentGenome.initialOrientation.w);
+	mainCell.genomeOrientation = mainCell.orientation;
 	mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
 	mainCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
 	

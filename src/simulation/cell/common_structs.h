@@ -15,7 +15,8 @@ struct alignas(16) ComputeCell {
     glm::vec4 velocity{};                               // x, y, z, padding
     glm::vec4 acceleration{};                           // x, y, z, padding
     glm::vec4 prevAcceleration{};                       // x, y, z, padding
-    glm::vec4 orientation{ 1., 0., 0., 0. };   // Quaternion to prevent gimbal lock
+    glm::vec4 orientation{ 1., 0., 0., 0. };   // Quaternion to prevent gimbal lock - affected by physics
+    glm::vec4 genomeOrientation{ 1., 0., 0., 0. }; // Quaternion for genome-derived orientation - NEVER affected by physics
     glm::vec4 angularVelocity{};                        // yz, zx, xy, padding
     glm::vec4 angularAcceleration{};                    // yz, zx, xy, padding
     glm::vec4 prevAngularAcceleration{};                // yz, zx, xy, padding
@@ -27,9 +28,9 @@ struct alignas(16) ComputeCell {
     float toxins{ 0 };
     float nitrates{ 1 };
     int adhesionIndices[20]{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ,-1, -1, -1, -1, -1 };
-    
+
     // Padding to maintain 16-byte alignment for the entire struct
-    uint32_t _padding[8]{ 0 };
+    uint32_t _padding[4]{ 0 };
 
     
     float getRadius() const

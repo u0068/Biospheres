@@ -9,7 +9,8 @@ struct ComputeCell {
     vec4 velocity;          // x, y, z, padding
     vec4 acceleration;      // x, y, z, padding
     vec4 prevAcceleration;  // x, y, z, padding
-    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 orientation;       // Quaternion to (prevent gimbal lock) - affected by physics
+    vec4 genomeOrientation; // Quaternion for genome-derived orientation - NEVER affected by physics
     vec4 angularVelocity;   // Pseudo-vector for easy math
     vec4 angularAcceleration;       // Pseudo-vector for easy math
     vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
@@ -20,9 +21,9 @@ struct ComputeCell {
     float toxins;
     float nitrates;
     int adhesionIndices[20];
-    
+
     // Padding to maintain 16-byte alignment for the entire struct
-    uint _padding[8];
+    uint _padding[4];
     
     };
 
@@ -608,11 +609,17 @@ void main() {
     vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
     vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
 
+    // Apply rotation deltas to parent genomeOrientation (purely genome-derived, never affected by physics)
+    vec4 q_genome_parent = cell.genomeOrientation;
+    vec4 q_genome_childA = normalize(quatMultiply(q_genome_parent, mode.orientationA));
+    vec4 q_genome_childB = normalize(quatMultiply(q_genome_parent, mode.orientationB));
+
     ComputeCell childA = cell;
     childA.positionAndMass.xyz += offset;
     childA.age = startAge;
     childA.modeIndex = mode.childModes.x;
     childA.orientation = q_childA;
+    childA.genomeOrientation = q_genome_childA;
         for (int i = 0; i < 20; ++i) {
         childA.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
@@ -622,6 +629,7 @@ void main() {
     childB.age = startAge + 0.001;
     childB.modeIndex = mode.childModes.y;
     childB.orientation = q_childB;
+    childB.genomeOrientation = q_genome_childB;
         for (int i = 0; i < 20; ++i) {
         childB.adhesionIndices[i] = -1; // Reset adhesion indices for the new child
     }
@@ -670,8 +678,8 @@ void main() {
         // Use the stored zone information from the original connection instead of recalculating
         // The original connection already has the correct zone classification
         ComputeCell neighborCellCurrent = inputCells[neighborIndex];
-        vec4 parentOrientation = cell.orientation;
-        vec4 invNeighborOrientation = quatInverse(neighborCellCurrent.orientation);
+        vec4 parentGenomeOrientation = cell.genomeOrientation;
+        vec4 invNeighborGenomeOrientation = quatInverse(neighborCellCurrent.genomeOrientation);
 
         float splitMagnitude = length(mode.splitDirection.xyz);
         vec3 splitDir_parent;
@@ -723,48 +731,25 @@ void main() {
 
         float inheritedRestLength = modes[oldConnection.modeIndex].adhesionSettings.restLength;
 
-        vec3 neighborPositionPseudo = bondDir_parent * inheritedRestLength;
-        vec3 childPositionPseudoA = splitDir_parent * splitOffset;
-        vec3 childPositionPseudoB = -splitDir_parent * splitOffset;
-
-        vec3 planeNormal = cross(bondDir_parent, splitDir_parent);
-        if (length(planeNormal) < 0.0001) {
-            planeNormal = cross(bondDir_parent, vec3(0.0, 1.0, 0.0));
-            if (length(planeNormal) < 0.0001) {
-                planeNormal = cross(bondDir_parent, vec3(1.0, 0.0, 0.0));
-            }
-        }
-        planeNormal = normalize(planeNormal);
-
-        vec3 perpBasis_parent = cross(planeNormal, bondDir_parent);
-        if (length(perpBasis_parent) < 0.0001) {
-            perpBasis_parent = cross(bondDir_parent, vec3(1.0, 0.0, 0.0));
-            if (length(perpBasis_parent) < 0.0001) {
-                perpBasis_parent = cross(bondDir_parent, vec3(0.0, 1.0, 0.0));
-            }
-        }
-        perpBasis_parent = normalize(perpBasis_parent);
-
         // Child A inheritance
         if (childAInherits) {
-            vec3 neighborRelativeToChildA_parentLocal = neighborPositionPseudo - childPositionPseudoA;
+            // Calculate ideal neighbor position and child spawn position in parent's local frame (genome-derived)
+            vec3 idealNeighborPos_parentLocal = localAnchorDirection * inheritedRestLength;
+            vec3 childASpawnPos_parentLocal = splitDir_parent * splitOffset;
 
-            float radialLength = length(neighborRelativeToChildA_parentLocal);
-            if (radialLength > 0.0001) {
-                float parallelComponent = dot(neighborRelativeToChildA_parentLocal, bondDir_parent);
-                float perpendicularComponent = dot(neighborRelativeToChildA_parentLocal, perpBasis_parent);
-                float originalAngle = atan(perpendicularComponent, parallelComponent);
-                float doubledAngle = originalAngle * 2.0;
-                float newParallel = radialLength * cos(doubledAngle);
-                float newPerpendicular = radialLength * sin(doubledAngle);
-                neighborRelativeToChildA_parentLocal = newParallel * bondDir_parent + newPerpendicular * perpBasis_parent;
-            }
+            // Direction from child A to neighbor in parent's local frame
+            vec3 childToNeighbor_parentLocal = normalize(idealNeighborPos_parentLocal - childASpawnPos_parentLocal);
 
-            vec3 connectionDirPseudo = normalize(neighborRelativeToChildA_parentLocal);
-            vec3 connectionDirWorld = normalize(rotateVectorByQuaternion(connectionDirPseudo, parentOrientation));
+            // Transform to child A's local frame using genome quaternion (orientationA)
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
+                childToNeighbor_parentLocal,
+                quatInverse(mode.orientationA)
+            ));
 
-            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, quatInverse(outputCells[childAIndex].orientation)));
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-connectionDirWorld, invNeighborOrientation));
+            // Neighbor's anchor points from neighbor to child (opposite direction)
+            // Transform to world space using genome orientations, then to neighbor's local frame
+            vec3 childToNeighbor_world = normalize(rotateVectorByQuaternion(childToNeighbor_parentLocal, parentGenomeOrientation));
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-childToNeighbor_world, invNeighborGenomeOrientation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -791,24 +776,23 @@ void main() {
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
-            vec3 neighborRelativeToChildB_parentLocal = neighborPositionPseudo - childPositionPseudoB;
+            // Calculate ideal neighbor position and child spawn position in parent's local frame (genome-derived)
+            vec3 idealNeighborPos_parentLocal = localAnchorDirection * inheritedRestLength;
+            vec3 childBSpawnPos_parentLocal = -splitDir_parent * splitOffset;  // Negative for child B
 
-            float radialLength = length(neighborRelativeToChildB_parentLocal);
-            if (radialLength > 0.0001) {
-                float parallelComponent = dot(neighborRelativeToChildB_parentLocal, bondDir_parent);
-                float perpendicularComponent = dot(neighborRelativeToChildB_parentLocal, perpBasis_parent);
-                float originalAngle = atan(perpendicularComponent, parallelComponent);
-                float doubledAngle = originalAngle * 2.0;
-                float newParallel = radialLength * cos(doubledAngle);
-                float newPerpendicular = radialLength * sin(doubledAngle);
-                neighborRelativeToChildB_parentLocal = newParallel * bondDir_parent + newPerpendicular * perpBasis_parent;
-            }
+            // Direction from child B to neighbor in parent's local frame
+            vec3 childToNeighbor_parentLocal = normalize(idealNeighborPos_parentLocal - childBSpawnPos_parentLocal);
 
-            vec3 connectionDirPseudo = normalize(neighborRelativeToChildB_parentLocal);
-            vec3 connectionDirWorld = normalize(rotateVectorByQuaternion(connectionDirPseudo, parentOrientation));
+            // Transform to child B's local frame using genome quaternion (orientationB)
+            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
+                childToNeighbor_parentLocal,
+                quatInverse(mode.orientationB)
+            ));
 
-            vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(connectionDirWorld, quatInverse(outputCells[childBIndex].orientation)));
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-connectionDirWorld, invNeighborOrientation));
+            // Neighbor's anchor points from neighbor to child (opposite direction)
+            // Transform to world space using genome orientations, then to neighbor's local frame
+            vec3 childToNeighbor_world = normalize(rotateVectorByQuaternion(childToNeighbor_parentLocal, parentGenomeOrientation));
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-childToNeighbor_world, invNeighborGenomeOrientation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
