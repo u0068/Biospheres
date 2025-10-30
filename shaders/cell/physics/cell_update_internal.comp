@@ -738,7 +738,15 @@ void main() {
             vec3 childASpawnPos_parentLocal = splitDir_parent * splitOffset;
 
             // Direction from child A to neighbor in parent's local frame
-            vec3 childToNeighbor_parentLocal = normalize(idealNeighborPos_parentLocal - childASpawnPos_parentLocal);
+            vec3 childToNeighbor_parentLocal = idealNeighborPos_parentLocal - childASpawnPos_parentLocal;
+            float distanceToNeighbor = length(childToNeighbor_parentLocal);
+
+            // Numerical stability: if child spawns very close to neighbor's ideal position, use original anchor direction
+            if (distanceToNeighbor < 0.001) {
+                childToNeighbor_parentLocal = localAnchorDirection;
+            } else {
+                childToNeighbor_parentLocal = childToNeighbor_parentLocal / distanceToNeighbor; // Normalize
+            }
 
             // Transform to child A's local frame using genome quaternion (orientationA)
             vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
@@ -781,7 +789,15 @@ void main() {
             vec3 childBSpawnPos_parentLocal = -splitDir_parent * splitOffset;  // Negative for child B
 
             // Direction from child B to neighbor in parent's local frame
-            vec3 childToNeighbor_parentLocal = normalize(idealNeighborPos_parentLocal - childBSpawnPos_parentLocal);
+            vec3 childToNeighbor_parentLocal = idealNeighborPos_parentLocal - childBSpawnPos_parentLocal;
+            float distanceToNeighbor = length(childToNeighbor_parentLocal);
+
+            // Numerical stability: if child spawns very close to neighbor's ideal position, use original anchor direction
+            if (distanceToNeighbor < 0.001) {
+                childToNeighbor_parentLocal = localAnchorDirection;
+            } else {
+                childToNeighbor_parentLocal = childToNeighbor_parentLocal / distanceToNeighbor; // Normalize
+            }
 
             // Transform to child B's local frame using genome quaternion (orientationB)
             vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
