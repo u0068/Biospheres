@@ -741,9 +741,9 @@ void main() {
             vec3 childToNeighbor_parentLocal = idealNeighborPos_parentLocal - childASpawnPos_parentLocal;
             float distanceToNeighbor = length(childToNeighbor_parentLocal);
 
-            // Numerical stability: if child spawns very close to neighbor's ideal position, use original anchor direction
+            // Numerical stability: if child spawns very close to neighbor's ideal position, use split direction (genome-derived)
             if (distanceToNeighbor < 0.001) {
-                childToNeighbor_parentLocal = localAnchorDirection;
+                childToNeighbor_parentLocal = splitDir_parent;
             } else {
                 childToNeighbor_parentLocal = childToNeighbor_parentLocal / distanceToNeighbor; // Normalize
             }
@@ -792,9 +792,9 @@ void main() {
             vec3 childToNeighbor_parentLocal = idealNeighborPos_parentLocal - childBSpawnPos_parentLocal;
             float distanceToNeighbor = length(childToNeighbor_parentLocal);
 
-            // Numerical stability: if child spawns very close to neighbor's ideal position, use original anchor direction
+            // Numerical stability: if child spawns very close to neighbor's ideal position, use negative split direction (genome-derived)
             if (distanceToNeighbor < 0.001) {
-                childToNeighbor_parentLocal = localAnchorDirection;
+                childToNeighbor_parentLocal = -splitDir_parent;  // Negative because child B is on opposite side
             } else {
                 childToNeighbor_parentLocal = childToNeighbor_parentLocal / distanceToNeighbor; // Normalize
             }

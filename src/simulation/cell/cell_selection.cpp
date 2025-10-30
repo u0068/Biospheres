@@ -185,21 +185,10 @@ isDraggingCell = false;
 
 void CellManager::endDrag()
 {
-if (isDraggingCell && selectedCell.isValid)
-{
-// Reset velocity to zero when ending drag to prevent sudden jumps
-cpuCells[selectedCell.cellIndex].velocity.x = 0.0f;
-cpuCells[selectedCell.cellIndex].velocity.y = 0.0f;
-cpuCells[selectedCell.cellIndex].velocity.z = 0.0f; // Update the GPU buffers with the final state
-for (int i = 0; i < 3; i++)
-{
-glNamedBufferSubData(cellBuffer[i],
-  selectedCell.cellIndex * sizeof(ComputeCell),
-  sizeof(ComputeCell),
-  &cpuCells[selectedCell.cellIndex]);
-}
-}
-
+// Simply stop dragging - don't update GPU buffers
+// The cell already has zero velocity from dragSelectedCell() updates
+// If the cell split while dragging, the GPU has the correct child data
+// Writing from stale CPU data would snap the child back to parent's position
 isDraggingCell = false;
 }
 
