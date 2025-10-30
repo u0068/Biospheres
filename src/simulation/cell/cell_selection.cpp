@@ -155,14 +155,25 @@ cpuCells[selectedCell.cellIndex].velocity.y = 0.0f;
 cpuCells[selectedCell.cellIndex].velocity.z = 0.0f; // Update cached selected cell data
 selectedCell.cellData = cpuCells[selectedCell.cellIndex];
 
-// Update GPU buffers immediately to ensure compute shaders see the new position
-for (int i = 0; i < 3; i++)
-{
-glNamedBufferSubData(cellBuffer[i],
-selectedCell.cellIndex * sizeof(ComputeCell),
-sizeof(ComputeCell),
-&cpuCells[selectedCell.cellIndex]);
-}
+// Update GPU buffers - ONLY update position and velocity in the READ buffer
+// The read buffer will be used by shaders this frame, which will increment age and write to write buffer
+// This keeps age synchronized across buffer rotations
+size_t cellOffset = selectedCell.cellIndex * sizeof(ComputeCell);
+
+// Only update the current READ buffer (shaders will read from here and write updated data to write buffer)
+GLuint readBuffer = getCellReadBuffer();
+
+// Update positionAndMass (offset 0, size 16 bytes)
+glNamedBufferSubData(readBuffer,
+    cellOffset + offsetof(ComputeCell, positionAndMass),
+    sizeof(glm::vec4),
+    &cpuCells[selectedCell.cellIndex].positionAndMass);
+
+// Update velocity (offset 16, size 16 bytes)
+glNamedBufferSubData(readBuffer,
+    cellOffset + offsetof(ComputeCell, velocity),
+    sizeof(glm::vec4),
+    &cpuCells[selectedCell.cellIndex].velocity);
 }
 
 void CellManager::clearSelection()

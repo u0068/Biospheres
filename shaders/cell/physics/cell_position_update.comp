@@ -80,10 +80,15 @@ vec4 quatRotate(vec4 q, vec3 v) {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= totalCellCount) return;
-    if (int(index) == u_draggedCellIndex) return;
 
     ComputeCell cell = inputCells[index];
     cell.age += u_deltaTime * 0.5;
+
+    // If this is the dragged cell, only update age and skip physics
+    if (int(index) == u_draggedCellIndex) {
+        outputCells[index] = cell;
+        return;
+    }
 
     // --- Linear verlet position ---
     vec3 pos = cell.positionAndMass.xyz;
