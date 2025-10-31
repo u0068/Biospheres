@@ -677,9 +677,6 @@ void main() {
 
         // Use the stored zone information from the original connection instead of recalculating
         // The original connection already has the correct zone classification
-        ComputeCell neighborCellCurrent = inputCells[neighborIndex];
-        vec4 parentGenomeOrientation = cell.genomeOrientation;
-        vec4 invNeighborGenomeOrientation = quatInverse(neighborCellCurrent.genomeOrientation);
 
         float splitMagnitude = length(mode.splitDirection.xyz);
         vec3 splitDir_parent;
@@ -729,35 +726,36 @@ void main() {
         // Create new adhesion connections for inheriting children
         // Zone C bonds can create connections for both children, polar bonds create connections for specific children
 
-        float inheritedRestLength = modes[oldConnection.modeIndex].adhesionSettings.restLength;
+        // Get rest length for calculating ideal positions
+        float restLength = modes[oldConnection.modeIndex].adhesionSettings.restLength;
+
+        // Read neighbor cell info
+        ComputeCell neighborCell = inputCells[neighborIndex];
+
+        // Calculate positions in parent's local frame (genome-based)
+        vec3 neighborPos_parentFrame = localAnchorDirection * restLength;
 
         // Child A inheritance
         if (childAInherits) {
-            // Calculate ideal neighbor position and child spawn position in parent's local frame (genome-derived)
-            vec3 idealNeighborPos_parentLocal = localAnchorDirection * inheritedRestLength;
-            vec3 childASpawnPos_parentLocal = splitDir_parent * splitOffset;
+            // Child A's anchor: parent's anchor adjusted for child's offset, then rotated to child's frame
+            // The parent's anchor points from parent's CENTER, but childA is OFFSET from parent's center
+            // So we need to adjust the direction to account for this offset
+            vec3 anchorEndpoint_parentFrame = localAnchorDirection * restLength;
+            vec3 childAOffset_parentFrame = splitDir_parent * splitOffset;
+            vec3 childAAnchorDirection_parentFrame = normalize(anchorEndpoint_parentFrame - childAOffset_parentFrame);
 
-            // Direction from child A to neighbor in parent's local frame
-            vec3 childToNeighbor_parentLocal = idealNeighborPos_parentLocal - childASpawnPos_parentLocal;
-            float distanceToNeighbor = length(childToNeighbor_parentLocal);
-
-            // Numerical stability: if child spawns very close to neighbor's ideal position, use split direction (genome-derived)
-            if (distanceToNeighbor < 0.001) {
-                childToNeighbor_parentLocal = splitDir_parent;
-            } else {
-                childToNeighbor_parentLocal = childToNeighbor_parentLocal / distanceToNeighbor; // Normalize
-            }
-
-            // Transform to child A's local frame using genome quaternion (orientationA)
             vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
-                childToNeighbor_parentLocal,
+                childAAnchorDirection_parentFrame,
                 quatInverse(mode.orientationA)
             ));
 
-            // Neighbor's anchor points from neighbor to child (opposite direction)
-            // Transform to world space using genome orientations, then to neighbor's local frame
-            vec3 childToNeighbor_world = normalize(rotateVectorByQuaternion(childToNeighbor_parentLocal, parentGenomeOrientation));
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-childToNeighbor_world, invNeighborGenomeOrientation));
+            // Calculate neighbor's anchor: passive placement along vector from neighbor's CENTER to childA
+            vec3 childAPos_parentFrame = splitDir_parent * splitOffset;
+            vec3 neighborToChildA_parentFrame = normalize(childAPos_parentFrame - neighborPos_parentFrame);
+
+            // Transform to neighbor's local frame
+            vec4 relativeRotation = quatMultiply(quatInverse(neighborCell.genomeOrientation), cell.genomeOrientation);
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildA_parentFrame, relativeRotation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -784,31 +782,25 @@ void main() {
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
-            // Calculate ideal neighbor position and child spawn position in parent's local frame (genome-derived)
-            vec3 idealNeighborPos_parentLocal = localAnchorDirection * inheritedRestLength;
-            vec3 childBSpawnPos_parentLocal = -splitDir_parent * splitOffset;  // Negative for child B
+            // Child B's anchor: parent's anchor adjusted for child's offset, then rotated to child's frame
+            // The parent's anchor points from parent's CENTER, but childB is OFFSET from parent's center
+            // So we need to adjust the direction to account for this offset
+            vec3 anchorEndpoint_parentFrame = localAnchorDirection * restLength;
+            vec3 childBOffset_parentFrame = -splitDir_parent * splitOffset;
+            vec3 childBAnchorDirection_parentFrame = normalize(anchorEndpoint_parentFrame - childBOffset_parentFrame);
 
-            // Direction from child B to neighbor in parent's local frame
-            vec3 childToNeighbor_parentLocal = idealNeighborPos_parentLocal - childBSpawnPos_parentLocal;
-            float distanceToNeighbor = length(childToNeighbor_parentLocal);
-
-            // Numerical stability: if child spawns very close to neighbor's ideal position, use negative split direction (genome-derived)
-            if (distanceToNeighbor < 0.001) {
-                childToNeighbor_parentLocal = -splitDir_parent;  // Negative because child B is on opposite side
-            } else {
-                childToNeighbor_parentLocal = childToNeighbor_parentLocal / distanceToNeighbor; // Normalize
-            }
-
-            // Transform to child B's local frame using genome quaternion (orientationB)
             vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
-                childToNeighbor_parentLocal,
+                childBAnchorDirection_parentFrame,
                 quatInverse(mode.orientationB)
             ));
 
-            // Neighbor's anchor points from neighbor to child (opposite direction)
-            // Transform to world space using genome orientations, then to neighbor's local frame
-            vec3 childToNeighbor_world = normalize(rotateVectorByQuaternion(childToNeighbor_parentLocal, parentGenomeOrientation));
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(-childToNeighbor_world, invNeighborGenomeOrientation));
+            // Calculate neighbor's anchor: passive placement along vector from neighbor's CENTER to childB
+            vec3 childBPos_parentFrame = -splitDir_parent * splitOffset;
+            vec3 neighborToChildB_parentFrame = normalize(childBPos_parentFrame - neighborPos_parentFrame);
+
+            // Transform to neighbor's local frame
+            vec4 relativeRotation = quatMultiply(quatInverse(neighborCell.genomeOrientation), cell.genomeOrientation);
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildB_parentFrame, relativeRotation));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
