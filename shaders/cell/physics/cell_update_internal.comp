@@ -343,8 +343,8 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     vec3 anchorDirectionB = preservedAnchorB;
 
     // Store current orientations as twist reference for constraint
-    vec4 twistReferenceA = inputCells[cellAIndex].orientation;
-    vec4 twistReferenceB = inputCells[cellBIndex].orientation;
+    vec4 twistReferenceA = inputCells[cellAIndex].genomeOrientation;
+    vec4 twistReferenceB = inputCells[cellBIndex].genomeOrientation;
 
     // Classify zones using the preserved anchor directions (already in local space)
     ComputeCell cellA = inputCells[cellAIndex];
@@ -442,8 +442,8 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     
     // Use genome-based orientations as twist reference (deterministic, independent of physics)
     // This ensures twist constraints are consistent regardless of cell rotation before split
-    vec4 twistReferenceA = cellA.orientation;
-    vec4 twistReferenceB = cellB.orientation;
+    vec4 twistReferenceA = cellA.genomeOrientation;
+    vec4 twistReferenceB = cellB.genomeOrientation;
 
     // Classify zones using the genome-derived anchor directions (already in local space)
     GPUMode modeA = modes[cellA.modeIndex];
@@ -509,8 +509,9 @@ void removeAdhesion(int adhesionIndex){
 }
 
 float priority(uint seed) {
-    // Generate a pseudo-random priority based on the seed
-    return float(seed % 1000) / 1000.0; // Simple pseudo-random value
+    // Use cell index directly for fully deterministic ordering
+    // This ensures no priority collisions and strict sequential split order
+    return float(seed);
 }
 
 void main() {
@@ -597,7 +598,7 @@ void main() {
     uint childAIndex = index;
     uint childBIndex = newIndex;
 
-    vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.orientation) * 0.5;
+    vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.genomeOrientation) * 0.5;
 
     // Both child cells should start with the same age after the split
     // Since we already aged the parent cell by deltaTime this frame,
@@ -605,7 +606,7 @@ void main() {
     float startAge = cell.age - mode.splitInterval;
 
     // Apply rotation deltas to parent orientation (deterministic, no random variation)
-    vec4 q_parent = cell.orientation;
+    vec4 q_parent = cell.genomeOrientation;
     vec4 q_childA = normalize(quatMultiply(q_parent, mode.orientationA));
     vec4 q_childB = normalize(quatMultiply(q_parent, mode.orientationB));
 
@@ -647,16 +648,12 @@ void main() {
         int oldAdhesionIndex = cell.adhesionIndices[i];
         if (oldAdhesionIndex < 0) continue;
 
-        // Read connection data BEFORE checking isActive, because the neighbor might have already
-        // split and marked it inactive. We need the connection data regardless.
+        // Read connection data
         AdhesionConnection oldConnection = connections[oldAdhesionIndex];
-        
-        // Skip if this connection was already processed (not from a split)
-        // But allow processing if it was marked inactive by a simultaneous split
-        bool wasAlreadyProcessed = (oldConnection.isActive == 0 && 
-                                     oldConnection.cellAIndex != childAIndex && 
-                                     oldConnection.cellBIndex != childAIndex);
-        if (wasAlreadyProcessed) continue;
+
+        // CRITICAL: Skip if this connection is already inactive
+        // This prevents creating duplicate connections when both cells try to split
+        if (oldConnection.isActive == 0) continue;
 
         // CRITICAL FIX: Add memory barrier before modifying adhesion connections
         memoryBarrierBuffer();
@@ -859,8 +856,8 @@ void main() {
         0.0, // paddingA
         anchorDirectionB,
         0.0, // paddingB
-        outputCells[childAIndex].orientation,
-        outputCells[childBIndex].orientation,
+        outputCells[childAIndex].genomeOrientation,
+        outputCells[childBIndex].genomeOrientation,
         uint[4](0u, 0u, 0u, 0u) // padding to ensure 16-byte alignment
     );
 
