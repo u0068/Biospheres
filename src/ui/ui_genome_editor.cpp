@@ -280,17 +280,6 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
 
 void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager& cellManager)
 {
-    // Persistent arrays for delta sliders (per mode)
-    static std::vector<float> lastPitchA, lastYawA, lastRollA;
-    static std::vector<float> lastPitchB, lastYawB, lastRollB;
-    if (lastPitchA.size() != currentGenome.modes.size()) {
-        lastPitchA.assign(currentGenome.modes.size(), 0.0f);
-        lastYawA = lastPitchA;
-        lastRollA = lastPitchA;
-        lastPitchB = lastPitchA;
-        lastYawB = lastPitchA;
-        lastRollB = lastPitchA;
-    }
     // Tabbed interface for different settings
     if (ImGui::BeginTabBar("ModeSettingsTabs"))
     {
@@ -306,65 +295,31 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             // Move mode selection dropdown to the top
             drawChildSettings("Child A", mode.childA);
             
-            // Orientation Controls with Circular Sliders
+            // Orientation Controls with QuaternionBall
             ImGui::Text("Child A Orientation:");
             ImGui::Spacing();
-            
-            if (ImGui::BeginTable("ChildAOrientation", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
-                ImGui::TableSetupColumn("Pitch", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-                ImGui::TableSetupColumn("Yaw", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-                ImGui::TableSetupColumn("Roll", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-                ImGui::TableHeadersRow();
-                
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Dummy(ImVec2(0, 20)); // Top padding
-                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
-                ImGui::SameLine();
-                float pitchA = lastPitchA[modeIndex];
-                if (CircularSliderFloat("##PitchA", &pitchA, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
-                    float delta = pitchA - lastPitchA[modeIndex];
-                    applyLocalRotation(mode.childA.orientation, glm::vec3(1,0,0), delta);
-                    lastPitchA[modeIndex] = pitchA;
-                    genomeChanged = true;
-                }
-                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
-                
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Dummy(ImVec2(0, 20)); // Top padding
-                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
-                ImGui::SameLine();
-                float yawA = lastYawA[modeIndex];
-                if (CircularSliderFloat("##YawA", &yawA, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
-                    float delta = yawA - lastYawA[modeIndex];
-                    applyLocalRotation(mode.childA.orientation, glm::vec3(0,1,0), delta);
-                    lastYawA[modeIndex] = yawA;
-                    genomeChanged = true;
-                }
-                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
-                
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Dummy(ImVec2(0, 20)); // Top padding
-                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
-                ImGui::SameLine();
-                float rollA = lastRollA[modeIndex];
-                if (CircularSliderFloat("##RollA", &rollA, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
-                    float delta = rollA - lastRollA[modeIndex];
-                    applyLocalRotation(mode.childA.orientation, glm::vec3(0,0,1), delta);
-                    lastRollA[modeIndex] = rollA;
-                    genomeChanged = true;
-                }
-                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
-                
-                ImGui::EndTable();
+
+            // Angle snapping toggle
+            static bool enableSnappingA = true;
+            ImGui::Checkbox("Enable Angle Snapping##ChildA", &enableSnappingA);
+            addTooltip("Enable 15-degree grid snapping for precise orientation control");
+            ImGui::Spacing();
+
+            // QuaternionBall widget for direct quaternion manipulation
+            if (QuaternionBall("##ChildAOrientation", &mode.childA.orientation, 80.0f, enableSnappingA)) {
+                genomeChanged = true;
             }
-            
+            if (enableSnappingA) {
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 15-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
+            } else {
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nFree rotation without grid snapping.\nRed (X) / Green (Y) / Blue (Z) axes shown");
+            }
+
+            ImGui::Spacing();
+
             // Reset Orientation Button
             if (ImGui::Button("Reset Orientation (Child A)")) {
                 mode.childA.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset to identity
-                lastPitchA[modeIndex] = 0.0f;
-                lastYawA[modeIndex] = 0.0f;
-                lastRollA[modeIndex] = 0.0f;
                 genomeChanged = true;
             }
             addTooltip("Snap Child A orientation to the default (identity) orientation");
@@ -380,65 +335,31 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             // Move mode selection dropdown to the top
             drawChildSettings("Child B", mode.childB);
             
-            // Orientation Controls with Circular Sliders
+            // Orientation Controls with QuaternionBall
             ImGui::Text("Child B Orientation:");
             ImGui::Spacing();
-            
-            if (ImGui::BeginTable("ChildBOrientation", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
-                ImGui::TableSetupColumn("Pitch", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-                ImGui::TableSetupColumn("Yaw", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-                ImGui::TableSetupColumn("Roll", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-                ImGui::TableHeadersRow();
-                
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Dummy(ImVec2(0, 20)); // Top padding
-                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
-                ImGui::SameLine();
-                float pitchB = lastPitchB[modeIndex];
-                if (CircularSliderFloat("##PitchB", &pitchB, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
-                    float delta = pitchB - lastPitchB[modeIndex];
-                    applyLocalRotation(mode.childB.orientation, glm::vec3(1,0,0), delta);
-                    lastPitchB[modeIndex] = pitchB;
-                    genomeChanged = true;
-                }
-                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
-                
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Dummy(ImVec2(0, 20)); // Top padding
-                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
-                ImGui::SameLine();
-                float yawB = lastYawB[modeIndex];
-                if (CircularSliderFloat("##YawB", &yawB, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
-                    float delta = yawB - lastYawB[modeIndex];
-                    applyLocalRotation(mode.childB.orientation, glm::vec3(0,1,0), delta);
-                    lastYawB[modeIndex] = yawB;
-                    genomeChanged = true;
-                }
-                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
-                
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Dummy(ImVec2(0, 20)); // Top padding
-                ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
-                ImGui::SameLine();
-                float rollB = lastRollB[modeIndex];
-                if (CircularSliderFloat("##RollB", &rollB, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
-                    float delta = rollB - lastRollB[modeIndex];
-                    applyLocalRotation(mode.childB.orientation, glm::vec3(0,0,1), delta);
-                    lastRollB[modeIndex] = rollB;
-                    genomeChanged = true;
-                }
-                ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
-                
-                ImGui::EndTable();
+
+            // Angle snapping toggle
+            static bool enableSnappingB = true;
+            ImGui::Checkbox("Enable Angle Snapping##ChildB", &enableSnappingB);
+            addTooltip("Enable 15-degree grid snapping for precise orientation control");
+            ImGui::Spacing();
+
+            // QuaternionBall widget for direct quaternion manipulation
+            if (QuaternionBall("##ChildBOrientation", &mode.childB.orientation, 80.0f, enableSnappingB)) {
+                genomeChanged = true;
             }
-            
+            if (enableSnappingB) {
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 15-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
+            } else {
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nFree rotation without grid snapping.\nRed (X) / Green (Y) / Blue (Z) axes shown");
+            }
+
+            ImGui::Spacing();
+
             // Reset Orientation Button
             if (ImGui::Button("Reset Orientation (Child B)")) {
                 mode.childB.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset to identity
-                lastPitchB[modeIndex] = 0.0f;
-                lastYawB[modeIndex] = 0.0f;
-                lastRollB[modeIndex] = 0.0f;
                 genomeChanged = true;
             }
             addTooltip("Snap Child B orientation to the default (identity) orientation");
