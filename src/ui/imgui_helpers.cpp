@@ -23,7 +23,7 @@ static float AngleToValue(float angle, float v_min, float v_max)
 }
 
 bool CircularSliderFloat(const char* label, float* v, float v_min, float v_max, 
-                        float radius, const char* format, float align_x, float align_y)
+                        float radius, const char* format, float align_x, float align_y, bool enable_snapping)
 {
     // Get or create state for this slider
     std::string widget_id = "circular_slider_" + std::string(label);
@@ -156,7 +156,9 @@ bool CircularSliderFloat(const char* label, float* v, float v_min, float v_max,
             
             float degrees = mouse_angle * 180.0f / IM_PI;
             if (degrees > 180.0f) degrees -= 360.0f;
-            degrees = roundf(degrees / 15.0f) * 15.0f;
+            if (enable_snapping) {
+                degrees = roundf(degrees / 11.25f) * 11.25f;
+            }
             
             if (fabsf(degrees - *v) > 0.001f) {
                 *v = ImClamp(degrees, v_min, v_max);
@@ -176,7 +178,9 @@ bool CircularSliderFloat(const char* label, float* v, float v_min, float v_max,
             
             float degrees = mouse_angle * 180.0f / IM_PI;
             if (degrees > 180.0f) degrees -= 360.0f;
-            degrees = roundf(degrees / 15.0f) * 15.0f;
+            if (enable_snapping) {
+                degrees = roundf(degrees / 11.25f) * 11.25f;
+            }
             
             if (fabsf(degrees - *v) > 0.001f) {
                 *v = ImClamp(degrees, v_min, v_max);
@@ -578,7 +582,8 @@ bool QuaternionBall(const char* label, glm::quat* orientation, float radius, boo
         if (active_id == std::string(label)) {
             // Snap to nearest grid intersection on release (only if snapping enabled)
             if (enable_snapping) {
-                *orientation = SnapQuaternionToGrid(*orientation, angle_step);
+                const float snap_angle = 11.25f;  // Snap at 11.25° (finer than visual grid)
+                *orientation = SnapQuaternionToGrid(*orientation, snap_angle);
                 changed = true;
             }
             active_id.clear();
@@ -604,15 +609,15 @@ bool QuaternionBall(const char* label, glm::quat* orientation, float radius, boo
 
     // Draw color-coded axis key with latitude/longitude (matching gizmo colors)
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.31f, 0.47f, 1.0f, 1.0f)); // Blue for X (forward)
-    ImGui::Text("X: %.1f°, %.1f°", x_spherical.x, x_spherical.y);
+    ImGui::Text("X: %.2f°, %.2f°", x_spherical.x, x_spherical.y);
     ImGui::PopStyleColor();
     ImGui::SameLine(0, 8);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.31f, 1.0f, 0.31f, 1.0f)); // Green for Y (right)
-    ImGui::Text("Y: %.1f°, %.1f°", y_spherical.x, y_spherical.y);
+    ImGui::Text("Y: %.2f°, %.2f°", y_spherical.x, y_spherical.y);
     ImGui::PopStyleColor();
     ImGui::SameLine(0, 8);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.31f, 0.31f, 1.0f)); // Red for Z (up)
-    ImGui::Text("Z: %.1f°, %.1f°", z_spherical.x, z_spherical.y);
+    ImGui::Text("Z: %.2f°, %.2f°", z_spherical.x, z_spherical.y);
     ImGui::PopStyleColor();
 
     // Draw label

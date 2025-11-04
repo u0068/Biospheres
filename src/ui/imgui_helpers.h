@@ -31,7 +31,7 @@ struct CircularSliderState {
 // Core circular slider functions
 bool CircularSliderFloat(const char* label, float* v, float v_min, float v_max, 
                         float radius = 50.0f, const char* format = "%.3f", 
-                        float align_x = -21.0f, float align_y = 24.0f);
+                        float align_x = -21.0f, float align_y = 24.0f, bool enable_snapping = true);
 
 bool CircularSliderInt(const char* label, int* v, int v_min, int v_max,
                       float radius = 50.0f, const char* format = "%d");

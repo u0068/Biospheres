@@ -302,7 +302,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             // Angle snapping toggle
             static bool enableSnappingA = true;
             ImGui::Checkbox("Enable Angle Snapping##ChildA", &enableSnappingA);
-            addTooltip("Enable 22.5-degree grid snapping for precise orientation control");
+            addTooltip("Enable 11.25-degree grid snapping for precise orientation control");
             ImGui::Spacing();
 
             // QuaternionBall widget for direct quaternion manipulation
@@ -310,7 +310,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
                 genomeChanged = true;
             }
             if (enableSnappingA) {
-                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 22.5-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 11.25-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
             } else {
                 addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nFree rotation without grid snapping.\nRed (X) / Green (Y) / Blue (Z) axes shown");
             }
@@ -342,7 +342,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             // Angle snapping toggle
             static bool enableSnappingB = true;
             ImGui::Checkbox("Enable Angle Snapping##ChildB", &enableSnappingB);
-            addTooltip("Enable 22.5-degree grid snapping for precise orientation control");
+            addTooltip("Enable 11.25-degree grid snapping for precise orientation control");
             ImGui::Spacing();
 
             // QuaternionBall widget for direct quaternion manipulation
@@ -350,7 +350,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
                 genomeChanged = true;
             }
             if (enableSnappingB) {
-                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 22.5-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 11.25-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
             } else {
                 addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nFree rotation without grid snapping.\nRed (X) / Green (Y) / Blue (Z) axes shown");
             }
@@ -486,6 +486,12 @@ void UIManager::drawParentSettings(ModeSettings &mode)
     ImGui::Text("Parent Split Angle:");
     addTooltip("Controls the vector direction that child cells split along relative to the parent");
     
+    // Angle snapping toggle for parent split angle
+    static bool enableParentSnapping = true;
+    ImGui::Checkbox("Enable Angle Snapping##Parent", &enableParentSnapping);
+    addTooltip("Enable 11.25-degree grid snapping for parent split angle");
+    ImGui::Spacing();
+    
     // Circular sliders for parent split direction
     if (ImGui::BeginTable("ParentSplitAngle", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
         ImGui::TableSetupColumn("Pitch", ImGuiTableColumnFlags_WidthFixed, 140.0f);
@@ -497,7 +503,7 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         ImGui::Dummy(ImVec2(0, 20)); // Top padding
         ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
         ImGui::SameLine();
-        if (CircularSliderFloat("##ParentPitch", &mode.parentSplitDirection.x, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+        if (CircularSliderFloat("##ParentPitch", &mode.parentSplitDirection.x, -180.0f, 180.0f, 60.0f, "%.2f°", -21.0f, 24.0f, enableParentSnapping)) {
             genomeChanged = true;
         }
         ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
@@ -506,7 +512,7 @@ void UIManager::drawParentSettings(ModeSettings &mode)
         ImGui::Dummy(ImVec2(0, 20)); // Top padding
         ImGui::Dummy(ImVec2(15, 0)); // Center padding - 15px
         ImGui::SameLine();
-        if (CircularSliderFloat("##ParentYaw", &mode.parentSplitDirection.y, -180.0f, 180.0f, 60.0f, "%.0f°", -21.0f, 24.0f)) {
+        if (CircularSliderFloat("##ParentYaw", &mode.parentSplitDirection.y, -180.0f, 180.0f, 60.0f, "%.2f°", -21.0f, 24.0f, enableParentSnapping)) {
             genomeChanged = true;
         }
         ImGui::Dummy(ImVec2(0, 20)); // Bottom padding
