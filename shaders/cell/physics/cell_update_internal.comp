@@ -353,8 +353,8 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     GPUMode modeB = modes[cellB.modeIndex];
 
     // Use preserved anchor directions for zone classification (genome-based, not spatial)
-    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 10.0);
-    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 10.0);
+    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 2.0);
+    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 2.0);
 
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
@@ -450,8 +450,8 @@ bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
     GPUMode modeB = modes[cellB.modeIndex];
 
     // Zone classification using genome-based anchors
-    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 10.0);
-    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 10.0);
+    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 2.0);
+    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 2.0);
 
     // Write connection and assign indices
     connections[newAdhesionIndex] = AdhesionConnection(
@@ -689,7 +689,7 @@ void main() {
         vec3 bondDir_parent = normalize(localAnchorDirection);
 
         float dotSplitBond = dot(splitDir_parent, bondDir_parent);
-        float equatorialThreshold = sin(radians(10.0));
+        float equatorialThreshold = sin(radians(2.0));
 
         uint parentZone;
         if (abs(dotSplitBond) <= equatorialThreshold) {
@@ -723,36 +723,38 @@ void main() {
         // Create new adhesion connections for inheriting children
         // Zone C bonds can create connections for both children, polar bonds create connections for specific children
 
-        // Get rest length for calculating ideal positions
-        float restLength = modes[oldConnection.modeIndex].adhesionSettings.restLength;
+        // Use PARENT's adhesion rest length (sibling rest length) for geometry calculations
+        // This ensures geometric consistency - all cells in the grid use the same rest length
+        float restLength = mode.adhesionSettings.restLength;
 
         // Read neighbor cell info
         ComputeCell neighborCell = inputCells[neighborIndex];
 
-        // Calculate positions in parent's local frame (genome-based)
-        vec3 neighborPos_parentFrame = localAnchorDirection * restLength;
+        // Calculate center-to-center distance (rest length + radii of both cells)
+        float parentRadius = pow(cell.positionAndMass.w, 1.0/3.0);
+        float neighborRadius = pow(neighborCell.positionAndMass.w, 1.0/3.0);
+        float centerToCenterDist = restLength + parentRadius + neighborRadius;
 
         // Child A inheritance
         if (childAInherits) {
-            // Child A's anchor: parent's anchor adjusted for child's offset, then rotated to child's frame
-            // The parent's anchor points from parent's CENTER, but childA is OFFSET from parent's center
-            // So we need to adjust the direction to account for this offset
-            vec3 anchorEndpoint_parentFrame = localAnchorDirection * restLength;
-            vec3 childAOffset_parentFrame = splitDir_parent * splitOffset;
-            vec3 childAAnchorDirection_parentFrame = normalize(anchorEndpoint_parentFrame - childAOffset_parentFrame);
+            // Calculate positions in parent frame for geometric anchor placement
+            vec3 childAPos_parentFrame = splitDir_parent * splitOffset;
+            vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
 
+            // Child anchor: direction from child to neighbor, transformed by genome orientation
+            vec3 directionToNeighbor_parentFrame = normalize(neighborPos_parentFrame - childAPos_parentFrame);
             vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
-                childAAnchorDirection_parentFrame,
+                directionToNeighbor_parentFrame,
                 quatInverse(mode.orientationA)
             ));
 
-            // Calculate neighbor's anchor: passive placement along vector from neighbor's CENTER to childA
-            vec3 childAPos_parentFrame = splitDir_parent * splitOffset;
-            vec3 neighborToChildA_parentFrame = normalize(childAPos_parentFrame - neighborPos_parentFrame);
-
-            // Transform to neighbor's local frame
+            // Neighbor anchor: direction from neighbor to child, transformed to neighbor's frame
+            vec3 directionToChild_parentFrame = normalize(childAPos_parentFrame - neighborPos_parentFrame);
             vec4 relativeRotation = quatMultiply(quatInverse(neighborCell.genomeOrientation), cell.genomeOrientation);
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildA_parentFrame, relativeRotation));
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(
+                directionToChild_parentFrame,
+                relativeRotation
+            ));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -779,25 +781,24 @@ void main() {
 
         // Child B inheritance (Zone C bonds can also create this)
         if (childBInherits) {
-            // Child B's anchor: parent's anchor adjusted for child's offset, then rotated to child's frame
-            // The parent's anchor points from parent's CENTER, but childB is OFFSET from parent's center
-            // So we need to adjust the direction to account for this offset
-            vec3 anchorEndpoint_parentFrame = localAnchorDirection * restLength;
-            vec3 childBOffset_parentFrame = -splitDir_parent * splitOffset;
-            vec3 childBAnchorDirection_parentFrame = normalize(anchorEndpoint_parentFrame - childBOffset_parentFrame);
+            // Calculate positions in parent frame for geometric anchor placement
+            vec3 childBPos_parentFrame = -splitDir_parent * splitOffset;
+            vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
 
+            // Child anchor: direction from child to neighbor, transformed by genome orientation
+            vec3 directionToNeighbor_parentFrame = normalize(neighborPos_parentFrame - childBPos_parentFrame);
             vec3 childAnchorDirection = normalize(rotateVectorByQuaternion(
-                childBAnchorDirection_parentFrame,
+                directionToNeighbor_parentFrame,
                 quatInverse(mode.orientationB)
             ));
 
-            // Calculate neighbor's anchor: passive placement along vector from neighbor's CENTER to childB
-            vec3 childBPos_parentFrame = -splitDir_parent * splitOffset;
-            vec3 neighborToChildB_parentFrame = normalize(childBPos_parentFrame - neighborPos_parentFrame);
-
-            // Transform to neighbor's local frame
+            // Neighbor anchor: direction from neighbor to child, transformed to neighbor's frame
+            vec3 directionToChild_parentFrame = normalize(childBPos_parentFrame - neighborPos_parentFrame);
             vec4 relativeRotation = quatMultiply(quatInverse(neighborCell.genomeOrientation), cell.genomeOrientation);
-            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(neighborToChildB_parentFrame, relativeRotation));
+            vec3 neighborAnchorDirection = normalize(rotateVectorByQuaternion(
+                directionToChild_parentFrame,
+                relativeRotation
+            ));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
             int newConnectionIndex;
@@ -838,8 +839,8 @@ void main() {
     vec3 anchorDirectionB = normalize(rotateVectorByQuaternion(directionBtoA_parentLocal, invDeltaB));
 
     // Classify zones using genome-derived anchors
-    uint childZoneA = classifyBondDirection(anchorDirectionA, mode.splitDirection.xyz, 10.0);
-    uint childZoneB = classifyBondDirection(anchorDirectionB, mode.splitDirection.xyz, 10.0);
+    uint childZoneA = classifyBondDirection(anchorDirectionA, mode.splitDirection.xyz, 5.0);
+    uint childZoneB = classifyBondDirection(anchorDirectionB, mode.splitDirection.xyz, 5.0);
 
     uint childToChildConnectionIndex = getNewAdhesionIndex();
     if (childToChildConnectionIndex == uint(-1)) return;
