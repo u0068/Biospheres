@@ -302,7 +302,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             // Angle snapping toggle
             static bool enableSnappingA = true;
             ImGui::Checkbox("Enable Angle Snapping##ChildA", &enableSnappingA);
-            addTooltip("Enable 15-degree grid snapping for precise orientation control");
+            addTooltip("Enable 22.5-degree grid snapping for precise orientation control");
             ImGui::Spacing();
 
             // QuaternionBall widget for direct quaternion manipulation
@@ -342,7 +342,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
             // Angle snapping toggle
             static bool enableSnappingB = true;
             ImGui::Checkbox("Enable Angle Snapping##ChildB", &enableSnappingB);
-            addTooltip("Enable 15-degree grid snapping for precise orientation control");
+            addTooltip("Enable 22.5-degree grid snapping for precise orientation control");
             ImGui::Spacing();
 
             // QuaternionBall widget for direct quaternion manipulation

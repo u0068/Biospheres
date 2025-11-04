@@ -331,12 +331,12 @@ bool QuaternionBall(const char* label, glm::quat* orientation, float radius, boo
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    // Get colors
+    // Get colors - match orientation gizmo colors
     const ImU32 col_ball = ImGui::GetColorU32(ImGuiCol_SliderGrab);
     const ImU32 col_ball_hovered = ImGui::GetColorU32(ImGuiCol_SliderGrabActive);
-    const ImU32 col_axes_x = IM_COL32(255, 80, 80, 255);   // Red for X
-    const ImU32 col_axes_y = IM_COL32(80, 255, 80, 255);   // Green for Y
-    const ImU32 col_axes_z = IM_COL32(80, 120, 255, 255);  // Blue for Z
+    const ImU32 col_axes_x = IM_COL32(80, 120, 255, 255);  // Blue for X (forward)
+    const ImU32 col_axes_y = IM_COL32(80, 255, 80, 255);   // Green for Y (right)
+    const ImU32 col_axes_z = IM_COL32(255, 80, 80, 255);   // Red for Z (up)
     const ImU32 col_grid = IM_COL32(100, 100, 120, 120);   // Grid lines
 
     // Check mouse position
@@ -590,21 +590,29 @@ bool QuaternionBall(const char* label, glm::quat* orientation, float radius, boo
     // Reset cursor position
     ImGui::SetCursorScreenPos(ImVec2(cursor_pos.x, cursor_pos.y + container_size.y));
 
-    // Draw color-coded axis key
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.31f, 0.31f, 1.0f)); // Red
-    ImGui::Text("X");
+    // Calculate latitude and longitude for each axis (reuse existing axis vectors)
+    // Convert to spherical coordinates (latitude, longitude)
+    auto toSpherical = [](const glm::vec3& v) -> glm::vec2 {
+        float latitude = glm::degrees(asinf(v.z));  // Latitude: angle from equator
+        float longitude = glm::degrees(atan2f(v.y, v.x));  // Longitude: angle around equator
+        return glm::vec2(latitude, longitude);
+    };
+    
+    glm::vec2 x_spherical = toSpherical(x_axis);
+    glm::vec2 y_spherical = toSpherical(y_axis);
+    glm::vec2 z_spherical = toSpherical(z_axis);
+
+    // Draw color-coded axis key with latitude/longitude (matching gizmo colors)
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.31f, 0.47f, 1.0f, 1.0f)); // Blue for X (forward)
+    ImGui::Text("X: %.1f°, %.1f°", x_spherical.x, x_spherical.y);
     ImGui::PopStyleColor();
-    ImGui::SameLine(0, 2);
-    ImGui::TextDisabled("/");
-    ImGui::SameLine(0, 2);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.31f, 1.0f, 0.31f, 1.0f)); // Green
-    ImGui::Text("Y");
+    ImGui::SameLine(0, 8);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.31f, 1.0f, 0.31f, 1.0f)); // Green for Y (right)
+    ImGui::Text("Y: %.1f°, %.1f°", y_spherical.x, y_spherical.y);
     ImGui::PopStyleColor();
-    ImGui::SameLine(0, 2);
-    ImGui::TextDisabled("/");
-    ImGui::SameLine(0, 2);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.31f, 0.47f, 1.0f, 1.0f)); // Blue
-    ImGui::Text("Z");
+    ImGui::SameLine(0, 8);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.31f, 0.31f, 1.0f)); // Red for Z (up)
+    ImGui::Text("Z: %.1f°, %.1f°", z_spherical.x, z_spherical.y);
     ImGui::PopStyleColor();
 
     // Draw label
