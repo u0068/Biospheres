@@ -352,7 +352,7 @@ bool QuaternionBall(const char* label, glm::quat* orientation, float radius, boo
     draw_list->AddCircleFilled(center, radius, ball_fill, 64);
 
     // Draw euler angle grid subdivisions (only if snapping is enabled)
-    const int grid_divisions = 24;  // 360/24 = 15 degree increments
+    const int grid_divisions = 16;  // 360/16 = 22.5 degree increments
     const float angle_step = 360.0f / grid_divisions;
     
     if (enable_snapping) {

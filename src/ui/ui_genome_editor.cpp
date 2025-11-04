@@ -310,7 +310,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
                 genomeChanged = true;
             }
             if (enableSnappingA) {
-                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 15-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 22.5-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
             } else {
                 addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nFree rotation without grid snapping.\nRed (X) / Green (Y) / Blue (Z) axes shown");
             }
@@ -350,7 +350,7 @@ void UIManager::drawModeSettings(ModeSettings &mode, int modeIndex, CellManager&
                 genomeChanged = true;
             }
             if (enableSnappingB) {
-                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 15-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
+                addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nReleasing snaps Red X-axis to nearest 22.5-degree grid (priority).\nGreen (Y) and Blue (Z) axes adjust to maintain orthogonality.");
             } else {
                 addTooltip("Drag center horizontally/vertically to rotate around one axis.\nDrag perimeter to roll.\nFree rotation without grid snapping.\nRed (X) / Green (Y) / Blue (Z) axes shown");
             }
