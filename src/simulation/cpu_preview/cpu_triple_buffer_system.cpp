@@ -34,10 +34,10 @@ void CPUTripleBufferSystem::initialize(GLuint existingInstanceBuffer) {
             }
             m_ownsInstanceBuffer = true;
             
-            // Initialize buffer with maximum capacity
+            // Initialize buffer with maximum capacity (matching existing instance format)
             glBindBuffer(GL_ARRAY_BUFFER, m_instanceBuffer);
             glBufferData(GL_ARRAY_BUFFER, 
-                        256 * sizeof(glm::mat4), // Maximum 256 instance matrices
+                        256 * sizeof(CPUInstanceData), // Maximum 256 instances (3 vec4s each)
                         nullptr, 
                         GL_DYNAMIC_DRAW);
             glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -47,7 +47,7 @@ void CPUTripleBufferSystem::initialize(GLuint existingInstanceBuffer) {
         validateGPUState();
 
         m_initialized = true;
-        std::cout << "CPU Triple Buffer System initialized successfully\n";
+        // System initialized silently
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to initialize CPU Triple Buffer System: " << e.what() << std::endl;
@@ -67,7 +67,7 @@ void CPUTripleBufferSystem::shutdown() {
     }
 
     m_initialized = false;
-    std::cout << "CPU Triple Buffer System shutdown complete\n";
+    // System shutdown complete
 }
 
 void CPUTripleBufferSystem::updateVisualData(const CPUCellPhysics_SoA& cells) {
@@ -84,10 +84,7 @@ void CPUTripleBufferSystem::updateVisualData(const CPUCellPhysics_SoA& cells) {
     writeBuffer.activeCount = cells.activeCellCount;
 
     // Extract visual data from CPU SoA structure
-    extractPositions(cells, writeBuffer);
-    extractOrientations(cells, writeBuffer);
-    extractColors(cells, writeBuffer);
-    generateInstanceMatrices(writeBuffer);
+    extractInstanceData(cells, writeBuffer);
 
     // Rotate buffers (lock-free)
     rotateBuffers();
@@ -113,7 +110,7 @@ void CPUTripleBufferSystem::uploadToGPU() {
         auto uploadEnd = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(uploadEnd - m_uploadStart);
         m_lastUploadTime = duration.count() / 1000.0f; // Convert to milliseconds
-        m_lastUploadSize = uploadBuffer.activeCount * sizeof(glm::mat4);
+        m_lastUploadSize = uploadBuffer.activeCount * sizeof(CPUInstanceData);
     }
     catch (const std::exception& e) {
         std::cerr << "CPU GPU upload error: " << e.what() << std::endl;
@@ -129,54 +126,37 @@ const CPUTripleBufferSystem::CPUVisualData* CPUTripleBufferSystem::getCurrentVis
     return &m_buffers[readIdx];
 }
 
-void CPUTripleBufferSystem::extractPositions(const CPUCellPhysics_SoA& cells, CPUVisualData& visual) {
-    size_t count = std::min(cells.activeCellCount, visual.positions.size());
+void CPUTripleBufferSystem::extractInstanceData(const CPUCellPhysics_SoA& cells, CPUVisualData& visual) {
+    size_t count = std::min(cells.activeCellCount, visual.instances.size());
     
     for (size_t i = 0; i < count; ++i) {
-        visual.positions[i] = glm::vec3(
-            cells.pos_x[i],
-            cells.pos_y[i],
-            cells.pos_z[i]
+        // Extract position and calculate radius from mass (matching existing system)
+        glm::vec3 position(cells.pos_x[i], cells.pos_y[i], cells.pos_z[i]);
+        float radius = std::pow(cells.mass[i], 1.0f / 3.0f); // Cube root of mass
+        
+        // Set position and radius
+        visual.instances[i].positionAndRadius = glm::vec4(position, radius);
+        
+        // Use stored genome color directly (RGBA like GPU version)
+        visual.instances[i].color = glm::vec4(
+            cells.color_r[i], 
+            cells.color_g[i], 
+            cells.color_b[i], 
+            1.0f
         );
-    }
-}
-
-void CPUTripleBufferSystem::extractOrientations(const CPUCellPhysics_SoA& cells, CPUVisualData& visual) {
-    size_t count = std::min(cells.activeCellCount, visual.orientations.size());
-    
-    for (size_t i = 0; i < count; ++i) {
-        visual.orientations[i] = glm::quat(
+        
+        // Debug output for first cell (only once)
+        if (i == 0) {
+            // Color data processed silently
+        }
+        
+        // Set orientation (quaternion in w, x, y, z order)
+        visual.instances[i].orientation = glm::vec4(
             cells.quat_w[i],
             cells.quat_x[i],
             cells.quat_y[i],
             cells.quat_z[i]
         );
-    }
-}
-
-void CPUTripleBufferSystem::extractColors(const CPUCellPhysics_SoA& cells, CPUVisualData& visual) {
-    size_t count = std::min(cells.activeCellCount, visual.colors.size());
-    
-    for (size_t i = 0; i < count; ++i) {
-        visual.colors[i] = generateCellColor(
-            cells.cellType[i],
-            cells.genomeID[i],
-            cells.age[i],
-            cells.energy[i]
-        );
-    }
-}
-
-void CPUTripleBufferSystem::generateInstanceMatrices(CPUVisualData& visual) {
-    size_t count = visual.activeCount;
-    
-    for (size_t i = 0; i < count; ++i) {
-        // Create transformation matrix from position, orientation, and scale
-        glm::mat4 translation = glm::translate(glm::mat4(1.0f), visual.positions[i]);
-        glm::mat4 rotation = glm::mat4_cast(visual.orientations[i]);
-        glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f)); // Uniform scale for now
-        
-        visual.instanceMatrices[i] = translation * rotation * scale;
     }
 }
 
@@ -200,18 +180,14 @@ void CPUTripleBufferSystem::optimizedGPUUpload(const CPUVisualData& data) {
     // Bind instance buffer
     glBindBuffer(GL_ARRAY_BUFFER, m_instanceBuffer);
     
-    // Upload instance matrices (most efficient format for rendering)
-    size_t uploadSize = data.activeCount * sizeof(glm::mat4);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, uploadSize, data.instanceMatrices.data());
+    // Upload instance data (positionAndRadius, color, orientation format)
+    size_t uploadSize = data.activeCount * sizeof(CPUInstanceData);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, uploadSize, data.instances.data());
     
     // Unbind buffer
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     
-    // Check for OpenGL errors
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        throw std::runtime_error("OpenGL error during CPU GPU upload: " + std::to_string(error));
-    }
+    // Skip expensive glGetError() call for performance
 }
 
 void CPUTripleBufferSystem::validateGPUState() {
@@ -220,41 +196,10 @@ void CPUTripleBufferSystem::validateGPUState() {
         throw std::runtime_error("No valid OpenGL context");
     }
     
-    // Check for OpenGL errors
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        throw std::runtime_error("OpenGL error during validation: " + std::to_string(error));
-    }
+    // Skip expensive glGetError() call for performance
 }
 
-glm::vec4 CPUTripleBufferSystem::generateCellColor(uint32_t cellType, uint32_t genomeID, float age, float energy) {
-    // Generate color based on cell properties
-    glm::vec4 color(1.0f);
-    
-    // Base color from cell type
-    switch (cellType % 4) {
-        case 0: color = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f); break; // Red
-        case 1: color = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f); break; // Green
-        case 2: color = glm::vec4(0.2f, 0.2f, 1.0f, 1.0f); break; // Blue
-        case 3: color = glm::vec4(1.0f, 1.0f, 0.2f, 1.0f); break; // Yellow
-    }
-    
-    // Modulate by genome ID
-    float genomeHue = (genomeID % 100) / 100.0f;
-    color.r = color.r * (0.5f + 0.5f * genomeHue);
-    color.g = color.g * (0.5f + 0.5f * (1.0f - genomeHue));
-    
-    // Modulate by energy level
-    float energyFactor = std::max(0.2f, std::min(1.0f, energy));
-    color.r *= energyFactor;
-    color.g *= energyFactor;
-    color.b *= energyFactor;
-    
-    // Age-based fading (older cells become more transparent)
-    if (age > 10.0f) {
-        float ageFactor = std::max(0.3f, 1.0f - (age - 10.0f) / 50.0f);
-        color.a *= ageFactor;
-    }
-    
-    return color;
+glm::vec4 CPUTripleBufferSystem::generateCellColor(const glm::vec3& baseColor, uint32_t cellType, uint32_t genomeID, float age, float energy) {
+    // Use the genome-specified base color directly (like GPU version)
+    return glm::vec4(baseColor, 1.0f);
 }

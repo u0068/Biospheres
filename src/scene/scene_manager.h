@@ -1,5 +1,7 @@
 #pragma once
 #include <map>
+#include <string>
+#include "../core/config.h"
 
 enum class Scene
 {
@@ -102,6 +104,32 @@ public:
     }
     int getCurrentCellLimit() const { return getCellLimit(currentScene); }
 
+    // Scene file management (Requirements 3.4, 3.5)
+    void loadPreviewScene(const std::string& filename);
+    void savePreviewScene(const std::string& filename);
+    void loadMainScene(const std::string& filename);
+    void saveMainScene(const std::string& filename);
+    
+    // Scene switching without data conversion (Requirement 3.4)
+    void switchToPreviewMode();
+    void switchToMainMode();
+    bool isPreviewMode() const { return currentScene == Scene::PreviewSimulation; }
+    bool isMainMode() const { return currentScene == Scene::MainSimulation; }
+    
+    // Independent system coordination
+    void setPreviewSystemActive(bool active) { previewSystemActive = active; }
+    void setMainSystemActive(bool active) { mainSystemActive = active; }
+    bool isPreviewSystemActive() const { return previewSystemActive; }
+    bool isMainSystemActive() const { return mainSystemActive; }
+    
+    // System coordination interface (Requirements 3.4, 3.5)
+    void coordinateWithCPUPreviewSystem(class CPUPreviewSystem* cpuSystem) { m_cpuPreviewSystem = cpuSystem; }
+    void coordinateWithMainCellManager(class CellManager* cellManager) { m_mainCellManager = cellManager; }
+    
+    // File handling coordination
+    std::string getCurrentPreviewSceneFile() const { return currentPreviewSceneFile; }
+    std::string getCurrentMainSceneFile() const { return currentMainSceneFile; }
+
 private:
     Scene currentScene;
     bool sceneChanged = false;
@@ -114,4 +142,14 @@ private:
     bool mainPaused = false;     // Main starts unpaused
 
     std::map<Scene, int> sceneCellLimits{{Scene::PreviewSimulation, config::MAX_CELLS}, {Scene::MainSimulation, config::MAX_CELLS}};
+    
+    // Independent system states (Requirements 3.4, 3.5)
+    bool previewSystemActive = false;
+    bool mainSystemActive = false;
+    std::string currentPreviewSceneFile;
+    std::string currentMainSceneFile;
+    
+    // System coordination pointers
+    class CPUPreviewSystem* m_cpuPreviewSystem = nullptr;
+    class CellManager* m_mainCellManager = nullptr;
 };

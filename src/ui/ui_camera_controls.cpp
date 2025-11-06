@@ -63,6 +63,10 @@ void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, S
     addTooltip("Display forward (red), up (green), and right (blue) orientation axes for each cell");
     
     ImGui::Checkbox("Show Adhesion Lines", &showAdhesionLines);
+    if (sceneManager.getCurrentScene() == Scene::PreviewSimulation && showAdhesionLines) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "(Preview: Not yet implemented)");
+    }
     addTooltip("Display orange lines connecting sibling cells when their parent has adhesionSettings enabled");
     
     ImGui::Checkbox("Wireframe Mode", &wireframeMode);

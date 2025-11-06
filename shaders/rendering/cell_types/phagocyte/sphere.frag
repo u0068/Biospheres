@@ -27,8 +27,12 @@ void main() {
     // Normalize the normal (interpolation might have changed its length)
     vec3 normal = normalize(vNormal);
     
-    // DEBUG: Visualize normals as colors (comment out for normal rendering)
+    // DEBUG: Visualize normals as colors (uncomment to debug face orientation)
     // fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+    // return;
+    
+    // DEBUG: Visualize UV coordinates (uncomment to debug texture mapping)
+    // fragColor = vec4(vUV, 0.0, 1.0);
     // return;
     
     // Simple lighting calculation

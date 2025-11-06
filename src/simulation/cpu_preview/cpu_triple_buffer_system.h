@@ -20,20 +20,25 @@
  */
 class CPUTripleBufferSystem {
 public:
+    // Instance data structure matching existing rendering system format
+    struct CPUInstanceData {
+        glm::vec4 positionAndRadius;  // xyz = position, w = radius
+        glm::vec4 color;              // rgba color
+        glm::vec4 orientation;        // quaternion (w, x, y, z)
+    };
+
     // Visual data structure (minimal subset for rendering)
     struct CPUVisualData {
-        alignas(16) std::array<glm::vec3, 256> positions;
-        alignas(16) std::array<glm::quat, 256> orientations;
-        alignas(16) std::array<glm::vec4, 256> colors;
-        alignas(16) std::array<glm::mat4, 256> instanceMatrices;
+        alignas(16) std::array<CPUInstanceData, 256> instances;
         size_t activeCount = 0;
         
         // Clear all data
         void clear() {
-            positions.fill(glm::vec3(0.0f));
-            orientations.fill(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
-            colors.fill(glm::vec4(1.0f));
-            instanceMatrices.fill(glm::mat4(1.0f));
+            for (auto& instance : instances) {
+                instance.positionAndRadius = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+                instance.color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+                instance.orientation = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f); // w, x, y, z
+            }
             activeCount = 0;
         }
     };
@@ -86,10 +91,7 @@ private:
     std::chrono::steady_clock::time_point m_uploadStart;
 
     // Visual data extraction methods
-    void extractPositions(const CPUCellPhysics_SoA& cells, CPUVisualData& visual);
-    void extractOrientations(const CPUCellPhysics_SoA& cells, CPUVisualData& visual);
-    void extractColors(const CPUCellPhysics_SoA& cells, CPUVisualData& visual);
-    void generateInstanceMatrices(CPUVisualData& visual);
+    void extractInstanceData(const CPUCellPhysics_SoA& cells, CPUVisualData& visual);
 
     // Buffer rotation (lock-free)
     void rotateBuffers();
@@ -99,6 +101,10 @@ private:
     void optimizedGPUUpload(const CPUVisualData& data);
     void validateGPUState();
 
-    // Color generation based on cell properties
-    glm::vec4 generateCellColor(uint32_t cellType, uint32_t genomeID, float age, float energy);
+    // Color generation based on cell properties (simplified)
+    glm::vec4 generateCellColor(const glm::vec3& baseColor, uint32_t cellType, uint32_t genomeID, float age, float energy);
 };
+
+// Validate instance data structure alignment for GPU compatibility
+static_assert(sizeof(CPUTripleBufferSystem::CPUInstanceData) == 48, "CPUInstanceData must be 48 bytes (3 vec4s)");
+static_assert(sizeof(CPUTripleBufferSystem::CPUInstanceData) % 16 == 0, "CPUInstanceData must be 16-byte aligned");

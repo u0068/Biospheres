@@ -200,5 +200,6 @@ struct GenomeData
         // Initialize with one default mode
         modes.push_back(ModeSettings());
         modes[0].name = "Default Mode";
+        modes[0].color = glm::vec3(0.2f, 0.8f, 0.2f); // Default to green for visibility
     }
 };

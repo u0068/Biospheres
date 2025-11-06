@@ -10,6 +10,7 @@
 struct CellManager; // Forward declaration to avoid circular dependency
 class SceneManager; // Forward declaration for scene management
 struct ComputeCell; // Forward declaration for keyframe system
+class CPUPreviewSystem; // Forward declaration for CPU Preview System integration
 
 enum class ToolType : std::uint8_t
 {
@@ -67,10 +68,10 @@ class UIManager
 {
 public:
     void renderCellInspector(CellManager &cellManager, SceneManager& sceneManager);
-    void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager);
+    void renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem = nullptr);
     void renderCameraControls(CellManager &cellmanager, Camera &camera, SceneManager& sceneManager);
-    void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager);
-    void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager); // New time scrubber window
+    void renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem = nullptr);
+    void renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem = nullptr); // New time scrubber window
     void renderSceneSwitcher(SceneManager& sceneManager, CellManager& previewCellManager, CellManager& mainCellManager); // Scene switcher window
     void renderInjectionControls(class InjectionSystem& injectionSystem, class SpatialGridSystem& spatialGrid, class VisualizationRenderer& visualizationRenderer); // Injection system controls
 

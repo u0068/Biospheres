@@ -76,7 +76,7 @@ namespace config
 	inline bool showCircularSliderDemo{true};
 	inline float physicsTimeStep{ 0.01f };	// The size of a physics time step for live simulation (accurate physics)
 	inline float fastForwardTimeStep{ 0.1f };	// DEPRECATED: Previously used for fast-forward
-	inline float resimulationTimeStep{ 0.01f };	// Time step for resimulation (same as physics for perfect accuracy)
+	inline float resimulationTimeStep{ 0.02f };	// Time step for resimulation (doubled for faster simulation)
 	//inline float physicsSpeed{ 1.f };		// A multiplier on the physics tickrate. Physics tickrate = physicsSpeed / physicsTimeStep
 	inline float scrubTimeStep{ 0.1f };	// DEPRECATED: Previously used for time scrubber, now uses fastForwardTimeStep
 	inline float maxAccumulatorTime{ 0.1f };// Maximum amount of time spent on simulating physics per frame. Max physics tpf = maxAccumulatorTime * tickrate

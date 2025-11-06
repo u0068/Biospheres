@@ -22,10 +22,20 @@ public:
     CPUSIMDPhysicsEngine();
     ~CPUSIMDPhysicsEngine();
 
+    // Configuration
+    void setPreviewMode(bool enabled) { m_previewMode = enabled; }
+    bool isPreviewMode() const { return m_previewMode; }
+
     // Main simulation step
     void simulateStep(CPUCellPhysics_SoA& cells, 
                      CPUAdhesionConnections_SoA& adhesions,
                      float deltaTime);
+    
+    // Simulation step with genome access for division logic
+    void simulateStep(CPUCellPhysics_SoA& cells, 
+                     CPUAdhesionConnections_SoA& adhesions,
+                     float deltaTime,
+                     const CPUGenomeParameters* genomeParams);
 
     // Performance monitoring
     float getLastStepTime() const { return m_lastStepTime; }
@@ -48,6 +58,10 @@ private:
                                 const CPUAdhesionConnections_SoA& adhesions);
     void integrateVerlet(CPUCellPhysics_SoA& cells, float deltaTime);
     void updateOrientations(CPUCellPhysics_SoA& cells, float deltaTime);
+    void checkCellDivision(CPUCellPhysics_SoA& cells, 
+                          CPUAdhesionConnections_SoA& adhesions, 
+                          float deltaTime,
+                          const CPUGenomeParameters* genomeParams = nullptr);
 
     // Spatial optimization for CPU performance
     void updateSpatialGrid(const CPUCellPhysics_SoA& cells);
@@ -158,6 +172,9 @@ private:
     float m_lastStepTime = 0.0f;
     size_t m_processedCellCount = 0;
     ValidationMetrics m_lastValidation;
+    
+    // Configuration
+    bool m_previewMode = true; // Default to preview mode for CPU preview system
     
     // Spatial optimization
     std::unique_ptr<CPUSpatialGrid> m_spatialGrid;

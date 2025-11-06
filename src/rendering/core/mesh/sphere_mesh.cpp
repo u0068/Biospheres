@@ -113,21 +113,21 @@ void SphereMesh::generateSphere(int latitudeSegments, int longitudeSegments, flo
         }
     }
     
-    // Generate indices for triangles
+    // Generate indices for triangles with correct winding order (counter-clockwise for outward-facing normals)
     for (int lat = 0; lat < latitudeSegments; ++lat) {
         for (int lon = 0; lon < longitudeSegments; ++lon) {
             int current = lat * (longitudeSegments + 1) + lon;
             int next = current + longitudeSegments + 1;
             
-            // First triangle
+            // First triangle (counter-clockwise winding for outward-facing normals)
             indices[0].push_back(current);
-            indices[0].push_back(next);
             indices[0].push_back(current + 1);
+            indices[0].push_back(next);
             
-            // Second triangle
+            // Second triangle (counter-clockwise winding for outward-facing normals)
             indices[0].push_back(current + 1);
-            indices[0].push_back(next);
             indices[0].push_back(next + 1);
+            indices[0].push_back(next);
         }
     }
     
@@ -224,20 +224,20 @@ void SphereMesh::setupInstanceBuffer(GLuint instanceDataBuffer) {
     glBindVertexArray(VAO[0]);
     glBindBuffer(GL_ARRAY_BUFFER, instanceDataBuffer);
 
-    // Instance position and radius (vec4)
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)0);
-    glVertexAttribDivisor(2, 1);
-
-    // Instance color (vec4)
+    // Instance position and radius (vec4) - Location 3 to match shader
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(4 * sizeof(float)));
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)0);
     glVertexAttribDivisor(3, 1);
 
-    // Instance orientation (vec4 quaternion)
+    // Instance color (vec4) - Location 4 to match shader
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(8 * sizeof(float)));
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(4 * sizeof(float)));
     glVertexAttribDivisor(4, 1);
+
+    // Instance orientation (vec4 quaternion) - Location 5 to match shader
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(8 * sizeof(float)));
+    glVertexAttribDivisor(5, 1);
 
     glBindVertexArray(0);
 }

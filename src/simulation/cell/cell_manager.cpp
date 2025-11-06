@@ -30,8 +30,8 @@
 
 CellManager::CellManager()
 {
-    // Generate sphere mesh - optimized for high cell counts
-    sphereMesh.generateSphere(8, 12, 1.0f); // Ultra-low poly: 8x12 = 96 triangles for maximum performance
+    // Generate sphere mesh - balanced quality and performance for preview cells
+    sphereMesh.generateSphere(16, 24, 1.0f); // Medium poly: 16x24 = 768 triangles for better visual quality
     sphereMesh.setupBuffers();
 
     initializeGPUBuffers();

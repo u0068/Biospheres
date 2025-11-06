@@ -23,6 +23,8 @@
 // Simulation includes
 #include "src/simulation/cell/cell_manager.h"
 #include "src/simulation/spatial/spatial_grid_system.h"
+#include "src/simulation/cpu_preview/cpu_preview_system.h"
+#include "src/simulation/cpu_preview/cpu_genome_converter.h"
 
 // Rendering includes
 #include "src/rendering/core/shader_class.h"
@@ -144,7 +146,9 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 	if (currentScene == Scene::PreviewSimulation)
 	{
 		activeCamera = &previewCamera;
-		activeCellManager = &previewCellManager;
+		// For Preview Simulation, use main cell manager for input infrastructure only
+		// The CPU Preview System handles the actual simulation
+		activeCellManager = &mainCellManager;
 	}
 	else if (currentScene == Scene::MainSimulation)
 	{
@@ -232,17 +236,38 @@ void processInput(Input& input, Camera& previewCamera, Camera& mainCamera, CellM
 // Rendering pipeline
 void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, Camera& previewCamera, Camera& mainCamera,
 				 UIManager& uiManager, Shader& sphereShader, PerformanceMonitor& perfMonitor, SceneManager& sceneManager, int width, int height,
-				 InjectionSystem& injectionSystem, BrushRenderer& brushRenderer, SpatialGridSystem& spatialGrid, VisualizationRenderer& visualizationRenderer)
+				 InjectionSystem& injectionSystem, BrushRenderer& brushRenderer, SpatialGridSystem& spatialGrid, VisualizationRenderer& visualizationRenderer,
+				 CPUPreviewSystem& cpuPreviewSystem)
 {
 	Scene currentScene = sceneManager.getCurrentScene();
 	CellManager* activeCellManager = nullptr;
 	Camera* activeCamera = nullptr;
 	
+	// Debug: Print current scene (only once per scene change)
+	static Scene lastScene = Scene::MainSimulation;
+	if (currentScene != lastScene) {
+		std::cout << "Scene changed to: " << (currentScene == Scene::PreviewSimulation ? "PreviewSimulation" : "MainSimulation") << std::endl;
+		lastScene = currentScene;
+	}
+	
 	// Select which simulation and camera to render and interact with
 	if (currentScene == Scene::PreviewSimulation)
 	{
-		activeCellManager = &previewCellManager;
+		// Use CPU Preview System exclusively for Preview Simulation
 		activeCamera = &previewCamera;
+		
+		// Upload CPU Preview System visual data to instance buffer for rendering
+		try {
+			// Ensure visual data is current before rendering (needed when paused)
+			cpuPreviewSystem.ensureVisualDataCurrent();
+			cpuPreviewSystem.uploadVisualDataToGPU();
+		}
+		catch (const std::exception& e) {
+			std::cerr << "CPU Preview System GPU upload error: " << e.what() << std::endl;
+		}
+		
+		// Don't use activeCellManager for Preview Simulation - CPU system handles everything
+		activeCellManager = nullptr;
 	}
 	else if (currentScene == Scene::MainSimulation)
 	{
@@ -250,31 +275,124 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		activeCamera = &mainCamera;
 	}
 	
-	if (activeCellManager && activeCamera)
+	if (activeCamera)
 	{
 		// Render the active simulation with its camera
 		try
 		{
-			activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera, uiManager.wireframeMode);
+			if (currentScene == Scene::PreviewSimulation)
+			{
+				// Render CPU Preview System data using direct sphere mesh rendering
+				// The CPU Preview System has already uploaded data to the instance buffer
+				const auto* visualData = cpuPreviewSystem.getVisualData();
+				
+
+				
+				if (visualData && visualData->activeCount > 0)
+				{
+					// Get the sphere mesh from preview cell manager for rendering infrastructure
+					auto& sphereMesh = previewCellManager.getSphereMesh();
+					
+					// Set up the sphere mesh to use the CPU Preview System's instance buffer (only once)
+					static bool instanceBufferSetup = false;
+					if (!instanceBufferSetup) {
+						GLuint cpuInstanceBuffer = cpuPreviewSystem.getTripleBufferSystem()->getInstanceBuffer();
+						sphereMesh.setupInstanceBuffer(cpuInstanceBuffer);
+						instanceBufferSetup = true;
+						std::cout << "CPU Preview System: Instance buffer setup completed\n";
+					}
+					
+					// Render using the sphere shader
+					sphereShader.use();
+					
+					// Temporarily disable face culling for preview cells to debug fragmentation
+					glDisable(GL_CULL_FACE);
+					
+					// Bind a white texture (create once, reuse)
+					static GLuint whiteTexture = 0;
+					if (whiteTexture == 0) {
+						glGenTextures(1, &whiteTexture);
+						glBindTexture(GL_TEXTURE_2D, whiteTexture);
+						unsigned char whitePixel[4] = {255, 255, 255, 255}; // White RGBA
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+						std::cout << "Created white texture for CPU Preview System\n";
+					}
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, whiteTexture);
+					sphereShader.setInt("uTexture", 0);
+					
+					// Set up camera matrices
+					glm::mat4 view = activeCamera->getViewMatrix();
+					glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
+														   static_cast<float>(width) / static_cast<float>(height), 
+														   0.1f, 1000.0f);
+					
+					// Set uniforms with correct names (matching sphere shader expectations)
+					sphereShader.setMat4("uProjection", projection);
+					sphereShader.setMat4("uView", view);
+					sphereShader.setVec3("uCameraPos", activeCamera->getPosition());
+					sphereShader.setVec3("uLightDir", glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f)));
+					sphereShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
+					
+					// Set selection highlighting (no selection in CPU Preview System)
+					sphereShader.setVec3("uSelectedCellPos", glm::vec3(-9999.0f)); // Invalid position
+					sphereShader.setFloat("uSelectedCellRadius", 0.0f);
+					
+					// Render the cells
+					sphereMesh.render(visualData->activeCount); // Render all active cells
+					
+					// Re-enable face culling for other rendering
+					glEnable(GL_CULL_FACE);
+				}
+			}
+			else if (activeCellManager)
+			{
+				// Render GPU-based simulation (Main Simulation)
+				activeCellManager->renderCells(glm::vec2(width, height), sphereShader, *activeCamera, uiManager.wireframeMode);
+			}
 			checkGLError("renderCells");
 			
-			// Render particles
-			activeCellManager->renderParticles(*activeCamera, glm::vec2(width, height));
-			checkGLError("renderParticles");
-			
-			// Render gizmos if enabled
-			activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
-			checkGLError("renderGizmos");
-			
-			// Render ring gizmos if enabled
-			        activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-        checkGLError("renderRingGizmos");
-        activeCellManager->renderAnchorGizmos(glm::vec2(width, height), *activeCamera, uiManager);
-        checkGLError("renderAnchorGizmos");
-			
-			// Render adhesionSettings lines if enabled
-			activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
-			checkGLError("renderAdhesionLines");
+			// Render additional elements only for GPU-based simulations
+			if (activeCellManager)
+			{
+				// Render particles
+				activeCellManager->renderParticles(*activeCamera, glm::vec2(width, height));
+				checkGLError("renderParticles");
+				
+				// Render gizmos if enabled
+				activeCellManager->renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
+				checkGLError("renderGizmos");
+				
+				// Render ring gizmos if enabled
+				activeCellManager->renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+				checkGLError("renderRingGizmos");
+				activeCellManager->renderAnchorGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+				checkGLError("renderAnchorGizmos");
+				
+				// Render adhesionSettings lines if enabled
+				activeCellManager->renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
+				checkGLError("renderAdhesionLines");
+			}
+			else if (currentScene == Scene::PreviewSimulation)
+			{
+				// CPU Preview System: Render gizmos using GPU instanced rendering
+				if (uiManager.showOrientationGizmos) {
+					cpuPreviewSystem.renderGizmos(glm::vec2(width, height), *activeCamera, uiManager.showOrientationGizmos);
+					checkGLError("CPU Preview renderGizmos");
+					
+					// Render ring gizmos (split direction indicators)
+					cpuPreviewSystem.renderRingGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+					checkGLError("CPU Preview renderRingGizmos");
+					
+					// Render anchor gizmos (adhesion connection indicators)
+					cpuPreviewSystem.renderAnchorGizmos(glm::vec2(width, height), *activeCamera, uiManager);
+					checkGLError("CPU Preview renderAnchorGizmos");
+				}
+				
+				// Note: Adhesion lines not yet implemented for CPU Preview System
+			}
 			
 			// Render injection brush if visible
 			if (injectionSystem.isBrushVisible()) {
@@ -299,9 +417,21 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 			std::cerr << "Exception in cell rendering: " << e.what() << "\n";
 		}
 		// Show the full detailed UI for the active simulation
-		uiManager.renderCellInspector(*activeCellManager, sceneManager);
-		uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager);
-		uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
+		if (currentScene == Scene::PreviewSimulation)
+		{
+			// For Preview Simulation, use main cell manager for UI infrastructure
+			// TODO: Modify these UI components to work with CPU Preview System
+			uiManager.renderCellInspector(mainCellManager, sceneManager);
+			uiManager.renderPerformanceMonitor(mainCellManager, perfMonitor, sceneManager, &cpuPreviewSystem);
+			uiManager.renderCameraControls(mainCellManager, *activeCamera, sceneManager);
+		}
+		else
+		{
+			// For Main Simulation, use the active cell manager normally
+			uiManager.renderCellInspector(*activeCellManager, sceneManager);
+			uiManager.renderPerformanceMonitor(*activeCellManager, perfMonitor, sceneManager, nullptr);
+			uiManager.renderCameraControls(*activeCellManager, *activeCamera, sceneManager);
+		}
 		
 		// Show injection controls
 		uiManager.renderInjectionControls(injectionSystem, spatialGrid, visualizationRenderer);
@@ -309,13 +439,15 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 		// Only show genome editor in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
 		{
-			uiManager.renderGenomeEditor(previewCellManager, sceneManager);
+			// Connect genome editor to CPU Preview System for instant parameter updates
+			uiManager.renderGenomeEditor(mainCellManager, sceneManager, &cpuPreviewSystem);
 		}
 		
 		// Only show time scrubber in Preview Simulation
 		if (currentScene == Scene::PreviewSimulation)
 		{
-			uiManager.renderTimeScrubber(*activeCellManager, sceneManager);
+			// Time scrubber now works with CPU Preview System
+			uiManager.renderTimeScrubber(mainCellManager, sceneManager, &cpuPreviewSystem);
 		}
 		
 		uiManager.renderSceneSwitcher(sceneManager, previewCellManager, mainCellManager);
@@ -327,7 +459,7 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 	}
 }
 
-void updateSimulation(CellManager& previewCellManager, CellManager& mainCellManager, SceneManager& sceneManager)
+void updateSimulation(CellManager& previewCellManager, CellManager& mainCellManager, SceneManager& sceneManager, CPUPreviewSystem& cpuPreviewSystem)
 {
 	// Only update simulations if not paused
 	if (sceneManager.isPaused())
@@ -340,22 +472,22 @@ void updateSimulation(CellManager& previewCellManager, CellManager& mainCellMana
 	
 	try
 	{
-		if (currentScene == Scene::PreviewSimulation)
+		if (currentScene == Scene::PreviewSimulation && sceneManager.isPreviewSystemActive())
 		{
-			// Update only Preview Simulation
-			previewCellManager.updateCells(timeStep);
-			checkGLError("updateCells - preview");
-			
-			// Update particles
-			previewCellManager.updateParticles(timeStep);
-			checkGLError("updateParticles - preview");
+			// Use CPU Preview System exclusively for Preview Simulation (native SoA)
+			try {
+				cpuPreviewSystem.update(timeStep);
+			}
+			catch (const std::exception& e) {
+				std::cerr << "CPU Preview System update error: " << e.what() << std::endl;
+			}
 			
 			// Update preview simulation time tracking
 			sceneManager.updatePreviewSimulationTime(timeStep);
 		}
-		else if (currentScene == Scene::MainSimulation)
+		else if (currentScene == Scene::MainSimulation && sceneManager.isMainSystemActive())
 		{
-			// Update only Main Simulation
+			// Update only Main Simulation (native AoS)
 			mainCellManager.updateCells(timeStep);
 			checkGLError("updateCells - main");
 			
@@ -430,16 +562,24 @@ int main()
 	CellManager previewCellManager;
 	CellManager mainCellManager;
 	
-	// Mark preview simulation (disables thrust force for genome editing)
+	// Scene management
+	SceneManager sceneManager;
+	
+	// Initialize CPU Preview System for high-performance genome iteration
+	CPUPreviewSystem cpuPreviewSystem;
+	
+	// Mark preview simulation (used only for rendering infrastructure, not simulation)
 	previewCellManager.isPreviewSimulation = true;
 	
-	// Initialize Preview Simulation
-	previewCellManager.addGenomeToBuffer(uiManager.currentGenome);
-	ComputeCell previewCell{};
-	previewCell.orientation = glm::vec4(uiManager.currentGenome.initialOrientation.x, uiManager.currentGenome.initialOrientation.y, uiManager.currentGenome.initialOrientation.z, uiManager.currentGenome.initialOrientation.w);
-	previewCell.genomeOrientation = previewCell.orientation;
-	previewCellManager.addCellToStagingBuffer(previewCell); // spawns 1 cell at 0,0,0
-	previewCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
+	// Initialize scene management with independent systems (Requirements 3.4, 3.5)
+	sceneManager.coordinateWithCPUPreviewSystem(&cpuPreviewSystem);
+	sceneManager.coordinateWithMainCellManager(&mainCellManager);
+	sceneManager.switchToPreviewMode(); // Start in Preview mode by default
+	sceneManager.setPreviewSystemActive(true); // Ensure preview system is active
+	sceneManager.setMainSystemActive(true); // Main system available but not active
+	
+	// Initialize CPU Preview System with initial cell data
+	// The CPU Preview System will handle all preview simulation logic
 
 	// Initialize Main Simulation
 	mainCellManager.addGenomeToBuffer(uiManager.currentGenome);
@@ -449,9 +589,64 @@ int main()
 	mainCellManager.addCellToStagingBuffer(mainCell); // spawns 1 cell at 0,0,0
 	mainCellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
 	
-	// Ensure both simulations have proper initial state by running one update cycle
-	previewCellManager.updateCells(config::physicsTimeStep);
+	// Ensure main simulation has proper initial state by running one update cycle
 	mainCellManager.updateCells(config::physicsTimeStep);
+	
+	// Initialize CPU Preview System FIRST
+	try {
+		cpuPreviewSystem.initialize();
+		std::cout << "CPU Preview System initialized successfully\n";
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Failed to initialize CPU Preview System: " << e.what() << std::endl;
+	}
+	
+	// Connect CPU Preview System to existing instance buffer for seamless rendering integration
+	try {
+		GLuint previewInstanceBuffer = previewCellManager.getInstanceBuffer();
+		if (previewInstanceBuffer != 0) {
+			cpuPreviewSystem.getTripleBufferSystem()->setInstanceBuffer(previewInstanceBuffer);
+			std::cout << "CPU Preview System connected to existing instance buffer (ID: " << previewInstanceBuffer << ")\n";
+		} else {
+			std::cerr << "Warning: Preview CellManager instance buffer not available for CPU Preview System\n";
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Failed to connect CPU Preview System to instance buffer: " << e.what() << std::endl;
+	}
+	
+	// Add default cell for genome editing AFTER initialization
+	try {
+		CPUCellParameters defaultCell;
+		defaultCell.position = glm::vec3(0.0f, 0.0f, 0.0f);
+		defaultCell.velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+		defaultCell.orientation = glm::quat(
+			uiManager.currentGenome.initialOrientation.w,
+			uiManager.currentGenome.initialOrientation.x,
+			uiManager.currentGenome.initialOrientation.y,
+			uiManager.currentGenome.initialOrientation.z
+		);
+		defaultCell.mass = 1.0f;
+		defaultCell.radius = 1.0f;
+		defaultCell.cellType = 0;
+		defaultCell.genomeID = 0;
+		
+		// Convert current genome to CPU format and apply to default cell
+		defaultCell.genome = CPUGenomeConverter::convertToCPUFormat(uiManager.currentGenome);
+		
+		cpuPreviewSystem.addCell(defaultCell);
+		
+		// Also apply genome parameters after cell creation to ensure they're applied
+		CPUGenomeConverter::applyGenomeToPreviewSystem(cpuPreviewSystem, uiManager.currentGenome);
+		
+		// Force immediate visual data update after adding cell
+		cpuPreviewSystem.triggerInstantResimulation();
+		
+		std::cout << "CPU Preview System initialized with default cell\n";
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Failed to add default cell to CPU Preview System: " << e.what() << std::endl;
+	}
 
 	AudioEngine audioEngine;
 	audioEngine.init();
@@ -472,6 +667,8 @@ int main()
 	// Initialize visualization renderer
 	VisualizationRenderer visualizationRenderer;
 	visualizationRenderer.initialize(config::GRID_RESOLUTION, config::WORLD_SIZE, glm::vec3(0.0f));
+	
+
 
 	// Timing variables
 	float deltaTime = 0.0f;
@@ -480,9 +677,6 @@ int main()
 
 	// Performance monitoring struct
 	PerformanceMonitor perfMonitor{};
-
-	// Scene management
-	SceneManager sceneManager;
 
 	// Window state tracking
 	WindowState windowState;
@@ -558,11 +752,11 @@ int main()
 		/// Then we handle cell simulation
 		while (accumulator >= tickPeriod)
 		{
-			updateSimulation(previewCellManager, mainCellManager, sceneManager);
+			updateSimulation(previewCellManager, mainCellManager, sceneManager, cpuPreviewSystem);
 			accumulator -= tickPeriod;
 		}
 		/// Then we handle rendering
-		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height, injectionSystem, brushRenderer, spatialGrid, visualizationRenderer);
+		renderFrame(previewCellManager, mainCellManager, previewCamera, mainCamera, uiManager, sphereShader, perfMonitor, sceneManager, width, height, injectionSystem, brushRenderer, spatialGrid, visualizationRenderer, cpuPreviewSystem);
 
 		// Update all the timers
 		TimerManager::instance().finalizeFrame();

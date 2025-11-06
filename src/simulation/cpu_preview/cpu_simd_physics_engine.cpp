@@ -7,11 +7,13 @@
 #include <intrin.h> // For _mm_prefetch on MSVC
 
 CPUSIMDPhysicsEngine::CPUSIMDPhysicsEngine() 
-    : m_spatialGrid(std::make_unique<CPUSpatialGrid>())
 {
-    // Initialize spatial grid with CPU optimizations
-    m_spatialGrid->initialize();
-    m_spatialGrid->clear();
+    // Only create spatial grid if not in preview mode
+    if (!m_previewMode) {
+        m_spatialGrid = std::make_unique<CPUSpatialGrid>();
+        m_spatialGrid->initialize();
+        m_spatialGrid->clear();
+    }
     
     // Initialize preallocated buffers to avoid dynamic allocation
     m_buffers.initialize();
@@ -24,6 +26,13 @@ CPUSIMDPhysicsEngine::~CPUSIMDPhysicsEngine() {
 void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells, 
                                        CPUAdhesionConnections_SoA& adhesions,
                                        float deltaTime) {
+    simulateStep(cells, adhesions, deltaTime, nullptr);
+}
+
+void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells, 
+                                       CPUAdhesionConnections_SoA& adhesions,
+                                       float deltaTime,
+                                       const CPUGenomeParameters* genomeParams) {
     m_stepStart = std::chrono::steady_clock::now();
     
     try {
@@ -54,6 +63,9 @@ void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells,
         // Step 7: Apply boundary constraints
         applyBoundaryConstraints(cells);
         
+        // Step 8: Check for cell division based on age and division threshold
+        checkCellDivision(cells, adhesions, deltaTime, genomeParams);
+        
         m_processedCellCount = cells.activeCellCount;
         
         // Update performance metrics
@@ -71,6 +83,11 @@ void CPUSIMDPhysicsEngine::calculateCollisionForces(CPUCellPhysics_SoA& cells) {
     // Reset accelerations using SIMD
     simd_vec3_scale(cells.acc_x.data(), cells.acc_y.data(), cells.acc_z.data(), 0.0f, cells.activeCellCount);
     
+    // Skip collision detection if there's only one cell (major optimization)
+    if (cells.activeCellCount <= 1) {
+        return;
+    }
+    
     // Process collisions in cache-friendly batches for optimal CPU performance
     const size_t batchSize = BLOCK_SIZE; // 32 cells per batch for cache optimization
     
@@ -85,6 +102,11 @@ void CPUSIMDPhysicsEngine::calculateCollisionForces(CPUCellPhysics_SoA& cells) {
 
 void CPUSIMDPhysicsEngine::calculateAdhesionForces(CPUCellPhysics_SoA& cells, 
                                                    const CPUAdhesionConnections_SoA& adhesions) {
+    // Skip adhesion forces if no connections (major optimization)
+    if (adhesions.activeConnectionCount == 0) {
+        return;
+    }
+    
     // Process adhesion connections with SIMD optimization where possible
     const size_t batchSize = SIMD_WIDTH;
     size_t processed = 0;
@@ -145,9 +167,10 @@ void CPUSIMDPhysicsEngine::integrateVerlet(CPUCellPhysics_SoA& cells, float delt
         // GPU algorithm: No velocity update in position update shader
         // (Velocity is updated in separate velocity update shader)
         
-        // GPU algorithm: age += deltaTime * 0.5 (half step in position update)
-        __m256 half_dt = _mm256_set1_ps(deltaTime * 0.5f);
-        __m256 new_age = _mm256_add_ps(age, half_dt);
+        // GPU algorithm: Total age increment per frame is deltaTime (0.5 in position + 0.5 in velocity)
+        // Since CPU does both in one step, increment by full deltaTime
+        __m256 dt = _mm256_set1_ps(deltaTime);
+        __m256 new_age = _mm256_add_ps(age, dt);
         
         // Store results back
         _mm256_store_ps(&cells.pos_x[i], new_pos_x);
@@ -169,8 +192,9 @@ void CPUSIMDPhysicsEngine::integrateVerlet(CPUCellPhysics_SoA& cells, float delt
         cells.pos_y[i] += cells.vel_y[i] * deltaTime + 0.5f * cells.acc_y[i] * dt2;
         cells.pos_z[i] += cells.vel_z[i] * deltaTime + 0.5f * cells.acc_z[i] * dt2;
         
-        // GPU algorithm: age += deltaTime * 0.5
-        cells.age[i] += deltaTime * 0.5f;
+        // GPU algorithm: Total age increment per frame is deltaTime (0.5 in position + 0.5 in velocity)
+        // Since CPU does both in one step, increment by full deltaTime
+        cells.age[i] += deltaTime;
         
         // Reset acceleration for next frame (GPU behavior)
         cells.acc_x[i] = 0.0f;
@@ -197,6 +221,16 @@ void CPUSIMDPhysicsEngine::updateOrientations(CPUCellPhysics_SoA& cells, float d
 }
 
 void CPUSIMDPhysicsEngine::updateSpatialGrid(const CPUCellPhysics_SoA& cells) {
+    // Skip spatial grid entirely in preview mode (max 256 cells)
+    if (m_previewMode || !m_spatialGrid) {
+        return;
+    }
+    
+    // Skip spatial grid for small cell counts (direct collision is faster)
+    if (cells.activeCellCount <= 8) {
+        return;
+    }
+    
     m_spatialGrid->clear();
     
     for (size_t i = 0; i < cells.activeCellCount; ++i) {
@@ -243,18 +277,25 @@ void CPUSIMDPhysicsEngine::applyAccelerationDamping(CPUCellPhysics_SoA& cells) {
 }
 
 void CPUSIMDPhysicsEngine::processCellBatch(CPUCellPhysics_SoA& cells, size_t startIdx, size_t count) {
-    // Process cells in cache-friendly batches to improve CPU performance
     const size_t endIdx = std::min(startIdx + count, cells.activeCellCount);
     
-    // Prefetch data for better cache performance
+    // Always use direct collision detection in preview mode (max 256 cells)
+    if (m_previewMode || !m_spatialGrid || cells.activeCellCount <= 8) {
+        for (size_t i = startIdx; i < endIdx; ++i) {
+            for (size_t j = i + 1; j < cells.activeCellCount; ++j) {
+                processCollisionPair(static_cast<uint32_t>(i), static_cast<uint32_t>(j), cells);
+            }
+        }
+        return;
+    }
+    
+    // Use spatial grid for larger cell counts in non-preview mode
     prefetchCellData(cells, startIdx, endIdx - startIdx);
     
-    // Process cells in this batch
     for (size_t i = startIdx; i < endIdx; ++i) {
         glm::vec3 position(cells.pos_x[i], cells.pos_y[i], cells.pos_z[i]);
         float radius = cells.radius[i];
         
-        // Use cache-friendly neighbor iteration
         m_spatialGrid->iterateNeighbors(position, radius * 2.0f, 
             [this, &cells, i](uint32_t j) {
                 if (j <= i || j >= cells.activeCellCount) return;
@@ -887,5 +928,112 @@ void CPUSIMDPhysicsEngine::CPUSpatialGrid::precomputeNeighborOffsets(int searchR
                 neighborOffsets.emplace_back(dx, dy, dz);
             }
         }
+    }
+}
+void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells, 
+                                             CPUAdhesionConnections_SoA& adhesions, 
+                                             float deltaTime,
+                                             const CPUGenomeParameters* genomeParams) {
+    // Get division threshold from genome parameters
+    float divisionThreshold = 2.0f; // Default division threshold
+    if (genomeParams) {
+        divisionThreshold = genomeParams->divisionThreshold;
+    }
+    
+    // Check each cell for division based on age and division threshold
+    std::vector<uint32_t> cellsToSplit;
+    
+    for (size_t i = 0; i < cells.activeCellCount; ++i) {
+        float cellAge = cells.age[i];
+        
+        if (cellAge >= divisionThreshold) {
+            cellsToSplit.push_back(static_cast<uint32_t>(i));
+        }
+    }
+    
+    // Process cell divisions (matching GPU capacity check)
+    for (uint32_t cellIndex : cellsToSplit) {
+        if (cells.activeCellCount >= 255) { // CPU limit is 256, leave room for one more
+            break; // No space available, cancel remaining splits
+        }
+        
+        // Create daughter cell
+        uint32_t daughterIndex = static_cast<uint32_t>(cells.activeCellCount);
+        cells.activeCellCount++;
+        
+        // Copy parent cell properties to daughter
+        cells.pos_x[daughterIndex] = cells.pos_x[cellIndex];
+        cells.pos_y[daughterIndex] = cells.pos_y[cellIndex];
+        cells.pos_z[daughterIndex] = cells.pos_z[cellIndex];
+        
+        cells.vel_x[daughterIndex] = cells.vel_x[cellIndex];
+        cells.vel_y[daughterIndex] = cells.vel_y[cellIndex];
+        cells.vel_z[daughterIndex] = cells.vel_z[cellIndex];
+        
+        cells.acc_x[daughterIndex] = 0.0f;
+        cells.acc_y[daughterIndex] = 0.0f;
+        cells.acc_z[daughterIndex] = 0.0f;
+        
+        cells.quat_x[daughterIndex] = cells.quat_x[cellIndex];
+        cells.quat_y[daughterIndex] = cells.quat_y[cellIndex];
+        cells.quat_z[daughterIndex] = cells.quat_z[cellIndex];
+        cells.quat_w[daughterIndex] = cells.quat_w[cellIndex];
+        
+        // GPU behavior: Mass is NOT split - both children keep parent's mass
+        float originalMass = cells.mass[cellIndex];
+        cells.mass[cellIndex] = originalMass;
+        cells.mass[daughterIndex] = originalMass;
+        
+        // Radius is calculated as cube root of mass (GPU formula: pow(mass, 1.0/3.0))
+        float radius = std::pow(originalMass, 1.0f/3.0f);
+        cells.radius[cellIndex] = radius;
+        cells.radius[daughterIndex] = radius;
+        
+        // GPU behavior: Age is reset to excess beyond split interval
+        float cellAge = cells.age[cellIndex];
+        float startAge = cellAge - divisionThreshold;
+        cells.age[cellIndex] = startAge;
+        cells.age[daughterIndex] = startAge + 0.001f; // Slight offset like GPU
+        
+        // Copy other properties
+        cells.energy[cellIndex] = cells.energy[cellIndex] * 0.5f; // Split energy
+        cells.energy[daughterIndex] = cells.energy[cellIndex];
+        
+        cells.cellType[daughterIndex] = cells.cellType[cellIndex];
+        cells.genomeID[daughterIndex] = cells.genomeID[cellIndex];
+        cells.flags[daughterIndex] = cells.flags[cellIndex];
+        
+        cells.color_r[daughterIndex] = cells.color_r[cellIndex];
+        cells.color_g[daughterIndex] = cells.color_g[cellIndex];
+        cells.color_b[daughterIndex] = cells.color_b[cellIndex];
+        
+        // GPU behavior: Use split direction from genome
+        glm::vec3 splitDirection = glm::vec3(1.0f, 0.0f, 0.0f); // Default direction
+        if (genomeParams) {
+            splitDirection = genomeParams->splitDirection;
+            if (glm::length(splitDirection) < 0.001f) {
+                splitDirection = glm::vec3(1.0f, 0.0f, 0.0f); // Fallback
+            } else {
+                splitDirection = glm::normalize(splitDirection);
+            }
+        }
+        
+        // GPU behavior: Apply split direction with cell orientation
+        // For now, use split direction directly (orientation transformation would be added later)
+        glm::vec3 separationDirection = splitDirection;
+        
+        // GPU behavior: Move cells apart by 0.5 units in split direction
+        glm::vec3 offset = separationDirection * 0.5f;
+        
+        // Child A gets +offset, Child B gets -offset (matching GPU)
+        cells.pos_x[cellIndex] += offset.x;      // Child A (parent index)
+        cells.pos_y[cellIndex] += offset.y;
+        cells.pos_z[cellIndex] += offset.z;
+        
+        cells.pos_x[daughterIndex] -= offset.x;  // Child B (new index)
+        cells.pos_y[daughterIndex] -= offset.y;
+        cells.pos_z[daughterIndex] -= offset.z;
+        
+        // GPU behavior: No velocity separation - cells inherit parent velocity
     }
 }

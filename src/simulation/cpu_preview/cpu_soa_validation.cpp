@@ -20,7 +20,7 @@ namespace CPUSoAValidation {
             // Bounds checking
             SoADataIntegrityValidator::validateBounds(cellData, adhesionData);
             
-            std::cout << "✓ All SoA validation checks passed successfully\n";
+            // Validation passed silently
         }
         catch (const std::exception& e) {
             std::cerr << "❌ SoA validation failed: " << e.what() << std::endl;

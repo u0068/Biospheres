@@ -11,6 +11,8 @@
 
 #include "../audio/audio_engine.h"
 #include "../scene/scene_manager.h"
+#include "../simulation/cpu_preview/cpu_preview_system.h"
+#include "../simulation/cpu_preview/cpu_soa_data_manager.h"
 
 // Ensure std::min and std::max are available
 #ifdef min
@@ -20,10 +22,15 @@
 #undef max
 #endif
 
-void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager)
+void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMonitor &perfMonitor, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem)
 {
-    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
-    cellManager.updateCounts();
+    // Determine which system to use for metrics
+    bool usePreviewSystem = (sceneManager.getCurrentScene() == Scene::PreviewSimulation && cpuPreviewSystem);
+    
+    if (!usePreviewSystem) {
+        cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+        cellManager.updateCounts();
+    }
     ImGui::SetNextWindowPos(ImVec2(405, 621), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400, 690), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();
@@ -180,16 +187,33 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     ImGui::Text("Simulation Metrics");
     ImGui::Separator();
 
-    int cellCount = cellManager.getCellCount();
-    ImGui::Text("Cells: %i / %i / %i", cellManager.liveCellCount, cellManager.totalCellCount, cellManager.cellLimit);
-    ImGui::Text("Adhesion Connections: %i / %i / %i", cellManager.liveAdhesionCount, cellManager.totalAdhesionCount, cellManager.getAdhesionLimit());
-    ImGui::Text("Pending Cells: %i", cellManager.pendingCellCount);
-    ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
-    ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
+    if (usePreviewSystem) {
+        // Use CPU Preview System metrics
+        int cellCount = static_cast<int>(cpuPreviewSystem->getActiveCellCount());
+        int connectionCount = static_cast<int>(cpuPreviewSystem->getActiveConnectionCount());
+        int maxCells = 256; // CPU Preview System limit
+        
+        ImGui::Text("Cells: %i / %i", cellCount, maxCells);
+        ImGui::Text("Adhesion Connections: %i", connectionCount);
+        ImGui::Text("System: CPU Preview (SoA)");
+        
+        // Memory estimate for CPU system
+        float memoryMB = (cellCount * sizeof(CPUCellPhysics_SoA)) / (1024.0f * 1024.0f);
+        ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
+    } else {
+        // Use GPU CellManager metrics
+        int cellCount = cellManager.getCellCount();
+        ImGui::Text("Cells: %i / %i / %i", cellManager.liveCellCount, cellManager.totalCellCount, cellManager.cellLimit);
+        ImGui::Text("Adhesion Connections: %i / %i / %i", cellManager.liveAdhesionCount, cellManager.totalAdhesionCount, cellManager.getAdhesionLimit());
+        ImGui::Text("Pending Cells: %i", cellManager.pendingCellCount);
+        ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
+        ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
+        ImGui::Text("System: GPU Compute Shaders");
 
-    // Memory estimate
-    float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
-    ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
+        // Memory estimate for GPU system
+        float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
+        ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
+    }
 
     // === Performance Warnings ===
     ImGui::Spacing();
@@ -216,30 +240,42 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         // LOD distribution information
         if (ImGui::CollapsingHeader("LOD Distribution"))
         {
-            const int* lodCounts = cellManager.lodInstanceCounts;
-            ImGui::Text("LOD 0 (32x32): %d cells", lodCounts[0]);
-            ImGui::Text("LOD 1 (16x16): %d cells", lodCounts[1]);
-            ImGui::Text("LOD 2 (8x8):   %d cells", lodCounts[2]);
-            ImGui::Text("LOD 3 (4x4):   %d cells", lodCounts[3]);
-            
-            int totalLodCells = lodCounts[0] + lodCounts[1] + lodCounts[2] + lodCounts[3];
-            if (totalLodCells > 0) {
-                ImGui::Text("LOD Coverage: %d / %d cells (%.1f%%)", 
-                    totalLodCells, cellCount, 
-                    (float)totalLodCells / cellCount * 100.0f);
+            if (usePreviewSystem) {
+                ImGui::Text("LOD System: Not applicable (CPU Preview)");
+                ImGui::TextWrapped("CPU Preview System uses direct rendering without LOD levels.");
+            } else {
+                const int* lodCounts = cellManager.lodInstanceCounts;
+                ImGui::Text("LOD 0 (32x32): %d cells", lodCounts[0]);
+                ImGui::Text("LOD 1 (16x16): %d cells", lodCounts[1]);
+                ImGui::Text("LOD 2 (8x8):   %d cells", lodCounts[2]);
+                ImGui::Text("LOD 3 (4x4):   %d cells", lodCounts[3]);
+                
+                int cellCount = cellManager.getCellCount();
+                int totalLodCells = lodCounts[0] + lodCounts[1] + lodCounts[2] + lodCounts[3];
+                if (totalLodCells > 0) {
+                    ImGui::Text("LOD Coverage: %d / %d cells (%.1f%%)", 
+                        totalLodCells, cellCount, 
+                        (float)totalLodCells / cellCount * 100.0f);
+                }
             }
         }
         
         // Frustum culling information
         if (ImGui::CollapsingHeader("Frustum Culling"))
         {
-            ImGui::Text("Enabled: %s", cellManager.useFrustumCulling ? "Yes" : "No");
-            if (cellManager.useFrustumCulling) {
-                int visibleCells = cellManager.getVisibleCellCount();
-                ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
-                if (cellCount > 0) {
-                    float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
-                    ImGui::Text("Culled: %.1f%%", cullingRatio);
+            if (usePreviewSystem) {
+                ImGui::Text("Culling System: Not applicable (CPU Preview)");
+                ImGui::TextWrapped("CPU Preview System renders all cells directly.");
+            } else {
+                ImGui::Text("Enabled: %s", cellManager.useFrustumCulling ? "Yes" : "No");
+                if (cellManager.useFrustumCulling) {
+                    int cellCount = cellManager.getCellCount();
+                    int visibleCells = cellManager.getVisibleCellCount();
+                    ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
+                    if (cellCount > 0) {
+                        float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
+                        ImGui::Text("Culled: %.1f%%", cullingRatio);
+                    }
                 }
             }
         }
@@ -247,13 +283,19 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
         // Distance-based culling information
         if (ImGui::CollapsingHeader("Distance Culling & Fading"))
         {
-            ImGui::Text("Enabled: %s", cellManager.useDistanceCulling ? "Yes" : "No");
-            if (cellManager.useDistanceCulling) {
-                int visibleCells = cellManager.getVisibleCellCount();
-                ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
-                if (cellCount > 0) {
-                    float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
-                    ImGui::Text("Culled: %.1f%%", cullingRatio);
+            if (usePreviewSystem) {
+                ImGui::Text("Distance Culling: Not applicable (CPU Preview)");
+                ImGui::TextWrapped("CPU Preview System is optimized for small cell populations.");
+            } else {
+                ImGui::Text("Enabled: %s", cellManager.useDistanceCulling ? "Yes" : "No");
+                if (cellManager.useDistanceCulling) {
+                    int cellCount = cellManager.getCellCount();
+                    int visibleCells = cellManager.getVisibleCellCount();
+                    ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
+                    if (cellCount > 0) {
+                        float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
+                        ImGui::Text("Culled: %.1f%%", cullingRatio);
+                    }
                 }
                 ImGui::Text("Max Distance: %.0f", cellManager.getMaxRenderDistance());
                 ImGui::Text("Fade Start: %.0f", cellManager.getFadeStartDistance());

@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <iostream>
+#include <numeric>
 
 CPUSoADataManager::CPUSoADataManager() {
     // Initialize free index pools
@@ -24,25 +25,29 @@ void CPUSoADataManager::createEmptyScene(size_t maxCells) {
     m_cellData = CPUCellPhysics_SoA{};
     m_adhesionData = CPUAdhesionConnections_SoA{};
     
-    // Reset free index pools
+    // Efficiently reset free index pools without expensive push_back operations
     m_freeCellIndices.clear();
     m_freeConnectionIndices.clear();
     
-    // Pre-populate free indices
-    for (uint32_t i = 0; i < 256; ++i) {
-        m_freeCellIndices.push_back(i);
-    }
-    for (uint32_t i = 0; i < 1024; ++i) {
-        m_freeConnectionIndices.push_back(i);
-    }
+    // Reserve capacity to avoid reallocations
+    m_freeCellIndices.reserve(256);
+    m_freeConnectionIndices.reserve(1024);
     
-    std::cout << "Created empty CPU SoA scene with capacity for " << maxCells << " cells\n";
+    // Use resize and iota for efficient initialization
+    m_freeCellIndices.resize(256);
+    m_freeConnectionIndices.resize(1024);
+    
+    // Fill with sequential indices
+    std::iota(m_freeCellIndices.begin(), m_freeCellIndices.end(), 0);
+    std::iota(m_freeConnectionIndices.begin(), m_freeConnectionIndices.end(), 0);
+    
+    // Empty scene created silently
 }
 
 void CPUSoADataManager::savePreviewScene(const std::string& filename) {
     try {
         serializeSoAData(filename);
-        std::cout << "Saved CPU preview scene to " << filename << "\n";
+        // Scene saved silently
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to save CPU preview scene: " << e.what() << std::endl;
@@ -53,7 +58,7 @@ void CPUSoADataManager::savePreviewScene(const std::string& filename) {
 void CPUSoADataManager::loadPreviewScene(const std::string& filename) {
     try {
         deserializeSoAData(filename);
-        std::cout << "Loaded CPU preview scene from " << filename << "\n";
+        // Scene loaded silently
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to load CPU preview scene: " << e.what() << std::endl;
@@ -96,43 +101,55 @@ uint32_t CPUSoADataManager::addCell(const CPUCellParameters& params) {
     m_cellData.genomeID[index] = params.genomeID;
     m_cellData.flags[index] = 0;
     
+    // Apply genome parameters including color
+    m_cellData.color_r[index] = params.genome.modeColor.r;
+    m_cellData.color_g[index] = params.genome.modeColor.g;
+    m_cellData.color_b[index] = params.genome.modeColor.b;
+    
+
+    
     m_cellData.activeCellCount++;
     
     return index;
 }
 
 void CPUSoADataManager::removeCell(uint32_t cellIndex) {
-    if (cellIndex >= 256) {
-        throw std::out_of_range("Cell index out of range");
+    if (cellIndex >= m_cellData.activeCellCount) {
+        throw std::out_of_range("Cell index out of range or cell not active");
     }
     
-    // Zero out the cell data
-    m_cellData.pos_x[cellIndex] = 0.0f;
-    m_cellData.pos_y[cellIndex] = 0.0f;
-    m_cellData.pos_z[cellIndex] = 0.0f;
-    m_cellData.vel_x[cellIndex] = 0.0f;
-    m_cellData.vel_y[cellIndex] = 0.0f;
-    m_cellData.vel_z[cellIndex] = 0.0f;
-    m_cellData.acc_x[cellIndex] = 0.0f;
-    m_cellData.acc_y[cellIndex] = 0.0f;
-    m_cellData.acc_z[cellIndex] = 0.0f;
-    m_cellData.quat_x[cellIndex] = 0.0f;
-    m_cellData.quat_y[cellIndex] = 0.0f;
-    m_cellData.quat_z[cellIndex] = 0.0f;
-    m_cellData.quat_w[cellIndex] = 1.0f;
-    m_cellData.mass[cellIndex] = 0.0f;
-    m_cellData.radius[cellIndex] = 0.0f;
-    m_cellData.age[cellIndex] = 0.0f;
-    m_cellData.energy[cellIndex] = 0.0f;
-    m_cellData.cellType[cellIndex] = 0;
-    m_cellData.genomeID[cellIndex] = 0;
-    m_cellData.flags[cellIndex] = 0;
+    // Maintain contiguous storage by moving the last cell to fill the gap
+    uint32_t lastIndex = m_cellData.activeCellCount - 1;
     
-    deallocateCellIndex(cellIndex);
-    
-    if (m_cellData.activeCellCount > 0) {
-        m_cellData.activeCellCount--;
+    if (cellIndex != lastIndex) {
+        // Move last cell data to the removed cell's position
+        m_cellData.pos_x[cellIndex] = m_cellData.pos_x[lastIndex];
+        m_cellData.pos_y[cellIndex] = m_cellData.pos_y[lastIndex];
+        m_cellData.pos_z[cellIndex] = m_cellData.pos_z[lastIndex];
+        m_cellData.vel_x[cellIndex] = m_cellData.vel_x[lastIndex];
+        m_cellData.vel_y[cellIndex] = m_cellData.vel_y[lastIndex];
+        m_cellData.vel_z[cellIndex] = m_cellData.vel_z[lastIndex];
+        m_cellData.acc_x[cellIndex] = m_cellData.acc_x[lastIndex];
+        m_cellData.acc_y[cellIndex] = m_cellData.acc_y[lastIndex];
+        m_cellData.acc_z[cellIndex] = m_cellData.acc_z[lastIndex];
+        m_cellData.quat_x[cellIndex] = m_cellData.quat_x[lastIndex];
+        m_cellData.quat_y[cellIndex] = m_cellData.quat_y[lastIndex];
+        m_cellData.quat_z[cellIndex] = m_cellData.quat_z[lastIndex];
+        m_cellData.quat_w[cellIndex] = m_cellData.quat_w[lastIndex];
+        m_cellData.mass[cellIndex] = m_cellData.mass[lastIndex];
+        m_cellData.radius[cellIndex] = m_cellData.radius[lastIndex];
+        m_cellData.age[cellIndex] = m_cellData.age[lastIndex];
+        m_cellData.energy[cellIndex] = m_cellData.energy[lastIndex];
+        m_cellData.cellType[cellIndex] = m_cellData.cellType[lastIndex];
+        m_cellData.genomeID[cellIndex] = m_cellData.genomeID[lastIndex];
+        m_cellData.flags[cellIndex] = m_cellData.flags[lastIndex];
+        m_cellData.color_r[cellIndex] = m_cellData.color_r[lastIndex];
+        m_cellData.color_g[cellIndex] = m_cellData.color_g[lastIndex];
+        m_cellData.color_b[cellIndex] = m_cellData.color_b[lastIndex];
     }
+    
+    // Decrease active cell count (effectively removing the last cell)
+    m_cellData.activeCellCount--;
 }
 
 void CPUSoADataManager::addAdhesionConnection(uint32_t cellA, uint32_t cellB, const CPUAdhesionParameters& params) {
@@ -207,7 +224,7 @@ void CPUSoADataManager::validateSoAStructures() {
         CPUSoAValidation::SoAStructureValidator::validateCellPhysicsStructure(m_cellData);
         CPUSoAValidation::SoAStructureValidator::validateAdhesionConnectionsStructure(m_adhesionData);
         
-        std::cout << "✓ SoA structure validation passed\n";
+        // Structure validation passed silently
     }
     catch (const std::exception& e) {
         std::cerr << "SoA structure validation failed: " << e.what() << std::endl;
@@ -316,12 +333,14 @@ void CPUSoADataManager::compactArrays() {
 }
 
 uint32_t CPUSoADataManager::allocateCellIndex() {
-    if (m_freeCellIndices.empty()) {
-        throw std::runtime_error("No free cell indices available");
+    // Use the next available index in the contiguous range
+    // This ensures active cells are always stored at indices 0, 1, 2, etc.
+    uint32_t index = m_cellData.activeCellCount;
+    
+    if (index >= 256) {
+        throw std::runtime_error("Maximum cell capacity (256) exceeded");
     }
     
-    uint32_t index = m_freeCellIndices.back();
-    m_freeCellIndices.pop_back();
     return index;
 }
 
@@ -336,7 +355,8 @@ uint32_t CPUSoADataManager::allocateConnectionIndex() {
 }
 
 void CPUSoADataManager::deallocateCellIndex(uint32_t index) {
-    m_freeCellIndices.push_back(index);
+    // No longer needed with contiguous allocation
+    // Cells are automatically "deallocated" by decreasing activeCellCount
 }
 
 void CPUSoADataManager::deallocateConnectionIndex(uint32_t index) {
@@ -387,18 +407,22 @@ void CPUSoADataManager::deserializeSoAData(const std::string& filename) {
         throw std::runtime_error("Error reading from file: " + filename);
     }
     
-    // Rebuild free index pools
+    // Efficiently rebuild free index pools
     m_freeCellIndices.clear();
     m_freeConnectionIndices.clear();
     
-    // Find free cell indices
+    // Reserve capacity to avoid reallocations
+    m_freeCellIndices.reserve(256);
+    m_freeConnectionIndices.reserve(1024);
+    
+    // Find free cell indices efficiently
     for (uint32_t i = 0; i < 256; ++i) {
         if (m_cellData.mass[i] == 0.0f) { // Use mass as indicator of active cell
             m_freeCellIndices.push_back(i);
         }
     }
     
-    // Find free connection indices
+    // Find free connection indices efficiently
     for (uint32_t i = 0; i < 1024; ++i) {
         if (i >= m_adhesionData.activeConnectionCount) {
             m_freeConnectionIndices.push_back(i);

@@ -12,6 +12,8 @@
 
 #include "../audio/audio_engine.h"
 #include "../scene/scene_manager.h"
+#include "../simulation/cpu_preview/cpu_preview_system.h"
+#include "../simulation/cpu_preview/cpu_genome_converter.h"
 
 // Ensure std::min and std::max are available
 #ifdef min
@@ -21,7 +23,7 @@
 #undef max
 #endif
 
-void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager)
+void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem)
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     ImGui::SetNextWindowPos(ImVec2(4, 13), ImGuiCond_FirstUseEver);
@@ -269,6 +271,62 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
         // Mark that we have a pending resimulation and reset the debounce timer
         pendingGenomeResimulation = true;
         genomeChangeDebounceTimer = 0.0f;
+        
+        // Trigger complete scene resimulation from scratch for CPU Preview System
+        if (cpuPreviewSystem && cpuPreviewSystem->isInitialized() && sceneManager.getCurrentScene() == Scene::PreviewSimulation) {
+            try {
+                // Reset the entire scene and recreate with new genome parameters
+                // This prevents data corruption from modifying existing cells
+                cpuPreviewSystem->reset();
+                
+                // Create initial cell with the new genome parameters (single cell like time scrubber)
+                CPUCellParameters defaultCell;
+                defaultCell.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                defaultCell.velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+                defaultCell.orientation = glm::quat(
+                    currentGenome.initialOrientation.w,
+                    currentGenome.initialOrientation.x,
+                    currentGenome.initialOrientation.y,
+                    currentGenome.initialOrientation.z
+                );
+                defaultCell.mass = 1.0f;
+                defaultCell.radius = 1.0f;
+                defaultCell.cellType = 0;
+                defaultCell.genomeID = 0;
+                defaultCell.genome = CPUGenomeConverter::convertToCPUFormat(currentGenome);
+                
+                cpuPreviewSystem->addCell(defaultCell);
+                
+                // Get current simulation time and resimulate to that time with new genome
+                float currentSimTime = sceneManager.getPreviewSimulationTime();
+                if (currentSimTime > 0.0f) {
+                    // Resimulate from 0 to current time with new genome parameters
+                    cpuPreviewSystem->fastForward(currentSimTime, config::resimulationTimeStep);
+                }
+                
+                // Update resimulation status
+                isResimulating = true;
+                resimulationProgress = 0.0f;
+                
+                // Check performance target
+                if (cpuPreviewSystem->isPerformanceTargetMet()) {
+                    // Resimulation completed successfully
+                } else {
+                    std::cout << "Warning: CPU Preview System exceeded performance target (" 
+                              << cpuPreviewSystem->getLastSimulationTime() << "ms > 16ms)\n";
+                }
+                
+                // Complete resimulation immediately for CPU Preview System
+                isResimulating = false;
+                resimulationProgress = 1.0f;
+                pendingGenomeResimulation = false;
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Failed to resimulate scene with new genome: " << e.what() << std::endl;
+                isResimulating = false;
+                pendingGenomeResimulation = false;
+            }
+        }
         
         // Clear the flag immediately to allow detecting new changes
         genomeChanged = false;

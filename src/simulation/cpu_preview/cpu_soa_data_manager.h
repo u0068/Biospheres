@@ -51,6 +51,11 @@ struct CPUCellPhysics_SoA {
     alignas(32) std::array<uint32_t, 256> genomeID;
     alignas(32) std::array<uint32_t, 256> flags;
     
+    // Visual properties
+    alignas(32) std::array<float, 256> color_r;
+    alignas(32) std::array<float, 256> color_g;
+    alignas(32) std::array<float, 256> color_b;
+    
     size_t activeCellCount = 0;
 };
 
@@ -75,7 +80,13 @@ struct CPUGenomeParameters {
     float metabolicRate;
     float mutationRate;
     glm::vec3 preferredDirection;
+    glm::vec3 modeColor;  // RGB color for this mode
     uint32_t cellTypeFlags;
+    
+    // Cell division parameters (matching GPU implementation)
+    glm::vec3 splitDirection;  // Direction vector for cell division
+    uint32_t childModeA;       // Mode index for child A
+    uint32_t childModeB;       // Mode index for child B
 };
 
 // CPU Cell creation parameters

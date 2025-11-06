@@ -307,6 +307,8 @@ struct CellManager
     // Getter functions for debug information
     int getCellCount() const { return totalCellCount; }
     float getSpawnRadius() const { return spawnRadius; }
+    GLuint getInstanceBuffer() const { return instanceBuffer; }
+    SphereMesh& getSphereMesh() { return sphereMesh; }
 
     // Performance testing function
 	// Cell selection and interaction system

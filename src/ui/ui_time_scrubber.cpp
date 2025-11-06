@@ -8,9 +8,12 @@
 #include <cstdlib>
 #include <cstdio>
 #include <iostream>
+#include <stdexcept>
 
 #include "../audio/audio_engine.h"
 #include "../scene/scene_manager.h"
+#include "../simulation/cpu_preview/cpu_preview_system.h"
+#include "../simulation/cpu_preview/cpu_genome_converter.h"
 
 // Ensure std::min and std::max are available
 #ifdef min
@@ -20,7 +23,7 @@
 #undef max
 #endif
 
-void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager)
+void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem)
 {
     cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
     // Set window size and position for a long horizontal resizable window
@@ -75,32 +78,28 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             targetTime = currentTime;
             
-            // Mark as scrubbing
+            // Mark as scrubbing - preview simulation should always be paused
             isScrubbingTime = true;
             
-            // Pause simulation while actively dragging
-            if (sliderActive)
-            {
-                sceneManager.setPaused(true);
-                
-                // If keyframes are available, do REAL-TIME scrubbing (update immediately)
-                if (keyframesInitialized)
-                {
-                    needsSimulationReset = true; // Trigger immediate update
-                }
-                else
-                {
-                    needsSimulationReset = false; // Wait for release if no keyframes
-                }
-            }
-        }
-        
-        // Trigger resimulation when slider is released (if not already done)
-        if (!sliderActive && isScrubbingTime && !keyframesInitialized)
-        {
-            // Slider was just released and no keyframes, trigger resimulation now
+            // Ensure simulation stays paused (preview simulation is always manual)
+            sceneManager.setPaused(true);
+            
+            // Always trigger complete resimulation for every slider movement
             needsSimulationReset = true;
         }
+        
+        // No need for release-based triggering since we trigger on every movement
+        
+        // Handle completion of text input scrubbing
+        static bool wasTextInputActive = false;
+        bool isTextInputActive = ImGui::IsItemActive();
+        if (wasTextInputActive && !isTextInputActive && isScrubbingTime && !needsSimulationReset)
+        {
+            // Text input was just completed, keep simulation paused
+            isScrubbingTime = false;
+            sceneManager.setPaused(true);
+        }
+        wasTextInputActive = isTextInputActive;
         
         // Draw hover marker on the slider
         {
@@ -132,24 +131,7 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 // Draw time reference tooltip
                 ImGui::BeginTooltip();
                 ImGui::Text("Time: %.3f s", hover_time);
-                
-                // Show nearest keyframe info if available
-                if (keyframesInitialized)
-                {
-                    int nearestIdx = findNearestKeyframe(hover_time);
-                    if (nearestIdx >= 0 && nearestIdx < keyframes.size() && keyframes[nearestIdx].isValid)
-                    {
-                        float keyframe_time = keyframes[nearestIdx].time;
-                        float time_diff = hover_time - keyframe_time;
-                        ImGui::Separator();
-                        ImGui::Text("Nearest keyframe: %.2f s", keyframe_time);
-                        if (time_diff >= 0.0f) {
-                            ImGui::Text("  +%.3f s from keyframe", time_diff);
-                        } else {
-                            ImGui::Text("  %.3f s before keyframe", -time_diff);
-                        }
-                    }
-                }
+                ImGui::Text("Complete resimulation from 0 to %.3f s", hover_time);
                 ImGui::EndTooltip();
             }
         }
@@ -167,6 +149,9 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 targetTime = currentTime;
                 needsSimulationReset = true;
                 isScrubbingTime = true;
+                
+                // Ensure simulation stays paused (preview simulation is always manual)
+                sceneManager.setPaused(true);
             }
             else
             {
@@ -195,98 +180,61 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             }
         }
         
-        // Keyframe initialization button and status
-        ImGui::SameLine();
-        if (ImGui::Button("Rebuild Keyframes"))
-        {
-            initializeKeyframes(cellManager);
-        }
-        
-        // Show keyframe status
-        ImGui::Text("Keyframes: %s (%d/%d)", 
-                   keyframesInitialized ? "Ready" : "Not Ready", 
-                   keyframesInitialized ? MAX_KEYFRAMES : 0,
-                   MAX_KEYFRAMES);
-        
-        // Initialize keyframes if not done yet
-        if (!keyframesInitialized)
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Click 'Rebuild Keyframes' to enable real-time scrubbing");
-        }
-        else
-        {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Real-time scrubbing enabled");
-        }        // Handle time scrubbing
+        // Complete resimulation info
+        ImGui::Text("Mode: Complete resimulation from time 0");
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Every slider movement triggers full resimulation");        // Handle time scrubbing - always do complete resimulation from scratch
         if (needsSimulationReset && isScrubbingTime)
         {
-            if (keyframesInitialized)
+            if (cpuPreviewSystem)
             {
-                // Use keyframe system for efficient scrubbing
-                int nearestKeyframeIndex = findNearestKeyframe(targetTime);
-                const SimulationKeyframe& nearestKeyframe = keyframes[nearestKeyframeIndex];
+                // Always do complete resimulation from time 0 to target time using CPU Preview System
                 
-
-                
-                // Restore from nearest keyframe
-                restoreFromKeyframe(cellManager, nearestKeyframeIndex);
-                
-                // Reset scene manager time to keyframe time
-                sceneManager.resetPreviewSimulationTime();
-                sceneManager.setPreviewSimulationTime(nearestKeyframe.time); // If target time is after the keyframe, simulate forward
-                if (targetTime > nearestKeyframe.time)
-                {
-                    // Temporarily pause to prevent normal time updates during fast-forward
-                    bool wasPaused = sceneManager.isPaused();
-                    sceneManager.setPaused(true);
+                try {
+                    // Reset the CPU Preview System completely
+                    cpuPreviewSystem->reset();
                     
-                    float timeToSimulate = targetTime - nearestKeyframe.time;
-                    
-                    // Use optimized frame-skipping resimulation
-                    int framesSkipped = cellManager.updateCellsFastForwardOptimized(
-                        timeToSimulate, 
-                        config::resimulationTimeStep
+                    // Add default cell with current genome
+                    CPUCellParameters defaultCell;
+                    defaultCell.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                    defaultCell.velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+                    defaultCell.orientation = glm::quat(
+                        currentGenome.initialOrientation.w,
+                        currentGenome.initialOrientation.x,
+                        currentGenome.initialOrientation.y,
+                        currentGenome.initialOrientation.z
                     );
+                    defaultCell.mass = 1.0f;
+                    defaultCell.radius = 1.0f;
+                    defaultCell.cellType = 0;
+                    defaultCell.genomeID = 0;
+                    defaultCell.genome = CPUGenomeConverter::convertToCPUFormat(currentGenome);
                     
-                    // Update simulation time to target
-                    sceneManager.setPreviewSimulationTime(targetTime);
+                    cpuPreviewSystem->addCell(defaultCell);
                     
-                    // Restore original pause state after fast-forward
-                    sceneManager.setPaused(wasPaused);
+                    // Reset simulation time to 0
+                    sceneManager.resetPreviewSimulationTime();
+                    
+                    // If target time is greater than 0, simulate from 0 to target time
+                    if (targetTime > 0.0f)
+                    {
+                        // Ensure simulation stays paused during simulation
+                        sceneManager.setPaused(true);
+                        
+                        // Use optimized fast-forward method - suppresses visual updates during simulation
+                        // to prevent flashing and ghost cells, only updates visuals at the end
+                        cpuPreviewSystem->fastForward(targetTime, config::resimulationTimeStep);
+                        
+                        // Update simulation time to target
+                        sceneManager.setPreviewSimulationTime(targetTime);
+                    }
+                    
+                    // Visual data will be updated when needed for rendering
+                    
+                } catch (const std::exception& e) {
+                    std::cerr << "Error during time scrubber resimulation: " << e.what() << std::endl;
                 }
-            }
-            else
-            {
-                // Fallback to old method if keyframes not available
-                
-                // Reset the simulation
-                cellManager.resetSimulation();
-                cellManager.addGenomeToBuffer(currentGenome);
-                ComputeCell newCell{};
-                newCell.modeIndex = currentGenome.initialMode;
-                cellManager.addCellToStagingBuffer(newCell);
-                cellManager.addStagedCellsToQueueBuffer(); // Force immediate GPU buffer sync
-                
-                // Reset simulation time
-                sceneManager.resetPreviewSimulationTime();
-                  // If target time is greater than 0, fast-forward to that time
-                if (targetTime > 0.0f)
-                {
-                    // Temporarily pause to prevent normal time updates during fast-forward
-                    bool wasPaused = sceneManager.isPaused();
-                    sceneManager.setPaused(true);
-                    
-                    // Use optimized frame-skipping resimulation
-                    int framesSkipped = cellManager.updateCellsFastForwardOptimized(
-                        targetTime, 
-                        config::resimulationTimeStep
-                    );
-                    
-                    // Update simulation time to target
-                    sceneManager.setPreviewSimulationTime(targetTime);
-                    
-                    // Restore original pause state after fast-forward
-                    sceneManager.setPaused(wasPaused);
-                }
+            } else {
+                std::cerr << "CPU Preview System not available for time scrubbing" << std::endl;
             }
             
             needsSimulationReset = false;
@@ -296,10 +244,9 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
                 isScrubbingTime = false;
+                // Keep simulation paused - preview simulation is always manual
+                sceneManager.setPaused(true);
             }
-            
-            // Keep simulation paused after scrubbing to prevent immediate drift
-            sceneManager.setPaused(true);
         }
     }
     
