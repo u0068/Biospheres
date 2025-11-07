@@ -5,6 +5,7 @@
 #include "../../ui/ui_manager.h"
 #include "../cell/cell_manager.h"
 #include "../cell/common_structs.h"
+#include "../../rendering/core/mesh/sphere_mesh.h"
 #include <chrono>
 #include <stdexcept>
 #include <iostream>
@@ -52,6 +53,11 @@ void CPUPreviewSystem::initialize() {
         // Initialize gizmo system (reuse existing GPU gizmo infrastructure)
         initializeGizmoSystem();
         
+        // Create separate sphere mesh for anchor gizmo rendering
+        m_anchorSphereMesh = std::make_unique<SphereMesh>();
+        m_anchorSphereMesh->generateSphere(16, 24, 1.0f); // Same quality as cell spheres
+        m_anchorSphereMesh->setupBuffers();
+        
         // Create default empty scene
         createEmptyScene(256);
         
@@ -82,6 +88,9 @@ void CPUPreviewSystem::shutdown() {
     
     // Cleanup GPU buffers
     cleanupGPUBuffers();
+    
+    // Cleanup anchor sphere mesh
+    m_anchorSphereMesh.reset();
     
     m_initialized = false;
     // System shutdown complete
@@ -404,6 +413,7 @@ void CPUPreviewSystem::initializeGPUBuffers() {
     glGenBuffers(1, &m_gpuCellBuffer);
     glGenBuffers(1, &m_gpuModeBuffer);
     glGenBuffers(1, &m_gpuCellCountBuffer);
+    glGenBuffers(1, &m_gpuAdhesionBuffer);
     
     // Allocate cell buffer for maximum cells
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_gpuCellBuffer);
@@ -415,9 +425,14 @@ void CPUPreviewSystem::initializeGPUBuffers() {
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GPUMode), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
-    // Allocate cell count buffer
+    // Allocate cell count buffer (4 uint32_t values: totalCellCount, liveCellCount, totalAdhesionCount, freeAdhesionTop)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_gpuCellCountBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t) * 4, nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    
+    // Allocate adhesion connection buffer for anchor gizmo rendering
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_gpuAdhesionBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 5120 * sizeof(AdhesionConnection), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
@@ -435,6 +450,11 @@ void CPUPreviewSystem::cleanupGPUBuffers() {
     if (m_gpuCellCountBuffer != 0) {
         glDeleteBuffers(1, &m_gpuCellCountBuffer);
         m_gpuCellCountBuffer = 0;
+    }
+    
+    if (m_gpuAdhesionBuffer != 0) {
+        glDeleteBuffers(1, &m_gpuAdhesionBuffer);
+        m_gpuAdhesionBuffer = 0;
     }
 }
 
@@ -463,13 +483,36 @@ void CPUPreviewSystem::uploadCellDataToGPU() {
         // Velocity
         cell.velocity = glm::vec4(cellData.vel_x[i], cellData.vel_y[i], cellData.vel_z[i], 0.0f);
         
+        // Acceleration (initialize to zero)
+        cell.acceleration = glm::vec4(0.0f);
+        cell.prevAcceleration = glm::vec4(0.0f);
+        
         // Orientation (both physics and genome orientation)
         cell.orientation = glm::vec4(cellData.quat_x[i], cellData.quat_y[i], cellData.quat_z[i], cellData.quat_w[i]);
         cell.genomeOrientation = cell.orientation; // Use same orientation for both
         
-        // Age and other properties
-        cell.age = cellData.age[i];
+        // Angular velocity and acceleration (initialize to zero)
+        cell.angularVelocity = glm::vec4(0.0f);
+        cell.angularAcceleration = glm::vec4(0.0f);
+        cell.prevAngularAcceleration = glm::vec4(0.0f);
+        
+        // Internal properties
+        cell.signallingSubstances = glm::vec4(0.0f);
         cell.modeIndex = 0; // Default mode for now
+        cell.age = cellData.age[i];
+        cell.toxins = 0.0f;
+        cell.nitrates = 0.0f;
+        
+        // Copy adhesion indices from CPU data
+        for (int j = 0; j < 20; ++j) {
+            cell.adhesionIndices[j] = cellData.adhesionIndices[i][j];
+        }
+        
+        // Padding
+        cell._padding[0] = 0;
+        cell._padding[1] = 0;
+        cell._padding[2] = 0;
+        cell._padding[3] = 0;
         
         gpuCells.push_back(cell);
     }
@@ -488,10 +531,33 @@ void CPUPreviewSystem::uploadCellDataToGPU() {
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GPUMode), &mode);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
-    // Upload cell count
-    uint32_t cellCount = static_cast<uint32_t>(visualData->activeCount);
+    // Upload cell count buffer (4 uint32_t values as expected by shaders)
+    uint32_t cellCountData[4] = {
+        static_cast<uint32_t>(visualData->activeCount),  // totalCellCount
+        static_cast<uint32_t>(visualData->activeCount),  // liveCellCount
+        static_cast<uint32_t>(m_dataManager->getAdhesionData().activeConnectionCount),  // totalAdhesionCount
+        0  // freeAdhesionTop
+    };
+    
+    static bool once = false;
+    if (!once && cellCountData[2] > 0) {
+        std::cout << "Uploading to GPU: " << cellCountData[0] << " cells, " << cellCountData[2] << " adhesions\n";
+        // Check how many cells have adhesion indices
+        int cellsWithAdhesions = 0;
+        for (const auto& cell : gpuCells) {
+            for (int i = 0; i < 20; ++i) {
+                if (cell.adhesionIndices[i] >= 0) {
+                    cellsWithAdhesions++;
+                    break;
+                }
+            }
+        }
+        std::cout << cellsWithAdhesions << " cells have adhesion indices\n";
+        once = true;
+    }
+    
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_gpuCellCountBuffer);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(uint32_t), &cellCount);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(cellCountData), cellCountData);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
@@ -554,7 +620,7 @@ void CPUPreviewSystem::renderAnchorGizmos(glm::vec2 resolution, const Camera& ca
         return; // No anchors to render
     }
     
-    if (!m_anchorGizmoShader) {
+    if (!m_anchorGizmoShader || !m_anchorSphereMesh) {
         return;
     }
     
@@ -572,18 +638,19 @@ void CPUPreviewSystem::renderAnchorGizmos(glm::vec2 resolution, const Camera& ca
     m_anchorGizmoShader->setMat4("uView", view);
     m_anchorGizmoShader->setVec3("uCameraPos", camera.getPosition());
     
-    // Enable depth testing but disable depth writing to avoid z-fighting with spheres
+    // Enable depth testing and depth writing for proper rendering
     glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
+    glDepthMask(GL_TRUE);
     
     // Enable blending for better visibility
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Note: Anchor gizmos use instanced sphere rendering, which would require
-    // access to the sphere mesh. For now, this is a placeholder.
-    // In a full implementation, we would need to access the sphere mesh
-    // from the rendering system or create our own instance.
+    // Set up instance buffer (locations 3, 4, 5 matching updated anchor shader)
+    m_anchorSphereMesh->setupInstanceBuffer(m_anchorGizmoVBO);
+    
+    // Render anchor gizmos using our separate sphere mesh instance
+    m_anchorSphereMesh->render(m_totalAnchorCount);
     
     // Restore OpenGL state
     glDepthMask(GL_TRUE);
@@ -607,10 +674,15 @@ void CPUPreviewSystem::initializeGizmoSystem() {
     m_anchorGizmoExtractShader = new Shader("shaders/rendering/debug/anchor_gizmo_extract.comp");
     m_anchorGizmoShader = new Shader("shaders/rendering/debug/anchor_gizmo.vert", "shaders/rendering/debug/anchor_gizmo.frag");
     
+    // Initialize adhesion line shaders
+    m_adhesionLineExtractShader = new Shader("shaders/rendering/debug/adhesion_line_extract.comp");
+    m_adhesionLineShader = new Shader("shaders/rendering/debug/adhesion_line.vert", "shaders/rendering/debug/adhesion_line.frag");
+    
     // Initialize gizmo buffers
     initializeGizmoBuffers();
     initializeRingGizmoBuffers();
     initializeAnchorGizmoBuffers();
+    initializeAdhesionLineBuffers();
 }
 
 void CPUPreviewSystem::cleanupGizmoSystem() {
@@ -645,11 +717,22 @@ void CPUPreviewSystem::cleanupGizmoSystem() {
         delete m_anchorGizmoShader;
         m_anchorGizmoShader = nullptr;
     }
+    if (m_adhesionLineExtractShader) {
+        m_adhesionLineExtractShader->destroy();
+        delete m_adhesionLineExtractShader;
+        m_adhesionLineExtractShader = nullptr;
+    }
+    if (m_adhesionLineShader) {
+        m_adhesionLineShader->destroy();
+        delete m_adhesionLineShader;
+        m_adhesionLineShader = nullptr;
+    }
     
     // Cleanup gizmo buffers
     cleanupGizmos();
     cleanupRingGizmos();
     cleanupAnchorGizmos();
+    cleanupAdhesionLines();
 }
 
 void CPUPreviewSystem::initializeGizmoBuffers() {
@@ -797,47 +880,85 @@ void CPUPreviewSystem::updateRingGizmoData() {
 }
 
 void CPUPreviewSystem::updateAnchorGizmoData() {
-    const auto* visualData = m_visualSystem->getCurrentVisualData();
-    if (!visualData || visualData->activeCount == 0 || !m_anchorGizmoExtractShader) {
+    if (!m_dataManager) {
+        m_totalAnchorCount = 0;
         return;
     }
     
-    // Reset anchor count
-    uint32_t zero = 0;
-    glNamedBufferSubData(m_anchorCountBuffer, 0, sizeof(uint32_t), &zero);
+    const auto& cellData = m_dataManager->getCellData();
+    const auto& adhesionData = m_dataManager->getAdhesionData();
     
-    m_anchorGizmoExtractShader->use();
-    
-    // Bind cell data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_gpuCellBuffer);
-    // Bind mode data as input
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_gpuModeBuffer);
-    // Note: CPU preview system doesn't have adhesion connections yet
-    // For now, we'll bind a dummy buffer or skip anchor gizmos
-    // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, adhesionConnectionBuffer);
-    // Bind anchor instance buffer as output
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, m_anchorGizmoBuffer);
-    // Bind anchor count buffer as output
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, m_anchorCountBuffer);
-    // Bind cell count buffer
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, m_gpuCellCountBuffer);
-    
-    // Dispatch compute shader
-    GLuint numGroups = (static_cast<GLuint>(visualData->activeCount) + 63) / 64;
-    m_anchorGizmoExtractShader->dispatch(numGroups, 1, 1);
-    
-    // Memory barrier for buffer copy
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    
-    // Get the total anchor count
-    glGetNamedBufferSubData(m_anchorCountBuffer, 0, sizeof(uint32_t), &m_totalAnchorCount);
-    
-    // Copy data from compute buffer to VBO for rendering
-    if (m_totalAnchorCount > 0) {
-        glCopyNamedBufferSubData(m_anchorGizmoBuffer, m_anchorGizmoVBO, 0, 0, m_totalAnchorCount * 48); // Assuming 48 bytes per instance
+    if (adhesionData.activeConnectionCount == 0) {
+        m_totalAnchorCount = 0;
+        return;
     }
     
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    // Generate anchor instances on CPU
+    struct AnchorInstance {
+        glm::vec4 positionAndRadius;
+        glm::vec4 color;
+        glm::vec4 orientation;
+    };
+    
+    std::vector<AnchorInstance> anchors;
+    anchors.reserve(adhesionData.activeConnectionCount * 2); // 2 anchors per connection
+    
+    // Iterate through all adhesion connections
+    for (size_t i = 0; i < adhesionData.activeConnectionCount; ++i) {
+        if (adhesionData.isActive[i] == 0) continue;
+        
+        uint32_t cellAIndex = adhesionData.cellAIndex[i];
+        uint32_t cellBIndex = adhesionData.cellBIndex[i];
+        
+        if (cellAIndex >= cellData.activeCellCount || cellBIndex >= cellData.activeCellCount) continue;
+        
+        // Get cell A data
+        glm::vec3 posA(cellData.pos_x[cellAIndex], cellData.pos_y[cellAIndex], cellData.pos_z[cellAIndex]);
+        float radiusA = cellData.radius[cellAIndex];
+        glm::quat orientA(cellData.quat_w[cellAIndex], cellData.quat_x[cellAIndex], 
+                          cellData.quat_y[cellAIndex], cellData.quat_z[cellAIndex]);
+        
+        // Get cell B data
+        glm::vec3 posB(cellData.pos_x[cellBIndex], cellData.pos_y[cellBIndex], cellData.pos_z[cellBIndex]);
+        float radiusB = cellData.radius[cellBIndex];
+        glm::quat orientB(cellData.quat_w[cellBIndex], cellData.quat_x[cellBIndex], 
+                          cellData.quat_y[cellBIndex], cellData.quat_z[cellBIndex]);
+        
+        // Get anchor directions
+        glm::vec3 anchorDirA(adhesionData.anchorDirectionA_x[i], adhesionData.anchorDirectionA_y[i], 
+                             adhesionData.anchorDirectionA_z[i]);
+        glm::vec3 anchorDirB(adhesionData.anchorDirectionB_x[i], adhesionData.anchorDirectionB_y[i], 
+                             adhesionData.anchorDirectionB_z[i]);
+        
+        // Calculate anchor positions in world space
+        glm::vec3 worldAnchorDirA = orientA * anchorDirA;
+        glm::vec3 anchorPosA = posA + worldAnchorDirA * radiusA;
+        
+        glm::vec3 worldAnchorDirB = orientB * anchorDirB;
+        glm::vec3 anchorPosB = posB + worldAnchorDirB * radiusB;
+        
+        // Create anchor instances
+        AnchorInstance anchorA;
+        anchorA.positionAndRadius = glm::vec4(anchorPosA, radiusA * 0.15f);
+        anchorA.color = glm::vec4(0.0f, 0.5f, 1.0f, 1.0f); // Blue for cell A
+        anchorA.orientation = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        anchors.push_back(anchorA);
+        
+        AnchorInstance anchorB;
+        anchorB.positionAndRadius = glm::vec4(anchorPosB, radiusB * 0.15f);
+        anchorB.color = glm::vec4(1.0f, 0.5f, 0.0f, 1.0f); // Orange for cell B
+        anchorB.orientation = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        anchors.push_back(anchorB);
+    }
+    
+    m_totalAnchorCount = static_cast<uint32_t>(anchors.size());
+    
+    // Upload to GPU
+    if (m_totalAnchorCount > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, m_anchorGizmoVBO);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, anchors.size() * sizeof(AnchorInstance), anchors.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
 }
 
 void CPUPreviewSystem::cleanupGizmos() {
@@ -992,4 +1113,242 @@ std::vector<GPUModeAdhesionSettings> CPUPreviewSystem::createModeSettingsFromGen
     modeSettings.push_back(settings);
     
     return modeSettings;
+}
+
+void CPUPreviewSystem::uploadAdhesionDataToGPU() {
+    if (!m_dataManager || m_gpuAdhesionBuffer == 0) {
+        return;
+    }
+    
+    const auto& adhesionData = m_dataManager->getAdhesionData();
+    size_t activeCount = adhesionData.activeConnectionCount;
+    
+    if (activeCount == 0) {
+        return;
+    }
+    
+    // Convert CPU SoA adhesion data to GPU AoS format
+    std::vector<AdhesionConnection> gpuAdhesions(activeCount);
+    
+    for (size_t i = 0; i < activeCount; ++i) {
+        gpuAdhesions[i].cellAIndex = adhesionData.cellAIndex[i];
+        gpuAdhesions[i].cellBIndex = adhesionData.cellBIndex[i];
+        gpuAdhesions[i].modeIndex = adhesionData.modeIndex[i];
+        gpuAdhesions[i].isActive = adhesionData.isActive[i];
+        gpuAdhesions[i].zoneA = adhesionData.zoneA[i];
+        gpuAdhesions[i].zoneB = adhesionData.zoneB[i];
+        
+        gpuAdhesions[i].anchorDirectionA = glm::vec3(
+            adhesionData.anchorDirectionA_x[i],
+            adhesionData.anchorDirectionA_y[i],
+            adhesionData.anchorDirectionA_z[i]
+        );
+        gpuAdhesions[i].paddingA = 0.0f;
+        
+        gpuAdhesions[i].anchorDirectionB = glm::vec3(
+            adhesionData.anchorDirectionB_x[i],
+            adhesionData.anchorDirectionB_y[i],
+            adhesionData.anchorDirectionB_z[i]
+        );
+        gpuAdhesions[i].paddingB = 0.0f;
+        
+        gpuAdhesions[i].twistReferenceA = glm::quat(
+            adhesionData.twistReferenceA_w[i],
+            adhesionData.twistReferenceA_x[i],
+            adhesionData.twistReferenceA_y[i],
+            adhesionData.twistReferenceA_z[i]
+        );
+        
+        gpuAdhesions[i].twistReferenceB = glm::quat(
+            adhesionData.twistReferenceB_w[i],
+            adhesionData.twistReferenceB_x[i],
+            adhesionData.twistReferenceB_y[i],
+            adhesionData.twistReferenceB_z[i]
+        );
+        
+        gpuAdhesions[i]._padding[0] = 0;
+        gpuAdhesions[i]._padding[1] = 0;
+    }
+    
+    // Upload to GPU
+    glNamedBufferSubData(m_gpuAdhesionBuffer, 0, activeCount * sizeof(AdhesionConnection), gpuAdhesions.data());
+}
+
+
+// ============================================================================
+// ADHESION LINE RENDERING
+// ============================================================================
+
+void CPUPreviewSystem::initializeAdhesionLineBuffers() {
+    // Create buffer for adhesion line vertices (each connection has 2 segments = 4 vertices)
+    // Each vertex has vec4 position + vec4 color = 32 bytes
+    glCreateBuffers(1, &m_adhesionLineBuffer);
+    glNamedBufferData(m_adhesionLineBuffer,
+        5120 * 32 * 4, // 5120 max connections * 32 bytes per vertex * 4 vertices
+        nullptr, GL_DYNAMIC_COPY);
+    
+    // Create VAO for adhesion line rendering
+    glCreateVertexArrays(1, &m_adhesionLineVAO);
+    
+    // Create VBO
+    glCreateBuffers(1, &m_adhesionLineVBO);
+    glNamedBufferData(m_adhesionLineVBO,
+        5120 * 32 * 4,
+        nullptr, GL_DYNAMIC_COPY);
+    
+    // Set up VAO with vertex attributes
+    glVertexArrayVertexBuffer(m_adhesionLineVAO, 0, m_adhesionLineVBO, 0, 32);
+    
+    // Position attribute (vec4)
+    glEnableVertexArrayAttrib(m_adhesionLineVAO, 0);
+    glVertexArrayAttribFormat(m_adhesionLineVAO, 0, 4, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(m_adhesionLineVAO, 0, 0);
+    
+    // Color attribute (vec4, offset by 16 bytes)
+    glEnableVertexArrayAttrib(m_adhesionLineVAO, 1);
+    glVertexArrayAttribFormat(m_adhesionLineVAO, 1, 4, GL_FLOAT, GL_FALSE, 16);
+    glVertexArrayAttribBinding(m_adhesionLineVAO, 1, 0);
+}
+
+void CPUPreviewSystem::updateAdhesionLineData() {
+    if (!m_dataManager) {
+        return;
+    }
+    
+    const auto& cellData = m_dataManager->getCellData();
+    const auto& adhesionData = m_dataManager->getAdhesionData();
+    
+    if (adhesionData.activeConnectionCount == 0) {
+        return;
+    }
+    
+    // Generate adhesion line vertices on CPU
+    struct LineVertex {
+        glm::vec4 position;
+        glm::vec4 color;
+    };
+    
+    std::vector<LineVertex> vertices;
+    vertices.reserve(adhesionData.activeConnectionCount * 4); // 4 vertices per connection (2 segments)
+    
+    // Iterate through all adhesion connections
+    for (size_t i = 0; i < adhesionData.activeConnectionCount; ++i) {
+        if (adhesionData.isActive[i] == 0) continue;
+        
+        uint32_t cellAIndex = adhesionData.cellAIndex[i];
+        uint32_t cellBIndex = adhesionData.cellBIndex[i];
+        
+        if (cellAIndex >= cellData.activeCellCount || cellBIndex >= cellData.activeCellCount) continue;
+        
+        // Get cell positions and radii
+        glm::vec3 posA(cellData.pos_x[cellAIndex], cellData.pos_y[cellAIndex], cellData.pos_z[cellAIndex]);
+        float radiusA = cellData.radius[cellAIndex];
+        glm::quat orientA(cellData.quat_w[cellAIndex], cellData.quat_x[cellAIndex], 
+                          cellData.quat_y[cellAIndex], cellData.quat_z[cellAIndex]);
+        
+        glm::vec3 posB(cellData.pos_x[cellBIndex], cellData.pos_y[cellBIndex], cellData.pos_z[cellBIndex]);
+        float radiusB = cellData.radius[cellBIndex];
+        glm::quat orientB(cellData.quat_w[cellBIndex], cellData.quat_x[cellBIndex], 
+                          cellData.quat_y[cellBIndex], cellData.quat_z[cellBIndex]);
+        
+        // Get anchor directions
+        glm::vec3 anchorDirA(adhesionData.anchorDirectionA_x[i], adhesionData.anchorDirectionA_y[i], 
+                             adhesionData.anchorDirectionA_z[i]);
+        glm::vec3 anchorDirB(adhesionData.anchorDirectionB_x[i], adhesionData.anchorDirectionB_y[i], 
+                             adhesionData.anchorDirectionB_z[i]);
+        
+        // Calculate midpoint between cell centers
+        glm::vec3 midpoint = (posA + posB) * 0.5f;
+        
+        // Get zone classifications
+        uint32_t zoneA = adhesionData.zoneA[i];
+        uint32_t zoneB = adhesionData.zoneB[i];
+        
+        // Zone colors matching GPU shader: 0=Green (Zone A), 1=Blue (Zone B), 2=Red (Zone C)
+        auto getZoneColor = [](uint32_t zone) -> glm::vec4 {
+            if (zone == 0) return glm::vec4(0.0f, 1.0f, 0.0f, 1.0f); // Green - Zone A
+            if (zone == 1) return glm::vec4(0.0f, 0.0f, 1.0f, 1.0f); // Blue - Zone B
+            return glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); // Red - Zone C
+        };
+        
+        glm::vec4 colorA = getZoneColor(zoneA);
+        glm::vec4 colorB = getZoneColor(zoneB);
+        
+        // Create 2 line segments: cell A center to midpoint (zone A color), midpoint to cell B center (zone B color)
+        // Segment 1: cell A to midpoint - both vertices use zone A color
+        vertices.push_back({glm::vec4(posA, 1.0f), colorA});
+        vertices.push_back({glm::vec4(midpoint, 1.0f), colorA});
+        
+        // Segment 2: midpoint to cell B - both vertices use zone B color
+        vertices.push_back({glm::vec4(midpoint, 1.0f), colorB});
+        vertices.push_back({glm::vec4(posB, 1.0f), colorB});
+    }
+    
+    // Upload to GPU
+    if (!vertices.empty()) {
+        glBindBuffer(GL_ARRAY_BUFFER, m_adhesionLineVBO);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(LineVertex), vertices.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+}
+
+void CPUPreviewSystem::renderAdhesionLines(glm::vec2 resolution, const Camera& camera, bool showAdhesionLines) {
+    if (!showAdhesionLines || !m_initialized || !m_dataManager) {
+        return;
+    }
+    
+    const auto& adhesionData = m_dataManager->getAdhesionData();
+    size_t activeCount = adhesionData.activeConnectionCount;
+    
+    if (activeCount == 0) {
+        return;
+    }
+    
+    // Update adhesion line data (CPU generation)
+    updateAdhesionLineData();
+    
+    if (!m_adhesionLineShader) {
+        return;
+    }
+    
+    m_adhesionLineShader->use();
+    
+    // Set up camera matrices
+    glm::mat4 view = camera.getViewMatrix();
+    float aspectRatio = resolution.x / resolution.y;
+    if (aspectRatio <= 0.0f || !std::isfinite(aspectRatio)) {
+        aspectRatio = 16.0f / 9.0f;
+    }
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 1000.0f);
+    
+    m_adhesionLineShader->setMat4("uProjection", projection);
+    m_adhesionLineShader->setMat4("uView", view);
+    
+    // Enable depth testing
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    
+    // Enable line width for better visibility
+    glLineWidth(4.0f);
+    
+    // Render adhesion lines - each connection has 4 vertices (2 line segments)
+    glBindVertexArray(m_adhesionLineVAO);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(activeCount * 4));
+    glBindVertexArray(0);
+    glLineWidth(1.0f);
+}
+
+void CPUPreviewSystem::cleanupAdhesionLines() {
+    if (m_adhesionLineBuffer != 0) {
+        glDeleteBuffers(1, &m_adhesionLineBuffer);
+        m_adhesionLineBuffer = 0;
+    }
+    if (m_adhesionLineVBO != 0) {
+        glDeleteBuffers(1, &m_adhesionLineVBO);
+        m_adhesionLineVBO = 0;
+    }
+    if (m_adhesionLineVAO != 0) {
+        glDeleteVertexArrays(1, &m_adhesionLineVAO);
+        m_adhesionLineVAO = 0;
+    }
 }

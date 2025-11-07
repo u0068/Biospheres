@@ -293,14 +293,10 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 					// Get the sphere mesh from preview cell manager for rendering infrastructure
 					auto& sphereMesh = previewCellManager.getSphereMesh();
 					
-					// Set up the sphere mesh to use the CPU Preview System's instance buffer (only once)
-					static bool instanceBufferSetup = false;
-					if (!instanceBufferSetup) {
-						GLuint cpuInstanceBuffer = cpuPreviewSystem.getTripleBufferSystem()->getInstanceBuffer();
-						sphereMesh.setupInstanceBuffer(cpuInstanceBuffer);
-						instanceBufferSetup = true;
-						std::cout << "CPU Preview System: Instance buffer setup completed\n";
-					}
+					// Always set up the sphere mesh to use the CPU Preview System's instance buffer
+					// (This is needed because anchor gizmo rendering changes the instance buffer)
+					GLuint cpuInstanceBuffer = cpuPreviewSystem.getTripleBufferSystem()->getInstanceBuffer();
+					sphereMesh.setupInstanceBuffer(cpuInstanceBuffer);
 					
 					// Render using the sphere shader
 					sphereShader.use();
@@ -391,7 +387,9 @@ void renderFrame(CellManager& previewCellManager, CellManager& mainCellManager, 
 					checkGLError("CPU Preview renderAnchorGizmos");
 				}
 				
-				// Note: Adhesion lines not yet implemented for CPU Preview System
+				// Render adhesion lines if enabled
+				cpuPreviewSystem.renderAdhesionLines(glm::vec2(width, height), *activeCamera, uiManager.showAdhesionLines);
+				checkGLError("CPU Preview renderAdhesionLines");
 			}
 			
 			// Render injection brush if visible

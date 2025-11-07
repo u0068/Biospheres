@@ -2,10 +2,10 @@
 
 layout(location = 0) in vec3 aPosition;     // Sphere mesh vertex position
 layout(location = 1) in vec3 aNormal;       // Sphere mesh vertex normal
-// Note: location 2 is overwritten by setupInstanceBuffer with instance data
-layout(location = 2) in vec4 aPositionAndRadius; // x, y, z, radius (instance data)
-layout(location = 3) in vec4 aColor;             // r, g, b, unused (instance data)  
-layout(location = 4) in vec4 aOrientation;       // quaternion: w, x, y, z (instance data)
+layout(location = 2) in vec2 aUV;           // Sphere mesh UV coordinates
+layout(location = 3) in vec4 aPositionAndRadius; // x, y, z, radius (instance data)
+layout(location = 4) in vec4 aColor;             // r, g, b, unused (instance data)  
+layout(location = 5) in vec4 aOrientation;       // quaternion: w, x, y, z (instance data)
 
 uniform mat4 uProjection;
 uniform mat4 uView;

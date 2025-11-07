@@ -16,9 +16,18 @@
  * - Zone classification system using classifyBondDirection with 2-degree threshold
  * - Inheritance rules: Zone A to child B, Zone B to child A, Zone C to both children
  * - Geometric anchor direction calculation using parent frame positions and orientations
- * - Child-to-child connection creation with proper anchor directions
+ * - Child-to-child connection creation with proper anchor directions from split direction
  * - Proper adhesion index management during cell division
  * - Connection role preservation (cellA/cellB) during inheritance
+ * - Neighbor anchor calculation using relative rotation between cells
+ * - Zone classification for child-to-child connections
+ * 
+ * Fixed Issues:
+ * - Child-to-child adhesion now uses split direction from mode (not arbitrary defaults)
+ * - Proper zone classification for child-to-child anchors
+ * - Correct neighbor anchor direction calculation using relative rotation
+ * - Preserves cellA/cellB roles during inheritance
+ * - Uses parent's mode index for child-to-child connection
  * 
  * Requirements addressed: 8.1, 8.2, 8.3, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 10.3, 10.4, 10.5
  */

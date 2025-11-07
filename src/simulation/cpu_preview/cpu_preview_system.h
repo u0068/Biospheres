@@ -93,6 +93,7 @@ public:
     void renderGizmos(glm::vec2 resolution, const class Camera& camera, bool showGizmos);
     void renderRingGizmos(glm::vec2 resolution, const class Camera& camera, const class UIManager& uiManager);
     void renderAnchorGizmos(glm::vec2 resolution, const class Camera& camera, const class UIManager& uiManager);
+    void renderAdhesionLines(glm::vec2 resolution, const class Camera& camera, bool showAdhesionLines);
 
 private:
     // Core CPU system components
@@ -117,6 +118,7 @@ private:
     GLuint m_gpuCellBuffer = 0;
     GLuint m_gpuModeBuffer = 0;
     GLuint m_gpuCellCountBuffer = 0;
+    GLuint m_gpuAdhesionBuffer = 0;  // GPU buffer for adhesion connections (for anchor gizmo rendering)
     
     // Gizmo rendering infrastructure (shared with CellManager)
     class Shader* m_gizmoExtractShader = nullptr;
@@ -125,6 +127,11 @@ private:
     class Shader* m_ringGizmoShader = nullptr;
     class Shader* m_anchorGizmoExtractShader = nullptr;
     class Shader* m_anchorGizmoShader = nullptr;
+    class Shader* m_adhesionLineExtractShader = nullptr;
+    class Shader* m_adhesionLineShader = nullptr;
+    
+    // Separate sphere mesh for anchor gizmo rendering (to avoid conflicts with cell rendering)
+    std::unique_ptr<class SphereMesh> m_anchorSphereMesh;
     
     // Gizmo GPU buffers and VAOs
     GLuint m_gizmoBuffer = 0;
@@ -137,6 +144,9 @@ private:
     GLuint m_anchorGizmoVBO = 0;
     GLuint m_anchorCountBuffer = 0;
     uint32_t m_totalAnchorCount = 0;
+    GLuint m_adhesionLineBuffer = 0;
+    GLuint m_adhesionLineVAO = 0;
+    GLuint m_adhesionLineVBO = 0;
     
     // Internal methods
     void validateSystemState();
@@ -144,6 +154,7 @@ private:
     void initializeGPUBuffers();
     void cleanupGPUBuffers();
     void uploadCellDataToGPU();
+    void uploadAdhesionDataToGPU();
     
     // Mode settings conversion (Requirements 4.5)
     std::vector<GPUModeAdhesionSettings> createModeSettingsFromGenome(const CPUGenomeParameters& genomeParams);
@@ -154,10 +165,13 @@ private:
     void initializeGizmoBuffers();
     void initializeRingGizmoBuffers();
     void initializeAnchorGizmoBuffers();
+    void initializeAdhesionLineBuffers();
     void updateGizmoData();
     void updateRingGizmoData();
     void updateAnchorGizmoData();
+    void updateAdhesionLineData();
     void cleanupGizmos();
     void cleanupRingGizmos();
     void cleanupAnchorGizmos();
+    void cleanupAdhesionLines();
 };
