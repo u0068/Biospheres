@@ -21,7 +21,8 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
     bool childAKeepAdhesion, bool childBKeepAdhesion,
     CPUCellPhysics_SoA& cells,
     CPUAdhesionConnections_SoA& adhesions,
-    const std::vector<GPUModeAdhesionSettings>& modeSettings) {
+    const GPUMode& parentMode,
+    const std::vector<GPUMode>& allModes) {
     
     auto startTime = std::chrono::high_resolution_clock::now();
     
@@ -53,7 +54,11 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
     }
     
     m_lastMetrics.parentConnectionsProcessed = parentConnections.size();
-    
+
+    // Get child mode indices from parent mode (used for all inherited connections)
+    uint32_t childAModeIndex = parentMode.childModes.x;
+    uint32_t childBModeIndex = parentMode.childModes.y;
+
     // Process each parent connection for inheritance
     for (uint32_t connectionIndex : parentConnections) {
         // Determine which cell is the neighbor (not the parent)
@@ -72,9 +77,16 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         
         // Calculate bond direction from parent to neighbor
         glm::vec3 bondDirection = glm::normalize(neighborPos - parentPos);
-        
-        // Classify bond into zones using 2-degree threshold (Requirement 8.1)
-        AdhesionZone zone = classifyBondDirection(bondDirection, splitPlane);
+
+        // CRITICAL FIX: Classify using splitDirection from parent mode, NOT splitPlane!
+        // This matches GPU implementation exactly
+        glm::vec3 splitDirection = glm::vec3(parentMode.splitDirection);
+        AdhesionZone zone = classifyBondDirection(bondDirection, splitDirection);
+
+        // Extract split direction and offset for geometric calculations (matching GPU)
+        float splitMagnitude = glm::length(splitDirection);
+        glm::vec3 splitDir_parent = (splitMagnitude < 0.0001f) ? glm::vec3(0.0f, 0.0f, 1.0f) : (splitDirection / splitMagnitude);
+        float splitOffsetMagnitude = (splitMagnitude < 0.0001f) ? 0.0f : (splitMagnitude * 0.5f);
         
         // Update zone statistics
         switch (zone) {
@@ -84,7 +96,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         }
         
         // Get original connection properties
-        uint32_t modeIndex = adhesions.modeIndex[connectionIndex];
+        uint32_t connectionModeIndex = adhesions.modeIndex[connectionIndex];
         glm::vec3 originalAnchorA(
             adhesions.anchorDirectionA_x[connectionIndex],
             adhesions.anchorDirectionA_y[connectionIndex],
@@ -95,11 +107,15 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             adhesions.anchorDirectionB_y[connectionIndex],
             adhesions.anchorDirectionB_z[connectionIndex]
         );
+
+        // For the neighbor, we don't have direct mode info in the SoA, so we use index 0 as default
+        // In a full implementation, this should be tracked separately
+        uint32_t neighborModeIndex = 0;
         
         // Get rest length from mode settings
         float restLength = 1.0f; // Default
-        if (modeIndex < modeSettings.size()) {
-            restLength = modeSettings[modeIndex].restLength;
+        if (connectionModeIndex < allModes.size()) {
+            restLength = allModes[connectionModeIndex].adhesionSettings.restLength;
         }
         
         // Get parent and neighbor genome orientations for proper anchor calculation
@@ -126,9 +142,9 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         // Apply inheritance rules based on zone classification (Requirements 8.2, 8.3, 8.4)
         if (zone == AdhesionZone::ZoneA && childBKeepAdhesion) {
             // Zone A to child B (Requirement 8.2)
-            
-            // Calculate positions in parent frame for geometric anchor placement
-            glm::vec3 childBPos_parentFrame = -splitPlane * glm::length(splitOffset);
+
+            // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
+            glm::vec3 childBPos_parentFrame = -splitDir_parent * splitOffsetMagnitude;
             glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
             
             // Child anchor: direction from child to neighbor, transformed by genome orientation
@@ -147,14 +163,16 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
                 newConnectionIndex = addAdhesionWithDirections(
                     childBCellIndex, neighborIndex,
                     childAnchorDirection, neighborAnchorDirection,
-                    modeIndex, cells, adhesions
+                    connectionModeIndex, cells, adhesions, allModes,
+                    childBModeIndex, neighborModeIndex
                 );
             } else {
                 // Parent was cellB, neighbor was cellA, so neighbor becomes cellA
                 newConnectionIndex = addAdhesionWithDirections(
                     neighborIndex, childBCellIndex,
                     neighborAnchorDirection, childAnchorDirection,
-                    modeIndex, cells, adhesions
+                    connectionModeIndex, cells, adhesions, allModes,
+                    neighborModeIndex, childBModeIndex
                 );
             }
             
@@ -164,9 +182,9 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         }
         else if (zone == AdhesionZone::ZoneB && childAKeepAdhesion) {
             // Zone B to child A (Requirement 8.3)
-            
-            // Calculate positions in parent frame for geometric anchor placement
-            glm::vec3 childAPos_parentFrame = splitPlane * glm::length(splitOffset);
+
+            // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
+            glm::vec3 childAPos_parentFrame = splitDir_parent * splitOffsetMagnitude;
             glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
             
             // Child anchor: direction from child to neighbor, transformed by genome orientation
@@ -185,14 +203,16 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
                 newConnectionIndex = addAdhesionWithDirections(
                     childACellIndex, neighborIndex,
                     childAnchorDirection, neighborAnchorDirection,
-                    modeIndex, cells, adhesions
+                    connectionModeIndex, cells, adhesions, allModes,
+                    childAModeIndex, neighborModeIndex
                 );
             } else {
                 // Parent was cellB, neighbor was cellA, so neighbor becomes cellA
                 newConnectionIndex = addAdhesionWithDirections(
                     neighborIndex, childACellIndex,
                     neighborAnchorDirection, childAnchorDirection,
-                    modeIndex, cells, adhesions
+                    connectionModeIndex, cells, adhesions, allModes,
+                    neighborModeIndex, childAModeIndex
                 );
             }
             
@@ -203,8 +223,8 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         else if (zone == AdhesionZone::ZoneC) {
             // Zone C to both children (Requirement 8.4)
             if (childAKeepAdhesion) {
-                // Calculate positions in parent frame for geometric anchor placement
-                glm::vec3 childAPos_parentFrame = splitPlane * glm::length(splitOffset);
+                // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
+                glm::vec3 childAPos_parentFrame = splitDir_parent * splitOffsetMagnitude;
                 glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
                 
                 // Child anchor: direction from child to neighbor, transformed by genome orientation
@@ -222,13 +242,15 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
                     newConnectionIndex = addAdhesionWithDirections(
                         childACellIndex, neighborIndex,
                         childAnchorDirection, neighborAnchorDirection,
-                        modeIndex, cells, adhesions
+                        connectionModeIndex, cells, adhesions, allModes,
+                        childAModeIndex, neighborModeIndex
                     );
                 } else {
                     newConnectionIndex = addAdhesionWithDirections(
                         neighborIndex, childACellIndex,
                         neighborAnchorDirection, childAnchorDirection,
-                        modeIndex, cells, adhesions
+                        connectionModeIndex, cells, adhesions, allModes,
+                        neighborModeIndex, childAModeIndex
                     );
                 }
                 
@@ -238,8 +260,8 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             }
             
             if (childBKeepAdhesion) {
-                // Calculate positions in parent frame for geometric anchor placement
-                glm::vec3 childBPos_parentFrame = -splitPlane * glm::length(splitOffset);
+                // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
+                glm::vec3 childBPos_parentFrame = -splitDir_parent * splitOffsetMagnitude;
                 glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
                 
                 // Child anchor: direction from child to neighbor, transformed by genome orientation
@@ -257,13 +279,15 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
                     newConnectionIndex = addAdhesionWithDirections(
                         childBCellIndex, neighborIndex,
                         childAnchorDirection, neighborAnchorDirection,
-                        modeIndex, cells, adhesions
+                        connectionModeIndex, cells, adhesions, allModes,
+                        childBModeIndex, neighborModeIndex
                     );
                 } else {
                     newConnectionIndex = addAdhesionWithDirections(
                         neighborIndex, childBCellIndex,
                         neighborAnchorDirection, childAnchorDirection,
-                        modeIndex, cells, adhesions
+                        connectionModeIndex, cells, adhesions, allModes,
+                        neighborModeIndex, childBModeIndex
                     );
                 }
                 
@@ -278,58 +302,44 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
     }
     
     // Create child-to-child connection using parent's mode settings (Requirement 8.5)
-    // Get parent's mode index to check parentMakeAdhesion flag
-    uint32_t parentModeIndex = 0; // Default
-    if (parentCellIndex < cells.activeCellCount) {
-        // Mode index should be stored in cells data - for now use first mode
-        // In GPU version this comes from cell.modeIndex
-        parentModeIndex = 0;
-    }
-    
     // Check if parent mode allows child-to-child adhesion creation
-    bool parentMakeAdhesion = true; // Default to true if mode settings not available
-    if (parentModeIndex < modeSettings.size()) {
-        // Note: GPUModeAdhesionSettings doesn't have parentMakeAdhesion field yet
-        // This should be added to match GPU implementation
-        // For now, assume true
-        parentMakeAdhesion = true;
-    }
-    
+    bool parentMakeAdhesion = (parentMode.parentMakeAdhesion != 0);
+
     if (childAKeepAdhesion && childBKeepAdhesion && parentMakeAdhesion) {
         // Calculate child-to-child anchor directions using split direction from mode
         // This matches GPU implementation in cell_update_internal.comp
-        
-        // Split direction in parent's local frame (from mode settings)
-        glm::vec3 splitDirLocal = glm::normalize(splitPlane);
-        
+
+        // CRITICAL FIX: Use mode.splitDirection from genome, NOT splitPlane parameter
+        glm::vec3 splitDirLocal = glm::vec3(parentMode.splitDirection);
+
         // Direction vectors in parent's local frame
         // Child A is at +offset, child B is at -offset
         glm::vec3 directionAtoB_parentLocal = -splitDirLocal;  // A points toward B (at -offset)
         glm::vec3 directionBtoA_parentLocal = splitDirLocal;   // B points toward A (at +offset)
-        
+
         // Transform to each child's local space using genome-derived orientation deltas
         glm::quat invDeltaA = glm::inverse(orientationA);
         glm::vec3 anchorDirectionA = glm::normalize(invDeltaA * directionAtoB_parentLocal);
-        
+
         glm::quat invDeltaB = glm::inverse(orientationB);
         glm::vec3 anchorDirectionB = glm::normalize(invDeltaB * directionBtoA_parentLocal);
-        
-        // Classify zones using genome-derived anchors (matches GPU implementation)
-        AdhesionZone childZoneA = classifyBondDirection(anchorDirectionA, splitPlane);
-        AdhesionZone childZoneB = classifyBondDirection(anchorDirectionB, splitPlane);
-        
+
+        // NOTE: childAModeIndex and childBModeIndex already defined earlier in the function
+
+        // Use parent's mode index for the child-to-child adhesion connection settings
+        // (This determines which adhesion settings are used for the connection)
+        uint32_t parentModeIndexForConnection = 0; // Default - in full implementation should track this
+
         // Create child-to-child connection with parent's mode index
+        // Zones are automatically classified inside addAdhesionWithDirections
         int childConnectionIndex = addAdhesionWithDirections(
             childACellIndex, childBCellIndex,
             anchorDirectionA, anchorDirectionB,
-            parentModeIndex, cells, adhesions
+            parentModeIndexForConnection, cells, adhesions, allModes,
+            childAModeIndex, childBModeIndex
         );
-        
+
         if (childConnectionIndex >= 0) {
-            // Update zone information in the connection
-            adhesions.zoneA[childConnectionIndex] = static_cast<uint32_t>(childZoneA);
-            adhesions.zoneB[childConnectionIndex] = static_cast<uint32_t>(childZoneB);
-            
             m_lastMetrics.childToChildConnections++;
         }
     }
@@ -340,26 +350,29 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
 }
 
 CPUDivisionInheritanceHandler::AdhesionZone CPUDivisionInheritanceHandler::classifyBondDirection(
-    const glm::vec3& bondDirection, 
-    const glm::vec3& splitPlane) {
-    
-    // Calculate dot product with split plane normal
-    float dotProduct = glm::dot(bondDirection, splitPlane);
-    
-    // Calculate angle from the equatorial plane (90 degrees to split plane)
-    float angle = std::acos(std::abs(dotProduct));
-    float angleFromEquator = std::abs(angle - (3.14159f / 2.0f)); // |angle - 90°|
-    
-    // Check if within equatorial threshold (2 degrees)
-    if (angleFromEquator <= EQUATORIAL_THRESHOLD_RADIANS) {
+    const glm::vec3& bondDirection,
+    const glm::vec3& splitDirection) {
+
+    // CRITICAL FIX: Match GPU implementation exactly
+    // GPU classifies based on angle from splitDirection (NOT perpendicular plane!)
+    // Zone A: dot < 0 (pointing opposite to split direction)
+    // Zone B: dot > 0 and not equatorial (pointing same as split direction)
+    // Zone C: angle ≈ 90° from split direction (equatorial band ±2°)
+
+    float dotProduct = glm::dot(bondDirection, splitDirection);
+    float angle = std::acos(glm::clamp(dotProduct, -1.0f, 1.0f)) * (180.0f / 3.14159f); // Convert to degrees
+    float halfWidth = EQUATORIAL_THRESHOLD_DEGREES; // 2 degrees
+    float equatorialAngle = 90.0f;
+
+    // Check if within equatorial threshold (90° ± 2°)
+    if (std::abs(angle - equatorialAngle) <= halfWidth) {
         return AdhesionZone::ZoneC; // Equatorial band
     }
-    
-    // Classify based on which side of the split plane
-    if (dotProduct < 0.0f) {
-        return AdhesionZone::ZoneA; // Negative side -> inherit to child B
+    // Classify based on which side relative to split direction
+    else if (dotProduct > 0.0f) {
+        return AdhesionZone::ZoneB; // Positive dot product (same direction as split)
     } else {
-        return AdhesionZone::ZoneB; // Positive side -> inherit to child A
+        return AdhesionZone::ZoneA; // Negative dot product (opposite to split)
     }
 }
 
@@ -399,29 +412,42 @@ int CPUDivisionInheritanceHandler::addAdhesionWithDirections(
     const glm::vec3& anchorDirectionA, const glm::vec3& anchorDirectionB,
     uint32_t modeIndex,
     CPUCellPhysics_SoA& cells,
-    CPUAdhesionConnections_SoA& adhesions) {
-    
+    CPUAdhesionConnections_SoA& adhesions,
+    const std::vector<GPUMode>& allModes,
+    uint32_t cellAModeIndex,
+    uint32_t cellBModeIndex) {
+
     // Find free slots in both cells (Requirement 10.2)
     int slotA = findFreeAdhesionSlot(cellA, cells);
     int slotB = findFreeAdhesionSlot(cellB, cells);
-    
+
     if (slotA < 0 || slotB < 0) {
         return -1; // No free slots available (Requirement 10.5)
     }
-    
+
     // Find free connection slot
     int connectionIndex = findFreeConnectionSlot(adhesions);
     if (connectionIndex < 0) {
         return -1; // Connection array is full
     }
-    
+
     // Create the connection
     adhesions.cellAIndex[connectionIndex] = cellA;
     adhesions.cellBIndex[connectionIndex] = cellB;
     adhesions.modeIndex[connectionIndex] = modeIndex;
     adhesions.isActive[connectionIndex] = 1;
-    adhesions.zoneA[connectionIndex] = 0; // Default zone
-    adhesions.zoneB[connectionIndex] = 0; // Default zone
+
+    // CRITICAL FIX: Classify zones using each cell's mode splitDirection (matches GPU)
+    // Get modes for zone classification
+    const GPUMode& modeA = (cellAModeIndex < allModes.size()) ? allModes[cellAModeIndex] : allModes[0];
+    const GPUMode& modeB = (cellBModeIndex < allModes.size()) ? allModes[cellBModeIndex] : allModes[0];
+
+    // Classify zones using anchor directions and each cell's own split direction
+    AdhesionZone zoneA = classifyBondDirection(anchorDirectionA, glm::vec3(modeA.splitDirection));
+    AdhesionZone zoneB = classifyBondDirection(anchorDirectionB, glm::vec3(modeB.splitDirection));
+
+    adhesions.zoneA[connectionIndex] = static_cast<uint32_t>(zoneA);
+    adhesions.zoneB[connectionIndex] = static_cast<uint32_t>(zoneB);
     
     // Set anchor directions
     adhesions.anchorDirectionA_x[connectionIndex] = anchorDirectionA.x;
@@ -430,16 +456,32 @@ int CPUDivisionInheritanceHandler::addAdhesionWithDirections(
     adhesions.anchorDirectionB_x[connectionIndex] = anchorDirectionB.x;
     adhesions.anchorDirectionB_y[connectionIndex] = anchorDirectionB.y;
     adhesions.anchorDirectionB_z[connectionIndex] = anchorDirectionB.z;
-    
-    // Set default twist references (identity quaternions)
-    adhesions.twistReferenceA_x[connectionIndex] = 0.0f;
-    adhesions.twistReferenceA_y[connectionIndex] = 0.0f;
-    adhesions.twistReferenceA_z[connectionIndex] = 0.0f;
-    adhesions.twistReferenceA_w[connectionIndex] = 1.0f;
-    adhesions.twistReferenceB_x[connectionIndex] = 0.0f;
-    adhesions.twistReferenceB_y[connectionIndex] = 0.0f;
-    adhesions.twistReferenceB_z[connectionIndex] = 0.0f;
-    adhesions.twistReferenceB_w[connectionIndex] = 1.0f;
+
+    // CRITICAL FIX: Set twist references from genome orientations (NOT identity quaternions)
+    // This matches GPU implementation: twistReferenceA = cellA.genomeOrientation
+    // Get genome orientations from cells
+    glm::quat genomeOrientationA(
+        cells.genomeQuat_w[cellA],
+        cells.genomeQuat_x[cellA],
+        cells.genomeQuat_y[cellA],
+        cells.genomeQuat_z[cellA]
+    );
+    glm::quat genomeOrientationB(
+        cells.genomeQuat_w[cellB],
+        cells.genomeQuat_x[cellB],
+        cells.genomeQuat_y[cellB],
+        cells.genomeQuat_z[cellB]
+    );
+
+    // Set twist references from genome orientations
+    adhesions.twistReferenceA_x[connectionIndex] = genomeOrientationA.x;
+    adhesions.twistReferenceA_y[connectionIndex] = genomeOrientationA.y;
+    adhesions.twistReferenceA_z[connectionIndex] = genomeOrientationA.z;
+    adhesions.twistReferenceA_w[connectionIndex] = genomeOrientationA.w;
+    adhesions.twistReferenceB_x[connectionIndex] = genomeOrientationB.x;
+    adhesions.twistReferenceB_y[connectionIndex] = genomeOrientationB.y;
+    adhesions.twistReferenceB_z[connectionIndex] = genomeOrientationB.z;
+    adhesions.twistReferenceB_w[connectionIndex] = genomeOrientationB.w;
     
     // Update adhesion indices in both cells (Requirement 10.1)
     setAdhesionIndex(cellA, slotA, connectionIndex, cells);
@@ -503,35 +545,48 @@ void CPUDivisionInheritanceHandler::testDivisionInheritance(
     
     std::cout << "=== Testing Division Inheritance System ===\n";
     
+    // Create mode data for testing (needed early for addAdhesionWithDirections)
+    std::vector<GPUMode> allModes;
+    GPUMode defaultMode{};
+    defaultMode.splitDirection = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f); // Split along Y axis
+    defaultMode.adhesionSettings.restLength = 2.0f;
+    defaultMode.adhesionSettings.linearSpringStiffness = 150.0f;
+    defaultMode.parentMakeAdhesion = 1; // Enable child-to-child connections
+    defaultMode.childAKeepAdhesion = 1;
+    defaultMode.childBKeepAdhesion = 1;
+    defaultMode.childModes = glm::ivec2(0, 0); // Both children use same mode
+    allModes.push_back(defaultMode);
+
     // Create test scenario with 3 cells: parent (0), neighbor (1), and space for child (2)
     if (cells.activeCellCount < 2) {
         std::cout << "❌ Need at least 2 cells for division inheritance test\n";
         return;
     }
-    
+
     // Set up parent cell at origin
     uint32_t parentIndex = 0;
     cells.pos_x[parentIndex] = 0.0f;
     cells.pos_y[parentIndex] = 0.0f;
     cells.pos_z[parentIndex] = 0.0f;
     cells.radius[parentIndex] = 1.0f;
-    
+
     // Set up neighbor cell
     uint32_t neighborIndex = 1;
     cells.pos_x[neighborIndex] = 3.0f; // Positioned to the right
     cells.pos_y[neighborIndex] = 0.0f;
     cells.pos_z[neighborIndex] = 0.0f;
     cells.radius[neighborIndex] = 1.0f;
-    
+
     // Create adhesion connection between parent and neighbor
     glm::vec3 anchorA = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f)); // Point toward neighbor
     glm::vec3 anchorB = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f)); // Point toward parent
-    
+
     int connectionIndex = addAdhesionWithDirections(
         parentIndex, neighborIndex,
         anchorA, anchorB,
         0, // Default mode
-        cells, adhesions
+        cells, adhesions, allModes,
+        0, 0 // Both cells use mode 0 for testing
     );
     
     if (connectionIndex < 0) {
@@ -580,21 +635,14 @@ void CPUDivisionInheritanceHandler::testDivisionInheritance(
         case AdhesionZone::ZoneB: std::cout << "Zone B (should inherit to child A)\n"; break;
         case AdhesionZone::ZoneC: std::cout << "Zone C (should inherit to both children)\n"; break;
     }
-    
-    // Create mode settings for testing
-    std::vector<GPUModeAdhesionSettings> modeSettings;
-    GPUModeAdhesionSettings defaultMode{};
-    defaultMode.restLength = 2.0f;
-    defaultMode.linearSpringStiffness = 150.0f;
-    modeSettings.push_back(defaultMode);
-    
+
     // Perform inheritance
     glm::vec3 splitOffset = glm::vec3(0.5f, 0.0f, 0.0f);
     glm::quat orientationA = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity
     glm::quat orientationB = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity
-    
+
     size_t connectionsBefore = adhesions.activeConnectionCount;
-    
+
     inheritAdhesionsOnDivision(
         parentIndex,    // Parent cell index
         parentIndex,    // Child A index (reuses parent index)
@@ -607,7 +655,8 @@ void CPUDivisionInheritanceHandler::testDivisionInheritance(
         true,           // Child B keep adhesion
         cells,          // Cell physics data
         adhesions,      // Adhesion connections data
-        modeSettings    // Mode-specific adhesion settings
+        defaultMode,    // Parent mode data
+        allModes        // All mode data
     );
     
     size_t connectionsAfter = adhesions.activeConnectionCount;

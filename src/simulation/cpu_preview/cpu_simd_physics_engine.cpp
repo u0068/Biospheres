@@ -1358,27 +1358,40 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
                 splitPlane = glm::normalize(glm::cross(splitDirection, glm::vec3(1.0f, 0.0f, 0.0f)));
             }
             
-            // Create mode settings from actual genome parameters
-            std::vector<GPUModeAdhesionSettings> modeSettings;
-            GPUModeAdhesionSettings genomeMode{};
-            
+            // Create complete GPUMode from genome parameters
+            GPUMode parentMode{};
+
+            // Set split direction from genome (CRITICAL for correct anchor placement)
+            parentMode.splitDirection = glm::vec4(splitDirection, 0.0f);
+
+            // Set orientation deltas for children (identity for now - would come from genome)
+            parentMode.orientationA = orientationA;
+            parentMode.orientationB = orientationB;
+
+            // Set adhesion inheritance flags
+            parentMode.parentMakeAdhesion = 1; // Enable child-to-child adhesion
+            parentMode.childAKeepAdhesion = childAKeepAdhesion ? 1 : 0;
+            parentMode.childBKeepAdhesion = childBKeepAdhesion ? 1 : 0;
+            parentMode.childModes = glm::ivec2(0, 0); // Both children use same mode (mode 0)
+
             // Use actual adhesion settings from genome
             const AdhesionSettings& adhesion = genomeParams->adhesionSettings;
-            genomeMode.canBreak = adhesion.canBreak ? 1 : 0;
-            genomeMode.breakForce = adhesion.breakForce;
-            genomeMode.restLength = adhesion.restLength;
-            genomeMode.linearSpringStiffness = adhesion.linearSpringStiffness;
-            genomeMode.linearSpringDamping = adhesion.linearSpringDamping;
-            genomeMode.orientationSpringStiffness = adhesion.orientationSpringStiffness;
-            genomeMode.orientationSpringDamping = adhesion.orientationSpringDamping;
-            genomeMode.maxAngularDeviation = adhesion.maxAngularDeviation;
-            genomeMode.twistConstraintStiffness = adhesion.twistConstraintStiffness;
-            genomeMode.twistConstraintDamping = adhesion.twistConstraintDamping;
-            genomeMode.enableTwistConstraint = adhesion.enableTwistConstraint ? 1 : 0;
-            genomeMode._padding = 0;
-            
-            modeSettings.push_back(genomeMode);
-            
+            parentMode.adhesionSettings.canBreak = adhesion.canBreak ? 1 : 0;
+            parentMode.adhesionSettings.breakForce = adhesion.breakForce;
+            parentMode.adhesionSettings.restLength = adhesion.restLength;
+            parentMode.adhesionSettings.linearSpringStiffness = adhesion.linearSpringStiffness;
+            parentMode.adhesionSettings.linearSpringDamping = adhesion.linearSpringDamping;
+            parentMode.adhesionSettings.orientationSpringStiffness = adhesion.orientationSpringStiffness;
+            parentMode.adhesionSettings.orientationSpringDamping = adhesion.orientationSpringDamping;
+            parentMode.adhesionSettings.maxAngularDeviation = adhesion.maxAngularDeviation;
+            parentMode.adhesionSettings.twistConstraintStiffness = adhesion.twistConstraintStiffness;
+            parentMode.adhesionSettings.twistConstraintDamping = adhesion.twistConstraintDamping;
+            parentMode.adhesionSettings.enableTwistConstraint = adhesion.enableTwistConstraint ? 1 : 0;
+
+            // Create modes array (just one mode for now - single-mode genome)
+            std::vector<GPUMode> allModes;
+            allModes.push_back(parentMode);
+
             // Perform complete adhesion inheritance with geometric anchor placement
             m_divisionInheritanceHandler->inheritAdhesionsOnDivision(
                 cellIndex,           // Parent cell index
@@ -1392,7 +1405,8 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
                 childBKeepAdhesion,  // Child B inheritance flag
                 cells,               // Cell physics data
                 adhesions,           // Adhesion connections data
-                modeSettings         // Mode-specific adhesion settings
+                parentMode,          // Parent mode data
+                allModes             // All mode data
             );
         }
     }

@@ -38,12 +38,18 @@ struct CPUCellPhysics_SoA {
     alignas(32) std::array<float, 256> acc_y;
     alignas(32) std::array<float, 256> acc_z;
     
-    // Orientation (quaternion)
+    // Orientation (quaternion) - affected by physics
     alignas(32) std::array<float, 256> quat_x;
     alignas(32) std::array<float, 256> quat_y;
     alignas(32) std::array<float, 256> quat_z;
     alignas(32) std::array<float, 256> quat_w;
-    
+
+    // Genome orientation (quaternion) - NEVER affected by physics, used for twist references
+    alignas(32) std::array<float, 256> genomeQuat_x;
+    alignas(32) std::array<float, 256> genomeQuat_y;
+    alignas(32) std::array<float, 256> genomeQuat_z;
+    alignas(32) std::array<float, 256> genomeQuat_w;
+
     // Angular motion (for complete adhesion physics)
     alignas(32) std::array<float, 256> angularVel_x;
     alignas(32) std::array<float, 256> angularVel_y;

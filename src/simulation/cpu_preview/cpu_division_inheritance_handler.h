@@ -39,7 +39,7 @@ public:
     /**
      * Main division inheritance function
      * Handles complete adhesion inheritance when a cell divides
-     * 
+     *
      * @param parentCellIndex Index of the parent cell that is dividing
      * @param childACellIndex Index of child A (gets +splitOffset)
      * @param childBCellIndex Index of child B (gets -splitOffset)
@@ -51,7 +51,8 @@ public:
      * @param childBKeepAdhesion Whether child B should inherit adhesions
      * @param cells Cell physics data (SoA format)
      * @param adhesions Adhesion connections data (SoA format)
-     * @param modeSettings Mode-specific adhesion settings
+     * @param parentMode Parent cell's mode data (for splitDirection and parentMakeAdhesion)
+     * @param allModes Array of all mode data (for child mode lookups)
      */
     void inheritAdhesionsOnDivision(
         uint32_t parentCellIndex,
@@ -61,13 +62,14 @@ public:
         bool childAKeepAdhesion, bool childBKeepAdhesion,
         CPUCellPhysics_SoA& cells,
         CPUAdhesionConnections_SoA& adhesions,
-        const std::vector<GPUModeAdhesionSettings>& modeSettings
+        const GPUMode& parentMode,
+        const std::vector<GPUMode>& allModes
     );
 
     /**
      * Add adhesion connection with proper index management
      * Finds available slots in both cells and creates the connection
-     * 
+     *
      * @param cellA Index of first cell
      * @param cellB Index of second cell
      * @param anchorDirectionA Anchor direction for cell A (local space)
@@ -75,6 +77,9 @@ public:
      * @param modeIndex Mode index for adhesion settings
      * @param cells Cell physics data for adhesion index management
      * @param adhesions Adhesion connections data
+     * @param allModes Array of all mode data (for zone classification)
+     * @param cellAModeIndex Mode index for cell A (for zone classification)
+     * @param cellBModeIndex Mode index for cell B (for zone classification)
      * @return Connection index if successful, -1 if failed
      */
     int addAdhesionWithDirections(
@@ -82,7 +87,10 @@ public:
         const glm::vec3& anchorDirectionA, const glm::vec3& anchorDirectionB,
         uint32_t modeIndex,
         CPUCellPhysics_SoA& cells,
-        CPUAdhesionConnections_SoA& adhesions
+        CPUAdhesionConnections_SoA& adhesions,
+        const std::vector<GPUMode>& allModes,
+        uint32_t cellAModeIndex,
+        uint32_t cellBModeIndex
     );
 
     // Performance and validation metrics
@@ -121,14 +129,15 @@ private:
 
     /**
      * Classify bond direction into zones using 2-degree threshold
-     * 
-     * @param bondDirection Direction vector from parent to neighbor
-     * @param splitPlane Normal vector of the division plane
+     * Matches GPU implementation: classifies based on angle from splitDirection
+     *
+     * @param bondDirection Direction vector from parent to neighbor (or anchor direction)
+     * @param splitDirection Split direction vector (NOT perpendicular plane!)
      * @return Zone classification for inheritance rules
      */
     AdhesionZone classifyBondDirection(
-        const glm::vec3& bondDirection, 
-        const glm::vec3& splitPlane
+        const glm::vec3& bondDirection,
+        const glm::vec3& splitDirection
     );
 
     /**
