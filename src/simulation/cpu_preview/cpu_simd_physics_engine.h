@@ -5,8 +5,12 @@
 #include <chrono>
 #include <functional>
 #include <cmath>
+#include <algorithm>
 #include <immintrin.h> // AVX2 SIMD intrinsics
 #include "cpu_soa_data_manager.h"
+#include "cpu_adhesion_force_calculator.h"
+#include "cpu_adhesion_connection_manager.h"
+#include "cpu_division_inheritance_handler.h"
 
 /**
  * CPU SIMD-Optimized Physics Engine
@@ -25,21 +29,31 @@ public:
     // Configuration
     void setPreviewMode(bool enabled) { m_previewMode = enabled; }
     bool isPreviewMode() const { return m_previewMode; }
+    
+    // Connection management setup
+    void setupConnectionManager(CPUCellPhysics_SoA* cellData, CPUAdhesionConnections_SoA* adhesionData);
+    CPUAdhesionConnectionManager* getConnectionManager() { return m_connectionManager.get(); }
 
     // Main simulation step
     void simulateStep(CPUCellPhysics_SoA& cells, 
                      CPUAdhesionConnections_SoA& adhesions,
-                     float deltaTime);
+                     float deltaTime,
+                     const std::vector<GPUModeAdhesionSettings>& modeSettings = {});
     
     // Simulation step with genome access for division logic
     void simulateStep(CPUCellPhysics_SoA& cells, 
                      CPUAdhesionConnections_SoA& adhesions,
                      float deltaTime,
+                     const std::vector<GPUModeAdhesionSettings>& modeSettings,
                      const CPUGenomeParameters* genomeParams);
 
     // Performance monitoring
     float getLastStepTime() const { return m_lastStepTime; }
     size_t getProcessedCellCount() const { return m_processedCellCount; }
+    
+    // Testing and validation (for development and debugging)
+    void testSIMDBatchProcessor();
+    void validateSIMDImplementation();
 
     // Behavioral equivalence validation
     struct ValidationMetrics {
@@ -55,7 +69,15 @@ private:
     // CPU SIMD-optimized physics operations
     void calculateCollisionForces(CPUCellPhysics_SoA& cells);
     void calculateAdhesionForces(CPUCellPhysics_SoA& cells, 
-                                const CPUAdhesionConnections_SoA& adhesions);
+                                const CPUAdhesionConnections_SoA& adhesions,
+                                const std::vector<GPUModeAdhesionSettings>& modeSettings);
+    
+    // Per-cell adhesion processing (GPU-equivalent approach)
+    void processAdhesionForcesPerCell(CPUCellPhysics_SoA& cells,
+                                     const CPUAdhesionConnections_SoA& adhesions,
+                                     const std::vector<GPUModeAdhesionSettings>& modeSettings);
+    
+
     void integrateVerlet(CPUCellPhysics_SoA& cells, float deltaTime);
     void updateOrientations(CPUCellPhysics_SoA& cells, float deltaTime);
     void checkCellDivision(CPUCellPhysics_SoA& cells, 
@@ -94,12 +116,150 @@ private:
     // Adhesion physics (identical to GPU implementation)
     void processAdhesionConnection(uint32_t connectionIndex,
                                   const CPUAdhesionConnections_SoA& adhesions,
-                                  CPUCellPhysics_SoA& cells);
+                                  CPUCellPhysics_SoA& cells,
+                                  const std::vector<GPUModeAdhesionSettings>& modeSettings);
     void simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
                                   const CPUAdhesionConnections_SoA& adhesions,
+                                  const std::vector<GPUModeAdhesionSettings>& modeSettings,
                                   size_t start_idx, size_t count);
     float calculateAdhesionEnergy(const CPUAdhesionConnections_SoA& adhesions,
                                  const CPUCellPhysics_SoA& cells);
+
+    // SIMD-Optimized Batch Processing for Adhesion Forces (Requirements 5.1-5.5)
+    struct SIMDAdhesionBatchProcessor {
+        static constexpr size_t SIMD_WIDTH = 8;           // AVX2 processes 8 floats simultaneously
+        static constexpr size_t MAX_CONNECTIONS = 5120;   // 20 × 256 cells
+        static constexpr size_t BATCH_COUNT = MAX_CONNECTIONS / SIMD_WIDTH; // 640 batches
+        
+        // Preallocated buffers to avoid dynamic memory allocation (Requirement 5.3)
+        struct PreallocatedBuffers {
+            // SIMD-aligned temporary storage for batch processing
+            alignas(32) std::array<float, SIMD_WIDTH> temp_posA_x;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_posA_y;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_posA_z;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_posB_x;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_posB_y;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_posB_z;
+            
+            alignas(32) std::array<float, SIMD_WIDTH> temp_velA_x;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_velA_y;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_velA_z;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_velB_x;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_velB_y;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_velB_z;
+            
+            alignas(32) std::array<float, SIMD_WIDTH> temp_massA;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_massB;
+            
+            alignas(32) std::array<float, SIMD_WIDTH> temp_anchorA_x;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_anchorA_y;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_anchorA_z;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_anchorB_x;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_anchorB_y;
+            alignas(32) std::array<float, SIMD_WIDTH> temp_anchorB_z;
+            
+            // Force accumulation buffers
+            alignas(32) std::array<float, SIMD_WIDTH> force_x;
+            alignas(32) std::array<float, SIMD_WIDTH> force_y;
+            alignas(32) std::array<float, SIMD_WIDTH> force_z;
+            
+            // Distance and direction calculations
+            alignas(32) std::array<float, SIMD_WIDTH> delta_x;
+            alignas(32) std::array<float, SIMD_WIDTH> delta_y;
+            alignas(32) std::array<float, SIMD_WIDTH> delta_z;
+            alignas(32) std::array<float, SIMD_WIDTH> distance;
+            alignas(32) std::array<float, SIMD_WIDTH> inv_distance;
+            
+            // Mode settings cache for batch
+            alignas(32) std::array<float, SIMD_WIDTH> rest_length;
+            alignas(32) std::array<float, SIMD_WIDTH> stiffness;
+            alignas(32) std::array<float, SIMD_WIDTH> damping;
+            
+            // Cell indices for batch
+            alignas(32) std::array<uint32_t, SIMD_WIDTH> cellA_indices;
+            alignas(32) std::array<uint32_t, SIMD_WIDTH> cellB_indices;
+            alignas(32) std::array<uint32_t, SIMD_WIDTH> mode_indices;
+            
+            void initialize() {
+                // Initialize all arrays to zero
+                std::fill(temp_posA_x.begin(), temp_posA_x.end(), 0.0f);
+                std::fill(temp_posA_y.begin(), temp_posA_y.end(), 0.0f);
+                std::fill(temp_posA_z.begin(), temp_posA_z.end(), 0.0f);
+                std::fill(temp_posB_x.begin(), temp_posB_x.end(), 0.0f);
+                std::fill(temp_posB_y.begin(), temp_posB_y.end(), 0.0f);
+                std::fill(temp_posB_z.begin(), temp_posB_z.end(), 0.0f);
+                
+                std::fill(force_x.begin(), force_x.end(), 0.0f);
+                std::fill(force_y.begin(), force_y.end(), 0.0f);
+                std::fill(force_z.begin(), force_z.end(), 0.0f);
+                
+                std::fill(cellA_indices.begin(), cellA_indices.end(), 0);
+                std::fill(cellB_indices.begin(), cellB_indices.end(), 0);
+                std::fill(mode_indices.begin(), mode_indices.end(), 0);
+            }
+        };
+        
+        PreallocatedBuffers buffers;
+        
+        // Initialize the batch processor
+        void initialize() {
+            buffers.initialize();
+        }
+        
+        // Process adhesion forces for all connections using SIMD batching (Requirement 5.1, 5.2)
+        void processAllConnections(
+            CPUCellPhysics_SoA& cells,
+            const CPUAdhesionConnections_SoA& adhesions,
+            const std::vector<GPUModeAdhesionSettings>& modeSettings
+        );
+        
+        // Process a single batch of 8 connections using AVX2 (Requirement 5.4)
+        void processBatch(
+            CPUCellPhysics_SoA& cells,
+            const CPUAdhesionConnections_SoA& adhesions,
+            const std::vector<GPUModeAdhesionSettings>& modeSettings,
+            size_t batchIndex
+        );
+        
+        // Cache-optimized data gathering for a batch (Requirement 5.5)
+        void gatherBatchData(
+            const CPUCellPhysics_SoA& cells,
+            const CPUAdhesionConnections_SoA& adhesions,
+            const std::vector<GPUModeAdhesionSettings>& modeSettings,
+            size_t batchIndex
+        );
+        
+        // SIMD force calculation for 8 connections simultaneously
+        void calculateSIMDForces();
+        
+        // Apply calculated forces back to cells
+        void scatterForces(CPUCellPhysics_SoA& cells);
+        
+        // Validation: ensure SIMD results match scalar operations (Requirement 5.4)
+        bool validateSIMDPrecision(
+            const CPUCellPhysics_SoA& cells,
+            const CPUAdhesionConnections_SoA& adhesions,
+            const std::vector<GPUModeAdhesionSettings>& modeSettings,
+            size_t batchIndex
+        );
+    };
+    
+    // SIMD batch processor instance
+    std::unique_ptr<SIMDAdhesionBatchProcessor> m_simdBatchProcessor;
+    
+    // Performance monitoring for SIMD batch processing
+    struct SIMDPerformanceMetrics {
+        float lastBatchProcessingTime = 0.0f;
+        size_t totalBatchesProcessed = 0;
+        size_t totalConnectionsProcessed = 0;
+        float averageBatchTime = 0.0f;
+        bool simdValidationPassed = true;
+    };
+    
+    SIMDPerformanceMetrics m_simdMetrics;
+    
+    // SIMD performance access
+    SIMDPerformanceMetrics getSIMDPerformanceMetrics() const { return m_simdMetrics; }
     
     // Cache-friendly batch processing
     void processCellBatch(CPUCellPhysics_SoA& cells, size_t startIdx, size_t count);
@@ -196,6 +356,15 @@ private:
     };
     
     PreallocatedBuffers m_buffers;
+    
+    // Complete adhesion force calculator (GPU-equivalent)
+    std::unique_ptr<CPUAdhesionForceCalculator> m_adhesionCalculator;
+    
+    // Connection management and validation system (Requirements 10.1-10.5, 7.4, 7.5)
+    std::unique_ptr<CPUAdhesionConnectionManager> m_connectionManager;
+    
+    // Division inheritance handler for complete adhesion inheritance
+    std::unique_ptr<CPUDivisionInheritanceHandler> m_divisionInheritanceHandler;
     
     // Physics constants (matching GPU implementation)
     static constexpr float COLLISION_DAMPING = 0.8f;

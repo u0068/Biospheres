@@ -75,7 +75,7 @@ public:
 
 private:
     // Parameter conversion helpers
-    static float convertAdhesionStrength(const AdhesionSettings& adhesion);
+
     static float convertDivisionThreshold(const ModeSettings& mode);
     static float convertMetabolicRate(const ModeSettings& mode);
     static glm::vec3 convertPreferredDirection(const ModeSettings& mode);

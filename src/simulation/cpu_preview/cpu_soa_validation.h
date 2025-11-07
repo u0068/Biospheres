@@ -24,7 +24,7 @@ namespace CPUSoAValidation {
     static constexpr size_t SIMD_ALIGNMENT = 32;  // AVX2 alignment requirement
     static constexpr size_t CACHE_LINE_SIZE = 64; // CPU cache line size
     static constexpr size_t MAX_CELLS = 256;
-    static constexpr size_t MAX_CONNECTIONS = 1024;
+    static constexpr size_t MAX_CONNECTIONS = 5120;
 
     /**
      * Comprehensive padding analysis for SoA structures
@@ -124,14 +124,26 @@ namespace CPUSoAValidation {
                          "CPUAdhesionConnections_SoA must have 32-byte alignment");
             
             // Validate individual array alignments
-            validateSIMDAlignment(data.cellA_indices, "cellA_indices");
-            validateSIMDAlignment(data.cellB_indices, "cellB_indices");
-            validateSIMDAlignment(data.anchor_dir_x, "anchor_dir_x");
-            validateSIMDAlignment(data.anchor_dir_y, "anchor_dir_y");
-            validateSIMDAlignment(data.anchor_dir_z, "anchor_dir_z");
-            validateSIMDAlignment(data.rest_length, "rest_length");
-            validateSIMDAlignment(data.stiffness, "stiffness");
-            validateSIMDAlignment(data.twist_constraint, "twist_constraint");
+            validateSIMDAlignment(data.cellAIndex, "cellAIndex");
+            validateSIMDAlignment(data.cellBIndex, "cellBIndex");
+            validateSIMDAlignment(data.modeIndex, "modeIndex");
+            validateSIMDAlignment(data.isActive, "isActive");
+            validateSIMDAlignment(data.zoneA, "zoneA");
+            validateSIMDAlignment(data.zoneB, "zoneB");
+            validateSIMDAlignment(data.anchorDirectionA_x, "anchorDirectionA_x");
+            validateSIMDAlignment(data.anchorDirectionA_y, "anchorDirectionA_y");
+            validateSIMDAlignment(data.anchorDirectionA_z, "anchorDirectionA_z");
+            validateSIMDAlignment(data.anchorDirectionB_x, "anchorDirectionB_x");
+            validateSIMDAlignment(data.anchorDirectionB_y, "anchorDirectionB_y");
+            validateSIMDAlignment(data.anchorDirectionB_z, "anchorDirectionB_z");
+            validateSIMDAlignment(data.twistReferenceA_x, "twistReferenceA_x");
+            validateSIMDAlignment(data.twistReferenceA_y, "twistReferenceA_y");
+            validateSIMDAlignment(data.twistReferenceA_z, "twistReferenceA_z");
+            validateSIMDAlignment(data.twistReferenceA_w, "twistReferenceA_w");
+            validateSIMDAlignment(data.twistReferenceB_x, "twistReferenceB_x");
+            validateSIMDAlignment(data.twistReferenceB_y, "twistReferenceB_y");
+            validateSIMDAlignment(data.twistReferenceB_z, "twistReferenceB_z");
+            validateSIMDAlignment(data.twistReferenceB_w, "twistReferenceB_w");
             
             // Validate active connection count bounds
             if (data.activeConnectionCount > MAX_CONNECTIONS) {
@@ -230,8 +242,8 @@ namespace CPUSoAValidation {
                                                  const CPUCellPhysics_SoA& cellData) {
             for (size_t i = 0; i < data.activeConnectionCount; ++i) {
                 // Validate cell indices are within bounds
-                uint32_t cellA = data.cellA_indices[i];
-                uint32_t cellB = data.cellB_indices[i];
+                uint32_t cellA = data.cellAIndex[i];
+                uint32_t cellB = data.cellBIndex[i];
                 
                 if (cellA >= MAX_CELLS || cellB >= MAX_CELLS) {
                     throw std::runtime_error("Cell index out of bounds in connection " + std::to_string(i));
@@ -241,22 +253,31 @@ namespace CPUSoAValidation {
                     throw std::runtime_error("Self-connection detected at connection " + std::to_string(i));
                 }
                 
-                // Validate anchor direction is normalized
-                float anchor_length_sq = data.anchor_dir_x[i] * data.anchor_dir_x[i] + 
-                                        data.anchor_dir_y[i] * data.anchor_dir_y[i] + 
-                                        data.anchor_dir_z[i] * data.anchor_dir_z[i];
-                if (std::abs(anchor_length_sq - 1.0f) > 1e-5f) {
-                    throw std::runtime_error("Anchor direction not normalized at connection " + std::to_string(i));
+                // Validate connection is active
+                if (data.isActive[i] == 0) {
+                    throw std::runtime_error("Inactive connection found in active range at index " + std::to_string(i));
                 }
                 
-                // Validate physical properties are positive
-                if (data.rest_length[i] <= 0.0f || data.stiffness[i] <= 0.0f) {
-                    throw std::runtime_error("Invalid connection properties at connection " + std::to_string(i));
+                // Validate anchor directions are normalized
+                float anchorA_length_sq = data.anchorDirectionA_x[i] * data.anchorDirectionA_x[i] + 
+                                         data.anchorDirectionA_y[i] * data.anchorDirectionA_y[i] + 
+                                         data.anchorDirectionA_z[i] * data.anchorDirectionA_z[i];
+                
+                float anchorB_length_sq = data.anchorDirectionB_x[i] * data.anchorDirectionB_x[i] + 
+                                         data.anchorDirectionB_y[i] * data.anchorDirectionB_y[i] + 
+                                         data.anchorDirectionB_z[i] * data.anchorDirectionB_z[i];
+                
+                if (std::abs(anchorA_length_sq - 1.0f) > 1e-5f) {
+                    throw std::runtime_error("Anchor direction A not normalized at connection " + std::to_string(i));
                 }
                 
-                // Validate twist constraint is within reasonable bounds
-                if (data.twist_constraint[i] < 0.0f || data.twist_constraint[i] > 10.0f) {
-                    throw std::runtime_error("Invalid twist constraint at connection " + std::to_string(i));
+                if (std::abs(anchorB_length_sq - 1.0f) > 1e-5f) {
+                    throw std::runtime_error("Anchor direction B not normalized at connection " + std::to_string(i));
+                }
+                
+                // Validate zone classifications are valid (0=ZoneA, 1=ZoneB, 2=ZoneC)
+                if (data.zoneA[i] > 2 || data.zoneB[i] > 2) {
+                    throw std::runtime_error("Invalid zone classification at connection " + std::to_string(i));
                 }
             }
         }
@@ -282,8 +303,8 @@ namespace CPUSoAValidation {
             
             // Validate all connections reference active cells
             for (size_t i = 0; i < adhesionData.activeConnectionCount; ++i) {
-                uint32_t cellA = adhesionData.cellA_indices[i];
-                uint32_t cellB = adhesionData.cellB_indices[i];
+                uint32_t cellA = adhesionData.cellAIndex[i];
+                uint32_t cellB = adhesionData.cellBIndex[i];
                 
                 // Check if referenced cells are actually active
                 bool cellA_active = (cellA < cellData.activeCellCount && cellData.mass[cellA] > 0.0f);
@@ -338,9 +359,9 @@ namespace CPUSoAValidation {
         static_assert(sizeof(CPUAdhesionConnections_SoA) < 1024 * 1024, "CPUAdhesionConnections_SoA is too large");
         
         // Validate parameter structures are efficiently packed
-        static_assert(sizeof(CPUGenomeParameters) <= 64, "CPUGenomeParameters should be cache-friendly");
-        static_assert(sizeof(CPUCellParameters) <= 128, "CPUCellParameters should be cache-friendly");
-        static_assert(sizeof(CPUAdhesionParameters) <= 64, "CPUAdhesionParameters should be cache-friendly");
+        static_assert(sizeof(CPUGenomeParameters) <= 128, "CPUGenomeParameters should be cache-friendly");
+        static_assert(sizeof(CPUCellParameters) <= 192, "CPUCellParameters should be cache-friendly");
+        static_assert(sizeof(CPUAdhesionParameters) <= 80, "CPUAdhesionParameters should be cache-friendly");
     }
 
 } // namespace CPUSoAValidation

@@ -148,14 +148,14 @@ private:
     void applyColorParameters(CPUCellPhysics_SoA& cellData, const CPUGenomeParameters& params, uint32_t cellIndex);
     
     // Validation helpers
-    bool isValidAdhesionStrength(float strength) const;
+    bool isValidAdhesionSettings(const AdhesionSettings& settings) const;
     bool isValidDivisionThreshold(float threshold) const;
     bool isValidMetabolicRate(float rate) const;
     bool isValidCellTypeFlags(uint32_t flags) const;
     
     // Performance estimation helpers
     float estimateCellTypeComplexity(uint32_t cellTypeFlags) const;
-    float estimateAdhesionComplexity(float adhesionStrength) const;
+    float estimateAdhesionComplexity(const AdhesionSettings& settings) const;
     float estimateMetabolicComplexity(float metabolicRate) const;
     
     // Statistics calculation

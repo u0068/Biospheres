@@ -1,4 +1,5 @@
 #include "cpu_simd_physics_engine.h"
+#include "cpu_division_inheritance_handler.h"
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -15,6 +16,22 @@ CPUSIMDPhysicsEngine::CPUSIMDPhysicsEngine()
         m_spatialGrid->clear();
     }
     
+    // Initialize complete adhesion force calculator (GPU-equivalent)
+    m_adhesionCalculator = std::make_unique<CPUAdhesionForceCalculator>();
+    
+    // Initialize connection management and validation system (Requirements 10.1-10.5, 7.4, 7.5)
+    m_connectionManager = std::make_unique<CPUAdhesionConnectionManager>();
+    
+    // Initialize division inheritance handler for complete adhesion inheritance
+    m_divisionInheritanceHandler = std::make_unique<CPUDivisionInheritanceHandler>();
+    
+    // Initialize SIMD batch processor for adhesion forces (Requirements 5.1-5.5)
+    m_simdBatchProcessor = std::make_unique<SIMDAdhesionBatchProcessor>();
+    m_simdBatchProcessor->initialize();
+    
+    // Initialize SIMD performance metrics
+    m_simdMetrics = SIMDPerformanceMetrics{};
+    
     // Initialize preallocated buffers to avoid dynamic allocation
     m_buffers.initialize();
 }
@@ -23,15 +40,24 @@ CPUSIMDPhysicsEngine::~CPUSIMDPhysicsEngine() {
     // Cleanup handled by RAII
 }
 
-void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells, 
-                                       CPUAdhesionConnections_SoA& adhesions,
-                                       float deltaTime) {
-    simulateStep(cells, adhesions, deltaTime, nullptr);
+void CPUSIMDPhysicsEngine::setupConnectionManager(CPUCellPhysics_SoA* cellData, CPUAdhesionConnections_SoA* adhesionData) {
+    if (m_connectionManager) {
+        m_connectionManager->setCellData(cellData);
+        m_connectionManager->setAdhesionData(adhesionData);
+    }
 }
 
 void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells, 
                                        CPUAdhesionConnections_SoA& adhesions,
                                        float deltaTime,
+                                       const std::vector<GPUModeAdhesionSettings>& modeSettings) {
+    simulateStep(cells, adhesions, deltaTime, modeSettings, nullptr);
+}
+
+void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells, 
+                                       CPUAdhesionConnections_SoA& adhesions,
+                                       float deltaTime,
+                                       const std::vector<GPUModeAdhesionSettings>& modeSettings,
                                        const CPUGenomeParameters* genomeParams) {
     m_stepStart = std::chrono::steady_clock::now();
     
@@ -49,7 +75,7 @@ void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells,
         calculateCollisionForces(cells);
         
         // Step 3: Calculate adhesion forces (adhesion_physics.comp)
-        calculateAdhesionForces(cells, adhesions);
+        calculateAdhesionForces(cells, adhesions, modeSettings);
         
         // Step 4: Update velocities (cell_velocity_update.comp equivalent)
         updateVelocities(cells, deltaTime);
@@ -101,25 +127,213 @@ void CPUSIMDPhysicsEngine::calculateCollisionForces(CPUCellPhysics_SoA& cells) {
 }
 
 void CPUSIMDPhysicsEngine::calculateAdhesionForces(CPUCellPhysics_SoA& cells, 
-                                                   const CPUAdhesionConnections_SoA& adhesions) {
+                                                   const CPUAdhesionConnections_SoA& adhesions,
+                                                   const std::vector<GPUModeAdhesionSettings>& modeSettings) {
     // Skip adhesion forces if no connections (major optimization)
     if (adhesions.activeConnectionCount == 0) {
         return;
     }
     
-    // Process adhesion connections with SIMD optimization where possible
-    const size_t batchSize = SIMD_WIDTH;
-    size_t processed = 0;
-    
-    // Process connections in SIMD batches
-    while (processed + batchSize <= adhesions.activeConnectionCount) {
-        simd_adhesion_force_batch(cells, adhesions, processed, batchSize);
-        processed += batchSize;
+    // Use complete GPU-equivalent adhesion force calculator (Requirements 1.1, 1.2, 1.3, 1.4, 1.5)
+    if (m_adhesionCalculator) {
+        // Use per-cell adhesion processing matching GPU approach
+        processAdhesionForcesPerCell(cells, adhesions, modeSettings);
+    } else {
+        // Fallback: Use SIMD batch processor for optimal performance (Requirements 5.1-5.5)
+        if (m_simdBatchProcessor && adhesions.activeConnectionCount >= 8) {
+            // Track performance metrics
+            auto startTime = std::chrono::steady_clock::now();
+            
+            // Use SIMD batch processing for 8+ connections
+            m_simdBatchProcessor->processAllConnections(cells, adhesions, modeSettings);
+            
+            // Update performance metrics
+            auto endTime = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+            m_simdMetrics.lastBatchProcessingTime = duration.count() / 1000.0f; // Convert to milliseconds
+            m_simdMetrics.totalBatchesProcessed += (adhesions.activeConnectionCount + 7) / 8;
+            m_simdMetrics.totalConnectionsProcessed += adhesions.activeConnectionCount;
+            
+            // Update average batch time
+            if (m_simdMetrics.totalBatchesProcessed > 0) {
+                m_simdMetrics.averageBatchTime = m_simdMetrics.lastBatchProcessingTime / 
+                                               ((adhesions.activeConnectionCount + 7) / 8);
+            }
+        } else {
+            // Fallback to old implementation if neither processor is available
+            // Process connections individually using old method with mode settings
+            for (size_t i = 0; i < adhesions.activeConnectionCount; ++i) {
+                processAdhesionConnection(static_cast<uint32_t>(i), adhesions, cells, modeSettings);
+            }
+        }
     }
+}
+
+void CPUSIMDPhysicsEngine::processAdhesionForcesPerCell(CPUCellPhysics_SoA& cells,
+                                                       const CPUAdhesionConnections_SoA& adhesions,
+                                                       const std::vector<GPUModeAdhesionSettings>& modeSettings) {
+    // Per-cell adhesion processing matching GPU approach (iterate through adhesionIndices[20])
+    // This matches the GPU compute shader approach where each cell processes its own adhesions
     
-    // Process remaining connections individually
-    for (size_t i = processed; i < adhesions.activeConnectionCount; ++i) {
-        processAdhesionConnection(static_cast<uint32_t>(i), adhesions, cells);
+    // Reset angular accelerations for torque accumulation
+    std::fill(cells.angularAcc_x.begin(), cells.angularAcc_x.begin() + cells.activeCellCount, 0.0f);
+    std::fill(cells.angularAcc_y.begin(), cells.angularAcc_y.begin() + cells.activeCellCount, 0.0f);
+    std::fill(cells.angularAcc_z.begin(), cells.angularAcc_z.begin() + cells.activeCellCount, 0.0f);
+    
+    // Process each active cell's adhesion connections
+    for (size_t cellIndex = 0; cellIndex < cells.activeCellCount; ++cellIndex) {
+        // Iterate through the cell's 20 adhesion slots (matching GPU approach)
+        for (int slotIndex = 0; slotIndex < 20; ++slotIndex) {
+            int connectionIndex = cells.adhesionIndices[cellIndex][slotIndex];
+            
+            // Skip empty slots (-1 indicates no connection)
+            if (connectionIndex < 0 || connectionIndex >= static_cast<int>(adhesions.activeConnectionCount)) {
+                continue;
+            }
+            
+            // Verify connection is active
+            if (adhesions.isActive[connectionIndex] == 0) {
+                continue;
+            }
+            
+            // Get the two cells involved in this connection
+            uint32_t cellA = adhesions.cellAIndex[connectionIndex];
+            uint32_t cellB = adhesions.cellBIndex[connectionIndex];
+            
+            // Only process if this cell is cellA (to avoid double processing)
+            // GPU approach: each cell processes connections where it is cellA
+            if (cellA != cellIndex) {
+                continue;
+            }
+            
+            // Validate cell indices
+            if (cellB >= cells.activeCellCount) {
+                continue;
+            }
+            
+            // Get mode settings for this connection
+            uint32_t modeIndex = adhesions.modeIndex[connectionIndex];
+            if (modeIndex >= modeSettings.size()) {
+                continue; // Skip connections with invalid mode indices
+            }
+            
+            const GPUModeAdhesionSettings& settings = modeSettings[modeIndex];
+            
+            // The adhesion calculator will handle the conversion internally
+            
+            // Calculate forces and torques using complete GPU-equivalent algorithm
+            glm::vec3 forceA(0.0f), torqueA(0.0f);
+            glm::vec3 forceB(0.0f), torqueB(0.0f);
+            
+            // Create a temporary single-connection structure for the adhesion calculator
+            CPUAdhesionConnections_SoA tempConnections;
+            tempConnections.activeConnectionCount = 1;
+            
+            // Copy the connection data to the temporary structure
+            tempConnections.cellAIndex[0] = adhesions.cellAIndex[connectionIndex];
+            tempConnections.cellBIndex[0] = adhesions.cellBIndex[connectionIndex];
+            tempConnections.modeIndex[0] = adhesions.modeIndex[connectionIndex];
+            tempConnections.isActive[0] = adhesions.isActive[connectionIndex];
+            tempConnections.zoneA[0] = adhesions.zoneA[connectionIndex];
+            tempConnections.zoneB[0] = adhesions.zoneB[connectionIndex];
+            
+            tempConnections.anchorDirectionA_x[0] = adhesions.anchorDirectionA_x[connectionIndex];
+            tempConnections.anchorDirectionA_y[0] = adhesions.anchorDirectionA_y[connectionIndex];
+            tempConnections.anchorDirectionA_z[0] = adhesions.anchorDirectionA_z[connectionIndex];
+            tempConnections.anchorDirectionB_x[0] = adhesions.anchorDirectionB_x[connectionIndex];
+            tempConnections.anchorDirectionB_y[0] = adhesions.anchorDirectionB_y[connectionIndex];
+            tempConnections.anchorDirectionB_z[0] = adhesions.anchorDirectionB_z[connectionIndex];
+            
+            tempConnections.twistReferenceA_x[0] = adhesions.twistReferenceA_x[connectionIndex];
+            tempConnections.twistReferenceA_y[0] = adhesions.twistReferenceA_y[connectionIndex];
+            tempConnections.twistReferenceA_z[0] = adhesions.twistReferenceA_z[connectionIndex];
+            tempConnections.twistReferenceA_w[0] = adhesions.twistReferenceA_w[connectionIndex];
+            tempConnections.twistReferenceB_x[0] = adhesions.twistReferenceB_x[connectionIndex];
+            tempConnections.twistReferenceB_y[0] = adhesions.twistReferenceB_y[connectionIndex];
+            tempConnections.twistReferenceB_z[0] = adhesions.twistReferenceB_z[connectionIndex];
+            tempConnections.twistReferenceB_w[0] = adhesions.twistReferenceB_w[connectionIndex];
+            
+            // Create a temporary cells structure with just the two cells involved
+            CPUCellPhysics_SoA tempCells;
+            tempCells.activeCellCount = std::max(cellA, cellB) + 1;
+            
+            // Copy the relevant cell data (this is inefficient but maintains interface)
+            for (size_t i = 0; i <= std::max(cellA, cellB); ++i) {
+                if (i < cells.activeCellCount) {
+                    tempCells.pos_x[i] = cells.pos_x[i];
+                    tempCells.pos_y[i] = cells.pos_y[i];
+                    tempCells.pos_z[i] = cells.pos_z[i];
+                    tempCells.vel_x[i] = cells.vel_x[i];
+                    tempCells.vel_y[i] = cells.vel_y[i];
+                    tempCells.vel_z[i] = cells.vel_z[i];
+                    tempCells.acc_x[i] = cells.acc_x[i];
+                    tempCells.acc_y[i] = cells.acc_y[i];
+                    tempCells.acc_z[i] = cells.acc_z[i];
+                    tempCells.quat_x[i] = cells.quat_x[i];
+                    tempCells.quat_y[i] = cells.quat_y[i];
+                    tempCells.quat_z[i] = cells.quat_z[i];
+                    tempCells.quat_w[i] = cells.quat_w[i];
+                    tempCells.angularVel_x[i] = cells.angularVel_x[i];
+                    tempCells.angularVel_y[i] = cells.angularVel_y[i];
+                    tempCells.angularVel_z[i] = cells.angularVel_z[i];
+                    tempCells.angularAcc_x[i] = cells.angularAcc_x[i];
+                    tempCells.angularAcc_y[i] = cells.angularAcc_y[i];
+                    tempCells.angularAcc_z[i] = cells.angularAcc_z[i];
+                    tempCells.mass[i] = cells.mass[i];
+                    tempCells.radius[i] = cells.radius[i];
+                    tempCells.age[i] = cells.age[i];
+                    tempCells.energy[i] = cells.energy[i];
+                }
+            }
+            
+            // Store original accelerations to calculate the force difference
+            float origAccA_x = tempCells.acc_x[cellA];
+            float origAccA_y = tempCells.acc_y[cellA];
+            float origAccA_z = tempCells.acc_z[cellA];
+            float origAccB_x = tempCells.acc_x[cellB];
+            float origAccB_y = tempCells.acc_y[cellB];
+            float origAccB_z = tempCells.acc_z[cellB];
+            
+            float origAngAccA_x = tempCells.angularAcc_x[cellA];
+            float origAngAccA_y = tempCells.angularAcc_y[cellA];
+            float origAngAccA_z = tempCells.angularAcc_z[cellA];
+            float origAngAccB_x = tempCells.angularAcc_x[cellB];
+            float origAngAccB_y = tempCells.angularAcc_y[cellB];
+            float origAngAccB_z = tempCells.angularAcc_z[cellB];
+            
+            // Use the complete adhesion force calculator (GPU-equivalent)
+            m_adhesionCalculator->computeAdhesionForces(tempConnections, tempCells, modeSettings, 0.0f);
+            
+            // Calculate the force difference and apply to original cells
+            float deltaAccA_x = tempCells.acc_x[cellA] - origAccA_x;
+            float deltaAccA_y = tempCells.acc_y[cellA] - origAccA_y;
+            float deltaAccA_z = tempCells.acc_z[cellA] - origAccA_z;
+            float deltaAccB_x = tempCells.acc_x[cellB] - origAccB_x;
+            float deltaAccB_y = tempCells.acc_y[cellB] - origAccB_y;
+            float deltaAccB_z = tempCells.acc_z[cellB] - origAccB_z;
+            
+            float deltaAngAccA_x = tempCells.angularAcc_x[cellA] - origAngAccA_x;
+            float deltaAngAccA_y = tempCells.angularAcc_y[cellA] - origAngAccA_y;
+            float deltaAngAccA_z = tempCells.angularAcc_z[cellA] - origAngAccA_z;
+            float deltaAngAccB_x = tempCells.angularAcc_x[cellB] - origAngAccB_x;
+            float deltaAngAccB_y = tempCells.angularAcc_y[cellB] - origAngAccB_y;
+            float deltaAngAccB_z = tempCells.angularAcc_z[cellB] - origAngAccB_z;
+            
+            // Apply the calculated accelerations to the original cells
+            cells.acc_x[cellA] += deltaAccA_x;
+            cells.acc_y[cellA] += deltaAccA_y;
+            cells.acc_z[cellA] += deltaAccA_z;
+            cells.acc_x[cellB] += deltaAccB_x;
+            cells.acc_y[cellB] += deltaAccB_y;
+            cells.acc_z[cellB] += deltaAccB_z;
+            
+            cells.angularAcc_x[cellA] += deltaAngAccA_x;
+            cells.angularAcc_y[cellA] += deltaAngAccA_y;
+            cells.angularAcc_z[cellA] += deltaAngAccA_z;
+            cells.angularAcc_x[cellB] += deltaAngAccB_x;
+            cells.angularAcc_y[cellB] += deltaAngAccB_y;
+            cells.angularAcc_z[cellB] += deltaAngAccB_z;
+        }
     }
 }
 
@@ -183,6 +397,11 @@ void CPUSIMDPhysicsEngine::integrateVerlet(CPUCellPhysics_SoA& cells, float delt
         _mm256_store_ps(&cells.acc_x[i], zero);
         _mm256_store_ps(&cells.acc_y[i], zero);
         _mm256_store_ps(&cells.acc_z[i], zero);
+        
+        // Reset angular acceleration for next frame
+        _mm256_store_ps(&cells.angularAcc_x[i], zero);
+        _mm256_store_ps(&cells.angularAcc_y[i], zero);
+        _mm256_store_ps(&cells.angularAcc_z[i], zero);
     }
     
     // Handle remaining cells with scalar operations (GPU algorithm)
@@ -200,22 +419,42 @@ void CPUSIMDPhysicsEngine::integrateVerlet(CPUCellPhysics_SoA& cells, float delt
         cells.acc_x[i] = 0.0f;
         cells.acc_y[i] = 0.0f;
         cells.acc_z[i] = 0.0f;
+        
+        // Reset angular acceleration for next frame
+        cells.angularAcc_x[i] = 0.0f;
+        cells.angularAcc_y[i] = 0.0f;
+        cells.angularAcc_z[i] = 0.0f;
     }
 }
 
 void CPUSIMDPhysicsEngine::updateOrientations(CPUCellPhysics_SoA& cells, float deltaTime) {
-    // Simple orientation update based on velocity direction
+    // Update orientation based on angular velocity (GPU-equivalent)
     for (size_t i = 0; i < cells.activeCellCount; ++i) {
-        glm::vec3 velocity(cells.vel_x[i], cells.vel_y[i], cells.vel_z[i]);
-        float speed = glm::length(velocity);
+        glm::vec3 angularVelocity(cells.angularVel_x[i], cells.angularVel_y[i], cells.angularVel_z[i]);
+        float angularSpeed = glm::length(angularVelocity);
         
-        if (speed > 0.001f) {
-            // Gradually align orientation with velocity direction
-            glm::vec3 forward = velocity / speed;
+        if (angularSpeed > 0.001f) {
+            // Convert angular velocity to quaternion rotation
+            glm::vec3 axis = angularVelocity / angularSpeed;
+            float angle = angularSpeed * deltaTime;
             
-            // Simple quaternion update (could be more sophisticated)
-            // For now, just maintain the current orientation
-            // Full implementation would calculate proper quaternion rotation
+            // Create rotation quaternion from axis-angle
+            float halfAngle = angle * 0.5f;
+            float sinHalfAngle = std::sin(halfAngle);
+            glm::quat rotation(std::cos(halfAngle), axis * sinHalfAngle);
+            
+            // Current orientation
+            glm::quat currentOrientation(cells.quat_w[i], cells.quat_x[i], cells.quat_y[i], cells.quat_z[i]);
+            
+            // Apply rotation: newOrientation = rotation * currentOrientation
+            glm::quat newOrientation = rotation * currentOrientation;
+            newOrientation = glm::normalize(newOrientation);
+            
+            // Store updated orientation
+            cells.quat_w[i] = newOrientation.w;
+            cells.quat_x[i] = newOrientation.x;
+            cells.quat_y[i] = newOrientation.y;
+            cells.quat_z[i] = newOrientation.z;
         }
     }
 }
@@ -461,14 +700,23 @@ bool CPUSIMDPhysicsEngine::sphereCollisionTest(const glm::vec3& posA, float radi
 
 void CPUSIMDPhysicsEngine::processAdhesionConnection(uint32_t connectionIndex,
                                                     const CPUAdhesionConnections_SoA& adhesions,
-                                                    CPUCellPhysics_SoA& cells) {
+                                                    CPUCellPhysics_SoA& cells,
+                                                    const std::vector<GPUModeAdhesionSettings>& modeSettings) {
     // Behavioral equivalence with GPU: adhesion_physics.comp algorithm
-    uint32_t cellA = adhesions.cellA_indices[connectionIndex];
-    uint32_t cellB = adhesions.cellB_indices[connectionIndex];
+    uint32_t cellA = adhesions.cellAIndex[connectionIndex];
+    uint32_t cellB = adhesions.cellBIndex[connectionIndex];
+    uint32_t modeIndex = adhesions.modeIndex[connectionIndex];
     
     if (cellA >= cells.activeCellCount || cellB >= cells.activeCellCount) {
         return; // Invalid connection
     }
+    
+    if (modeIndex >= modeSettings.size()) {
+        return; // Invalid mode index
+    }
+    
+    // Get mode-specific adhesion settings (Requirements 4.1, 4.2)
+    const GPUModeAdhesionSettings& settings = modeSettings[modeIndex];
     
     // Load cell data (matching GPU ComputeCell structure)
     glm::vec3 posA(cells.pos_x[cellA], cells.pos_y[cellA], cells.pos_z[cellA]);
@@ -485,8 +733,11 @@ void CPUSIMDPhysicsEngine::processAdhesionConnection(uint32_t connectionIndex,
     if (dist < 0.0001f) return;
     
     glm::vec3 adhesionDir = deltaPos / dist;
-    float restLength = adhesions.rest_length[connectionIndex];
-    float stiffness = adhesions.stiffness[connectionIndex];
+    
+    // Use mode-specific parameters (Requirements 4.3, 4.4)
+    float restLength = settings.restLength;
+    float stiffness = settings.linearSpringStiffness;
+    float dampingCoeff = settings.linearSpringDamping;
     
     // Linear spring force (GPU algorithm)
     float forceMag = stiffness * (dist - restLength);
@@ -494,7 +745,6 @@ void CPUSIMDPhysicsEngine::processAdhesionConnection(uint32_t connectionIndex,
     
     // Damping - oppose relative motion (GPU algorithm)
     glm::vec3 relVel = velB - velA;
-    float dampingCoeff = 0.1f; // Default damping from GPU
     float dampMag = 1.0f - dampingCoeff * glm::dot(relVel, adhesionDir);
     glm::vec3 dampingForce = -adhesionDir * dampMag;
     
@@ -519,6 +769,7 @@ void CPUSIMDPhysicsEngine::processAdhesionConnection(uint32_t connectionIndex,
 
 void CPUSIMDPhysicsEngine::simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
                                                     const CPUAdhesionConnections_SoA& adhesions,
+                                                    const std::vector<GPUModeAdhesionSettings>& modeSettings,
                                                     size_t start_idx, size_t count) {
     // SIMD-optimized adhesion force calculation for a batch of connections
     // Process multiple adhesion connections simultaneously using AVX2
@@ -529,12 +780,20 @@ void CPUSIMDPhysicsEngine::simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
     for (size_t i = 0; i < count; ++i) {
         size_t conn_idx = start_idx + i;
         
-        uint32_t cellA = adhesions.cellA_indices[conn_idx];
-        uint32_t cellB = adhesions.cellB_indices[conn_idx];
+        uint32_t cellA = adhesions.cellAIndex[conn_idx];
+        uint32_t cellB = adhesions.cellBIndex[conn_idx];
+        uint32_t modeIndex = adhesions.modeIndex[conn_idx];
         
         if (cellA >= cells.activeCellCount || cellB >= cells.activeCellCount) {
             continue; // Invalid connection
         }
+        
+        if (modeIndex >= modeSettings.size()) {
+            continue; // Invalid mode index
+        }
+        
+        // Get mode-specific adhesion settings (Requirements 4.1, 4.2)
+        const GPUModeAdhesionSettings& settings = modeSettings[modeIndex];
         
         // Load positions and properties
         float posA_x = cells.pos_x[cellA];
@@ -545,8 +804,10 @@ void CPUSIMDPhysicsEngine::simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
         float posB_y = cells.pos_y[cellB];
         float posB_z = cells.pos_z[cellB];
         
-        float restLength = adhesions.rest_length[conn_idx];
-        float stiffness = adhesions.stiffness[conn_idx];
+        // Use mode-specific parameters (Requirements 4.3, 4.4)
+        float restLength = settings.restLength;
+        float stiffness = settings.linearSpringStiffness;
+        float dampingCoeff = settings.linearSpringDamping;
         
         // Calculate delta vector
         float delta_x = posB_x - posA_x;
@@ -563,14 +824,32 @@ void CPUSIMDPhysicsEngine::simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
             float dir_y = delta_y * inv_length;
             float dir_z = delta_z * inv_length;
             
-            // Calculate force magnitude
+            // Calculate spring force magnitude
             float extension = currentLength - restLength;
-            float forceMagnitude = extension * stiffness;
+            float springForceMagnitude = extension * stiffness;
+            
+            // Calculate damping force (oppose relative motion)
+            float velA_x = cells.vel_x[cellA];
+            float velA_y = cells.vel_y[cellA];
+            float velA_z = cells.vel_z[cellA];
+            float velB_x = cells.vel_x[cellB];
+            float velB_y = cells.vel_y[cellB];
+            float velB_z = cells.vel_z[cellB];
+            
+            float relVel_x = velB_x - velA_x;
+            float relVel_y = velB_y - velA_y;
+            float relVel_z = velB_z - velA_z;
+            
+            float relVelDotDir = relVel_x * dir_x + relVel_y * dir_y + relVel_z * dir_z;
+            float dampingMagnitude = 1.0f - dampingCoeff * relVelDotDir;
+            
+            // Total force magnitude
+            float totalForceMagnitude = springForceMagnitude + dampingMagnitude;
             
             // Calculate force vector
-            float force_x = dir_x * forceMagnitude;
-            float force_y = dir_y * forceMagnitude;
-            float force_z = dir_z * forceMagnitude;
+            float force_x = dir_x * totalForceMagnitude;
+            float force_y = dir_y * totalForceMagnitude;
+            float force_z = dir_z * totalForceMagnitude;
             
             // Apply forces (Newton's third law)
             float massA = cells.mass[cellA];
@@ -598,8 +877,9 @@ void CPUSIMDPhysicsEngine::updateVelocities(CPUCellPhysics_SoA& cells, float del
     const __m256 dt_vec = _mm256_set1_ps(deltaTime);
     size_t simd_count = (cells.activeCellCount / SIMD_WIDTH) * SIMD_WIDTH;
     
-    // SIMD velocity update
+    // SIMD velocity update (linear and angular)
     for (size_t i = 0; i < simd_count; i += SIMD_WIDTH) {
+        // Linear velocity update
         __m256 vel_x = _mm256_load_ps(&cells.vel_x[i]);
         __m256 vel_y = _mm256_load_ps(&cells.vel_y[i]);
         __m256 vel_z = _mm256_load_ps(&cells.vel_z[i]);
@@ -616,6 +896,24 @@ void CPUSIMDPhysicsEngine::updateVelocities(CPUCellPhysics_SoA& cells, float del
         _mm256_store_ps(&cells.vel_x[i], new_vel_x);
         _mm256_store_ps(&cells.vel_y[i], new_vel_y);
         _mm256_store_ps(&cells.vel_z[i], new_vel_z);
+        
+        // Angular velocity update
+        __m256 angVel_x = _mm256_load_ps(&cells.angularVel_x[i]);
+        __m256 angVel_y = _mm256_load_ps(&cells.angularVel_y[i]);
+        __m256 angVel_z = _mm256_load_ps(&cells.angularVel_z[i]);
+        
+        __m256 angAcc_x = _mm256_load_ps(&cells.angularAcc_x[i]);
+        __m256 angAcc_y = _mm256_load_ps(&cells.angularAcc_y[i]);
+        __m256 angAcc_z = _mm256_load_ps(&cells.angularAcc_z[i]);
+        
+        // GPU algorithm: angularVel += angularAcc * deltaTime
+        __m256 new_angVel_x = _mm256_add_ps(angVel_x, _mm256_mul_ps(angAcc_x, dt_vec));
+        __m256 new_angVel_y = _mm256_add_ps(angVel_y, _mm256_mul_ps(angAcc_y, dt_vec));
+        __m256 new_angVel_z = _mm256_add_ps(angVel_z, _mm256_mul_ps(angAcc_z, dt_vec));
+        
+        _mm256_store_ps(&cells.angularVel_x[i], new_angVel_x);
+        _mm256_store_ps(&cells.angularVel_y[i], new_angVel_y);
+        _mm256_store_ps(&cells.angularVel_z[i], new_angVel_z);
     }
     
     // Handle remaining cells with scalar operations
@@ -624,6 +922,11 @@ void CPUSIMDPhysicsEngine::updateVelocities(CPUCellPhysics_SoA& cells, float del
         cells.vel_x[i] += cells.acc_x[i] * deltaTime;
         cells.vel_y[i] += cells.acc_y[i] * deltaTime;
         cells.vel_z[i] += cells.acc_z[i] * deltaTime;
+        
+        // GPU algorithm: angularVel += angularAcc * deltaTime
+        cells.angularVel_x[i] += cells.angularAcc_x[i] * deltaTime;
+        cells.angularVel_y[i] += cells.angularAcc_y[i] * deltaTime;
+        cells.angularVel_z[i] += cells.angularAcc_z[i] * deltaTime;
     }
 }
 
@@ -1035,5 +1338,570 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
         cells.pos_z[daughterIndex] -= offset.z;
         
         // GPU behavior: No velocity separation - cells inherit parent velocity
+        
+        // Implement complete division inheritance system (Requirements 8.1-8.5, 9.1-9.5, 10.1-10.5)
+        // Only create adhesion connections if adhesion is enabled in the genome (check bit 8 for adhesion capability)
+        bool adhesionEnabled = genomeParams && (genomeParams->cellTypeFlags & (1 << 8)) != 0;
+        if (m_divisionInheritanceHandler && adhesionEnabled) {
+            // Get child mode settings for inheritance flags
+            bool childAKeepAdhesion = true; // Default - would come from genome
+            bool childBKeepAdhesion = true; // Default - would come from genome
+            
+            // Get genome orientations for anchor direction calculations
+            glm::quat orientationA = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Default identity
+            glm::quat orientationB = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Default identity
+            
+            // Calculate split plane normal (perpendicular to split direction)
+            glm::vec3 splitPlane = glm::normalize(glm::cross(splitDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
+            if (glm::length(splitPlane) < 0.001f) {
+                // Fallback if split direction is parallel to Y axis
+                splitPlane = glm::normalize(glm::cross(splitDirection, glm::vec3(1.0f, 0.0f, 0.0f)));
+            }
+            
+            // Create mode settings from actual genome parameters
+            std::vector<GPUModeAdhesionSettings> modeSettings;
+            GPUModeAdhesionSettings genomeMode{};
+            
+            // Use actual adhesion settings from genome
+            const AdhesionSettings& adhesion = genomeParams->adhesionSettings;
+            genomeMode.canBreak = adhesion.canBreak ? 1 : 0;
+            genomeMode.breakForce = adhesion.breakForce;
+            genomeMode.restLength = adhesion.restLength;
+            genomeMode.linearSpringStiffness = adhesion.linearSpringStiffness;
+            genomeMode.linearSpringDamping = adhesion.linearSpringDamping;
+            genomeMode.orientationSpringStiffness = adhesion.orientationSpringStiffness;
+            genomeMode.orientationSpringDamping = adhesion.orientationSpringDamping;
+            genomeMode.maxAngularDeviation = adhesion.maxAngularDeviation;
+            genomeMode.twistConstraintStiffness = adhesion.twistConstraintStiffness;
+            genomeMode.twistConstraintDamping = adhesion.twistConstraintDamping;
+            genomeMode.enableTwistConstraint = adhesion.enableTwistConstraint ? 1 : 0;
+            genomeMode._padding = 0;
+            
+            modeSettings.push_back(genomeMode);
+            
+            // Perform complete adhesion inheritance with geometric anchor placement
+            m_divisionInheritanceHandler->inheritAdhesionsOnDivision(
+                cellIndex,           // Parent cell index
+                cellIndex,           // Child A index (reuses parent index)
+                daughterIndex,       // Child B index (new cell)
+                splitPlane,          // Division plane normal
+                offset,              // Split offset vector
+                orientationA,        // Child A genome orientation
+                orientationB,        // Child B genome orientation
+                childAKeepAdhesion,  // Child A inheritance flag
+                childBKeepAdhesion,  // Child B inheritance flag
+                cells,               // Cell physics data
+                adhesions,           // Adhesion connections data
+                modeSettings         // Mode-specific adhesion settings
+            );
+        }
     }
 }
+
+// SIMD-Optimized Batch Processing Implementation (Requirements 5.1-5.5)
+
+void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::processAllConnections(
+    CPUCellPhysics_SoA& cells,
+    const CPUAdhesionConnections_SoA& adhesions,
+    const std::vector<GPUModeAdhesionSettings>& modeSettings) {
+    
+    // Process connections in batches of 8 using AVX2 (Requirement 5.1, 5.2)
+    const size_t totalBatches = (adhesions.activeConnectionCount + SIMD_WIDTH - 1) / SIMD_WIDTH;
+    const size_t maxBatches = std::min(totalBatches, BATCH_COUNT); // 640 batches max
+    
+    // Process full SIMD batches
+    for (size_t batchIndex = 0; batchIndex < maxBatches; ++batchIndex) {
+        size_t startConnection = batchIndex * SIMD_WIDTH;
+        size_t endConnection = std::min(startConnection + SIMD_WIDTH, adhesions.activeConnectionCount);
+        
+        // Skip if this batch would be empty
+        if (startConnection >= adhesions.activeConnectionCount) {
+            break;
+        }
+        
+        // Process this batch of up to 8 connections
+        processBatch(cells, adhesions, modeSettings, batchIndex);
+    }
+}
+
+void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::processBatch(
+    CPUCellPhysics_SoA& cells,
+    const CPUAdhesionConnections_SoA& adhesions,
+    const std::vector<GPUModeAdhesionSettings>& modeSettings,
+    size_t batchIndex) {
+    
+    // Cache-optimized data gathering (Requirement 5.5)
+    gatherBatchData(cells, adhesions, modeSettings, batchIndex);
+    
+    // SIMD force calculation for 8 connections simultaneously (Requirement 5.4)
+    calculateSIMDForces();
+    
+    // Apply calculated forces back to cells
+    scatterForces(cells);
+}
+
+void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::gatherBatchData(
+    const CPUCellPhysics_SoA& cells,
+    const CPUAdhesionConnections_SoA& adhesions,
+    const std::vector<GPUModeAdhesionSettings>& modeSettings,
+    size_t batchIndex) {
+    
+    const size_t startConnection = batchIndex * SIMD_WIDTH;
+    const size_t endConnection = std::min(startConnection + SIMD_WIDTH, adhesions.activeConnectionCount);
+    
+    // Gather connection data for this batch (cache-friendly sequential access)
+    for (size_t i = 0; i < SIMD_WIDTH; ++i) {
+        size_t connectionIndex = startConnection + i;
+        
+        if (connectionIndex < endConnection && connectionIndex < adhesions.activeConnectionCount) {
+            // Skip inactive connections
+            if (adhesions.isActive[connectionIndex] == 0) {
+                // Fill with dummy data that will produce zero forces
+                buffers.cellA_indices[i] = 0;
+                buffers.cellB_indices[i] = 0;
+                buffers.mode_indices[i] = 0;
+                buffers.temp_posA_x[i] = 0.0f;
+                buffers.temp_posA_y[i] = 0.0f;
+                buffers.temp_posA_z[i] = 0.0f;
+                buffers.temp_posB_x[i] = 0.0f;
+                buffers.temp_posB_y[i] = 0.0f;
+                buffers.temp_posB_z[i] = 0.0f;
+                buffers.rest_length[i] = 0.0f;
+                buffers.stiffness[i] = 0.0f;
+                buffers.damping[i] = 0.0f;
+                continue;
+            }
+            
+            uint32_t cellA = adhesions.cellAIndex[connectionIndex];
+            uint32_t cellB = adhesions.cellBIndex[connectionIndex];
+            uint32_t modeIndex = adhesions.modeIndex[connectionIndex];
+            
+            // Validate indices
+            if (cellA >= cells.activeCellCount || cellB >= cells.activeCellCount || 
+                modeIndex >= modeSettings.size()) {
+                // Fill with dummy data for invalid connections
+                buffers.cellA_indices[i] = 0;
+                buffers.cellB_indices[i] = 0;
+                buffers.mode_indices[i] = 0;
+                buffers.temp_posA_x[i] = 0.0f;
+                buffers.temp_posA_y[i] = 0.0f;
+                buffers.temp_posA_z[i] = 0.0f;
+                buffers.temp_posB_x[i] = 0.0f;
+                buffers.temp_posB_y[i] = 0.0f;
+                buffers.temp_posB_z[i] = 0.0f;
+                buffers.rest_length[i] = 0.0f;
+                buffers.stiffness[i] = 0.0f;
+                buffers.damping[i] = 0.0f;
+                continue;
+            }
+            
+            // Store cell indices
+            buffers.cellA_indices[i] = cellA;
+            buffers.cellB_indices[i] = cellB;
+            buffers.mode_indices[i] = modeIndex;
+            
+            // Gather cell positions (cache-friendly access)
+            buffers.temp_posA_x[i] = cells.pos_x[cellA];
+            buffers.temp_posA_y[i] = cells.pos_y[cellA];
+            buffers.temp_posA_z[i] = cells.pos_z[cellA];
+            buffers.temp_posB_x[i] = cells.pos_x[cellB];
+            buffers.temp_posB_y[i] = cells.pos_y[cellB];
+            buffers.temp_posB_z[i] = cells.pos_z[cellB];
+            
+            // Gather cell velocities
+            buffers.temp_velA_x[i] = cells.vel_x[cellA];
+            buffers.temp_velA_y[i] = cells.vel_y[cellA];
+            buffers.temp_velA_z[i] = cells.vel_z[cellA];
+            buffers.temp_velB_x[i] = cells.vel_x[cellB];
+            buffers.temp_velB_y[i] = cells.vel_y[cellB];
+            buffers.temp_velB_z[i] = cells.vel_z[cellB];
+            
+            // Gather cell masses
+            buffers.temp_massA[i] = cells.mass[cellA];
+            buffers.temp_massB[i] = cells.mass[cellB];
+            
+            // Gather anchor directions
+            buffers.temp_anchorA_x[i] = adhesions.anchorDirectionA_x[connectionIndex];
+            buffers.temp_anchorA_y[i] = adhesions.anchorDirectionA_y[connectionIndex];
+            buffers.temp_anchorA_z[i] = adhesions.anchorDirectionA_z[connectionIndex];
+            buffers.temp_anchorB_x[i] = adhesions.anchorDirectionB_x[connectionIndex];
+            buffers.temp_anchorB_y[i] = adhesions.anchorDirectionB_y[connectionIndex];
+            buffers.temp_anchorB_z[i] = adhesions.anchorDirectionB_z[connectionIndex];
+            
+            // Gather mode settings
+            const GPUModeAdhesionSettings& settings = modeSettings[modeIndex];
+            buffers.rest_length[i] = settings.restLength;
+            buffers.stiffness[i] = settings.linearSpringStiffness;
+            buffers.damping[i] = settings.linearSpringDamping;
+        } else {
+            // Fill remaining slots with dummy data
+            buffers.cellA_indices[i] = 0;
+            buffers.cellB_indices[i] = 0;
+            buffers.mode_indices[i] = 0;
+            buffers.temp_posA_x[i] = 0.0f;
+            buffers.temp_posA_y[i] = 0.0f;
+            buffers.temp_posA_z[i] = 0.0f;
+            buffers.temp_posB_x[i] = 0.0f;
+            buffers.temp_posB_y[i] = 0.0f;
+            buffers.temp_posB_z[i] = 0.0f;
+            buffers.rest_length[i] = 0.0f;
+            buffers.stiffness[i] = 0.0f;
+            buffers.damping[i] = 0.0f;
+        }
+    }
+}
+
+void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::calculateSIMDForces() {
+    // Load position data into AVX2 registers
+    __m256 posA_x = _mm256_load_ps(buffers.temp_posA_x.data());
+    __m256 posA_y = _mm256_load_ps(buffers.temp_posA_y.data());
+    __m256 posA_z = _mm256_load_ps(buffers.temp_posA_z.data());
+    __m256 posB_x = _mm256_load_ps(buffers.temp_posB_x.data());
+    __m256 posB_y = _mm256_load_ps(buffers.temp_posB_y.data());
+    __m256 posB_z = _mm256_load_ps(buffers.temp_posB_z.data());
+    
+    // Load velocity data
+    __m256 velA_x = _mm256_load_ps(buffers.temp_velA_x.data());
+    __m256 velA_y = _mm256_load_ps(buffers.temp_velA_y.data());
+    __m256 velA_z = _mm256_load_ps(buffers.temp_velA_z.data());
+    __m256 velB_x = _mm256_load_ps(buffers.temp_velB_x.data());
+    __m256 velB_y = _mm256_load_ps(buffers.temp_velB_y.data());
+    __m256 velB_z = _mm256_load_ps(buffers.temp_velB_z.data());
+    
+    // Load mode settings
+    __m256 rest_length = _mm256_load_ps(buffers.rest_length.data());
+    __m256 stiffness = _mm256_load_ps(buffers.stiffness.data());
+    __m256 damping = _mm256_load_ps(buffers.damping.data());
+    
+    // Calculate delta vectors (B - A)
+    __m256 delta_x = _mm256_sub_ps(posB_x, posA_x);
+    __m256 delta_y = _mm256_sub_ps(posB_y, posA_y);
+    __m256 delta_z = _mm256_sub_ps(posB_z, posA_z);
+    
+    // Store delta vectors for later use
+    _mm256_store_ps(buffers.delta_x.data(), delta_x);
+    _mm256_store_ps(buffers.delta_y.data(), delta_y);
+    _mm256_store_ps(buffers.delta_z.data(), delta_z);
+    
+    // Calculate distance squared: dx² + dy² + dz²
+    __m256 dx_sq = _mm256_mul_ps(delta_x, delta_x);
+    __m256 dy_sq = _mm256_mul_ps(delta_y, delta_y);
+    __m256 dz_sq = _mm256_mul_ps(delta_z, delta_z);
+    __m256 dist_sq = _mm256_add_ps(_mm256_add_ps(dx_sq, dy_sq), dz_sq);
+    
+    // Calculate distance using square root
+    __m256 distance = _mm256_sqrt_ps(dist_sq);
+    _mm256_store_ps(buffers.distance.data(), distance);
+    
+    // Calculate inverse distance for normalization (with epsilon protection)
+    const __m256 epsilon = _mm256_set1_ps(0.0001f);
+    const __m256 one = _mm256_set1_ps(1.0f);
+    __m256 safe_distance = _mm256_max_ps(distance, epsilon);
+    __m256 inv_distance = _mm256_div_ps(one, safe_distance);
+    _mm256_store_ps(buffers.inv_distance.data(), inv_distance);
+    
+    // Calculate adhesion direction (normalized delta)
+    __m256 adhesion_dir_x = _mm256_mul_ps(delta_x, inv_distance);
+    __m256 adhesion_dir_y = _mm256_mul_ps(delta_y, inv_distance);
+    __m256 adhesion_dir_z = _mm256_mul_ps(delta_z, inv_distance);
+    
+    // Calculate spring force magnitude: stiffness * (distance - rest_length)
+    __m256 extension = _mm256_sub_ps(distance, rest_length);
+    __m256 spring_force_mag = _mm256_mul_ps(stiffness, extension);
+    
+    // Calculate relative velocity (B - A)
+    __m256 rel_vel_x = _mm256_sub_ps(velB_x, velA_x);
+    __m256 rel_vel_y = _mm256_sub_ps(velB_y, velA_y);
+    __m256 rel_vel_z = _mm256_sub_ps(velB_z, velA_z);
+    
+    // Calculate damping: dot(rel_vel, adhesion_dir) * damping
+    __m256 rel_vel_dot_dir = _mm256_add_ps(
+        _mm256_add_ps(
+            _mm256_mul_ps(rel_vel_x, adhesion_dir_x),
+            _mm256_mul_ps(rel_vel_y, adhesion_dir_y)
+        ),
+        _mm256_mul_ps(rel_vel_z, adhesion_dir_z)
+    );
+    
+    __m256 damping_mag = _mm256_mul_ps(damping, rel_vel_dot_dir);
+    
+    // Total force magnitude (spring + damping)
+    __m256 total_force_mag = _mm256_add_ps(spring_force_mag, damping_mag);
+    
+    // Calculate force vectors
+    __m256 force_x = _mm256_mul_ps(adhesion_dir_x, total_force_mag);
+    __m256 force_y = _mm256_mul_ps(adhesion_dir_y, total_force_mag);
+    __m256 force_z = _mm256_mul_ps(adhesion_dir_z, total_force_mag);
+    
+    // Store calculated forces
+    _mm256_store_ps(buffers.force_x.data(), force_x);
+    _mm256_store_ps(buffers.force_y.data(), force_y);
+    _mm256_store_ps(buffers.force_z.data(), force_z);
+}
+
+void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::scatterForces(CPUCellPhysics_SoA& cells) {
+    // Apply calculated forces to cells (Newton's third law: equal and opposite forces)
+    for (size_t i = 0; i < SIMD_WIDTH; ++i) {
+        uint32_t cellA = buffers.cellA_indices[i];
+        uint32_t cellB = buffers.cellB_indices[i];
+        
+        // Skip if this is dummy data or invalid indices
+        if (cellA >= cells.activeCellCount || cellB >= cells.activeCellCount) {
+            continue;
+        }
+        
+        float force_x = buffers.force_x[i];
+        float force_y = buffers.force_y[i];
+        float force_z = buffers.force_z[i];
+        
+        float massA = buffers.temp_massA[i];
+        float massB = buffers.temp_massB[i];
+        
+        // Apply force to cell A (F = ma, so a = F/m)
+        if (massA > 0.0f) {
+            cells.acc_x[cellA] += force_x / massA;
+            cells.acc_y[cellA] += force_y / massA;
+            cells.acc_z[cellA] += force_z / massA;
+        }
+        
+        // Apply opposite force to cell B (Newton's third law)
+        if (massB > 0.0f) {
+            cells.acc_x[cellB] -= force_x / massB;
+            cells.acc_y[cellB] -= force_y / massB;
+            cells.acc_z[cellB] -= force_z / massB;
+        }
+    }
+}
+
+bool CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::validateSIMDPrecision(
+    const CPUCellPhysics_SoA& cells,
+    const CPUAdhesionConnections_SoA& adhesions,
+    const std::vector<GPUModeAdhesionSettings>& modeSettings,
+    size_t batchIndex) {
+    
+    // Validation: Compare SIMD results with scalar calculations (Requirement 5.4)
+    const float tolerance = 1e-6f; // Numerical precision tolerance
+    const size_t startConnection = batchIndex * SIMD_WIDTH;
+    
+    for (size_t i = 0; i < SIMD_WIDTH; ++i) {
+        size_t connectionIndex = startConnection + i;
+        
+        if (connectionIndex >= adhesions.activeConnectionCount || 
+            adhesions.isActive[connectionIndex] == 0) {
+            continue;
+        }
+        
+        uint32_t cellA = adhesions.cellAIndex[connectionIndex];
+        uint32_t cellB = adhesions.cellBIndex[connectionIndex];
+        uint32_t modeIndex = adhesions.modeIndex[connectionIndex];
+        
+        if (cellA >= cells.activeCellCount || cellB >= cells.activeCellCount || 
+            modeIndex >= modeSettings.size()) {
+            continue;
+        }
+        
+        // Calculate scalar reference values
+        glm::vec3 posA(cells.pos_x[cellA], cells.pos_y[cellA], cells.pos_z[cellA]);
+        glm::vec3 posB(cells.pos_x[cellB], cells.pos_y[cellB], cells.pos_z[cellB]);
+        glm::vec3 velA(cells.vel_x[cellA], cells.vel_y[cellA], cells.vel_z[cellA]);
+        glm::vec3 velB(cells.vel_x[cellB], cells.vel_y[cellB], cells.vel_z[cellB]);
+        
+        glm::vec3 delta = posB - posA;
+        float distance = glm::length(delta);
+        
+        if (distance < 0.0001f) continue;
+        
+        glm::vec3 adhesionDir = delta / distance;
+        const GPUModeAdhesionSettings& settings = modeSettings[modeIndex];
+        
+        // Scalar force calculation
+        float springForceMag = settings.linearSpringStiffness * (distance - settings.restLength);
+        glm::vec3 relVel = velB - velA;
+        float dampingMag = settings.linearSpringDamping * glm::dot(relVel, adhesionDir);
+        float totalForceMag = springForceMag + dampingMag;
+        glm::vec3 scalarForce = adhesionDir * totalForceMag;
+        
+        // Compare with SIMD results
+        glm::vec3 simdForce(buffers.force_x[i], buffers.force_y[i], buffers.force_z[i]);
+        glm::vec3 error = scalarForce - simdForce;
+        float errorMagnitude = glm::length(error);
+        
+        if (errorMagnitude > tolerance) {
+            // SIMD precision validation failed
+            return false;
+        }
+    }
+    
+    return true; // All validations passed
+}
+
+// Testing and Validation Methods for SIMD Batch Processing
+
+void CPUSIMDPhysicsEngine::testSIMDBatchProcessor() {
+    if (!m_simdBatchProcessor) {
+        std::cerr << "SIMD Batch Processor not initialized!" << std::endl;
+        return;
+    }
+    
+    std::cout << "=== SIMD Batch Processor Test ===" << std::endl;
+    
+    // Create test data
+    CPUCellPhysics_SoA testCells;
+    CPUAdhesionConnections_SoA testAdhesions;
+    std::vector<GPUModeAdhesionSettings> testModeSettings;
+    
+    // Initialize test cells
+    testCells.activeCellCount = 16; // Test with 16 cells
+    for (size_t i = 0; i < testCells.activeCellCount; ++i) {
+        testCells.pos_x[i] = static_cast<float>(i) * 2.0f;
+        testCells.pos_y[i] = 0.0f;
+        testCells.pos_z[i] = 0.0f;
+        testCells.vel_x[i] = 0.0f;
+        testCells.vel_y[i] = 0.0f;
+        testCells.vel_z[i] = 0.0f;
+        testCells.acc_x[i] = 0.0f;
+        testCells.acc_y[i] = 0.0f;
+        testCells.acc_z[i] = 0.0f;
+        testCells.mass[i] = 1.0f;
+        testCells.radius[i] = 0.5f;
+    }
+    
+    // Initialize test adhesion connections
+    testAdhesions.activeConnectionCount = 8; // Test with 8 connections (1 batch)
+    for (size_t i = 0; i < testAdhesions.activeConnectionCount; ++i) {
+        testAdhesions.cellAIndex[i] = static_cast<uint32_t>(i);
+        testAdhesions.cellBIndex[i] = static_cast<uint32_t>(i + 1);
+        testAdhesions.modeIndex[i] = 0;
+        testAdhesions.isActive[i] = 1;
+        testAdhesions.zoneA[i] = 0;
+        testAdhesions.zoneB[i] = 0;
+        
+        // Set anchor directions
+        testAdhesions.anchorDirectionA_x[i] = 1.0f;
+        testAdhesions.anchorDirectionA_y[i] = 0.0f;
+        testAdhesions.anchorDirectionA_z[i] = 0.0f;
+        testAdhesions.anchorDirectionB_x[i] = -1.0f;
+        testAdhesions.anchorDirectionB_y[i] = 0.0f;
+        testAdhesions.anchorDirectionB_z[i] = 0.0f;
+        
+        // Set twist references (identity quaternions)
+        testAdhesions.twistReferenceA_w[i] = 1.0f;
+        testAdhesions.twistReferenceA_x[i] = 0.0f;
+        testAdhesions.twistReferenceA_y[i] = 0.0f;
+        testAdhesions.twistReferenceA_z[i] = 0.0f;
+        testAdhesions.twistReferenceB_w[i] = 1.0f;
+        testAdhesions.twistReferenceB_x[i] = 0.0f;
+        testAdhesions.twistReferenceB_y[i] = 0.0f;
+        testAdhesions.twistReferenceB_z[i] = 0.0f;
+    }
+    
+    // Initialize test mode settings
+    GPUModeAdhesionSettings testMode{};
+    testMode.restLength = 1.5f;
+    testMode.linearSpringStiffness = 100.0f;
+    testMode.linearSpringDamping = 0.1f;
+    testMode.orientationSpringStiffness = 50.0f;
+    testMode.orientationSpringDamping = 0.05f;
+    testMode.enableTwistConstraint = 0;
+    testModeSettings.push_back(testMode);
+    
+    // Test SIMD batch processing
+    auto startTime = std::chrono::steady_clock::now();
+    m_simdBatchProcessor->processAllConnections(testCells, testAdhesions, testModeSettings);
+    auto endTime = std::chrono::steady_clock::now();
+    
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+    float processingTime = duration.count() / 1000.0f; // Convert to milliseconds
+    
+    std::cout << "SIMD Batch Processing Time: " << processingTime << " ms" << std::endl;
+    std::cout << "Connections Processed: " << testAdhesions.activeConnectionCount << std::endl;
+    std::cout << "Batches Processed: " << (testAdhesions.activeConnectionCount + 7) / 8 << std::endl;
+    
+    // Validate results
+    bool hasForces = false;
+    for (size_t i = 0; i < testCells.activeCellCount; ++i) {
+        if (std::abs(testCells.acc_x[i]) > 0.001f || 
+            std::abs(testCells.acc_y[i]) > 0.001f || 
+            std::abs(testCells.acc_z[i]) > 0.001f) {
+            hasForces = true;
+            break;
+        }
+    }
+    
+    if (hasForces) {
+        std::cout << "✓ SIMD Batch Processor Test PASSED - Forces were applied" << std::endl;
+    } else {
+        std::cout << "✗ SIMD Batch Processor Test FAILED - No forces were applied" << std::endl;
+    }
+    
+    // Test precision validation
+    bool precisionValid = m_simdBatchProcessor->validateSIMDPrecision(testCells, testAdhesions, testModeSettings, 0);
+    if (precisionValid) {
+        std::cout << "✓ SIMD Precision Validation PASSED" << std::endl;
+    } else {
+        std::cout << "✗ SIMD Precision Validation FAILED" << std::endl;
+    }
+    
+    std::cout << "=== SIMD Batch Processor Test Complete ===" << std::endl;
+}
+
+void CPUSIMDPhysicsEngine::validateSIMDImplementation() {
+    std::cout << "=== SIMD Implementation Validation ===" << std::endl;
+    
+    // Check SIMD alignment
+    if (alignof(SIMDAdhesionBatchProcessor::PreallocatedBuffers) >= 32) {
+        std::cout << "✓ SIMD Buffer Alignment: 32-byte aligned" << std::endl;
+    } else {
+        std::cout << "✗ SIMD Buffer Alignment: Not properly aligned" << std::endl;
+    }
+    
+    // Check buffer sizes
+    constexpr size_t expectedBufferSize = SIMDAdhesionBatchProcessor::SIMD_WIDTH;
+    if (SIMDAdhesionBatchProcessor::PreallocatedBuffers{}.temp_posA_x.size() == expectedBufferSize) {
+        std::cout << "✓ Buffer Sizes: Correct SIMD width (" << expectedBufferSize << ")" << std::endl;
+    } else {
+        std::cout << "✗ Buffer Sizes: Incorrect SIMD width" << std::endl;
+    }
+    
+    // Check batch count calculation
+    constexpr size_t expectedBatchCount = 5120 / 8; // 640 batches
+    if (SIMDAdhesionBatchProcessor::BATCH_COUNT == expectedBatchCount) {
+        std::cout << "✓ Batch Count: " << expectedBatchCount << " batches for 5,120 connections" << std::endl;
+    } else {
+        std::cout << "✗ Batch Count: Incorrect batch count calculation" << std::endl;
+    }
+    
+    // Check maximum connections
+    if (SIMDAdhesionBatchProcessor::MAX_CONNECTIONS == 5120) {
+        std::cout << "✓ Maximum Connections: 5,120 (20 × 256 cells)" << std::endl;
+    } else {
+        std::cout << "✗ Maximum Connections: Incorrect maximum" << std::endl;
+    }
+    
+    // Test basic SIMD operations
+    alignas(32) std::array<float, 8> testA = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+    alignas(32) std::array<float, 8> testB = {2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f};
+    alignas(32) std::array<float, 8> result;
+    
+    __m256 a = _mm256_load_ps(testA.data());
+    __m256 b = _mm256_load_ps(testB.data());
+    __m256 sum = _mm256_add_ps(a, b);
+    _mm256_store_ps(result.data(), sum);
+    
+    bool simdWorking = true;
+    for (size_t i = 0; i < 8; ++i) {
+        if (std::abs(result[i] - (testA[i] + testB[i])) > 0.001f) {
+            simdWorking = false;
+            break;
+        }
+    }
+    
+    if (simdWorking) {
+        std::cout << "✓ SIMD Operations: AVX2 instructions working correctly" << std::endl;
+    } else {
+        std::cout << "✗ SIMD Operations: AVX2 instructions not working correctly" << std::endl;
+    }
+    
+    std::cout << "=== SIMD Implementation Validation Complete ===" << std::endl;
+}
+

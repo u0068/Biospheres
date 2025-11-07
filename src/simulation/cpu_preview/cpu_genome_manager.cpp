@@ -142,9 +142,9 @@ uint32_t CPUGenomeManager::getDeterministicRandomInt(uint32_t min, uint32_t max)
 }
 
 bool CPUGenomeManager::validateGenomeForSoA(const CPUGenomeParameters& params) {
-    // Validate adhesion strength
-    if (!isValidAdhesionStrength(params.adhesionStrength)) {
-        std::cerr << "Invalid adhesion strength: " << params.adhesionStrength << std::endl;
+    // Validate adhesion settings
+    if (!isValidAdhesionSettings(params.adhesionSettings)) {
+        std::cerr << "Invalid adhesion settings" << std::endl;
         return false;
     }
     
@@ -186,7 +186,7 @@ float CPUGenomeManager::estimateApplicationTime(const CPUGenomeParameters& param
     
     // Calculate complexity factors
     float cellTypeComplexity = estimateCellTypeComplexity(params.cellTypeFlags);
-    float adhesionComplexity = estimateAdhesionComplexity(params.adhesionStrength);
+    float adhesionComplexity = estimateAdhesionComplexity(params.adhesionSettings);
     float metabolicComplexity = estimateMetabolicComplexity(params.metabolicRate);
     
     // Total estimated time
@@ -245,10 +245,9 @@ void CPUGenomeManager::applyCellTypeParameters(CPUCellPhysics_SoA& cellData, con
 }
 
 void CPUGenomeManager::applyAdhesionParameters(CPUCellPhysics_SoA& cellData, const CPUGenomeParameters& params, uint32_t cellIndex) {
-    // Apply adhesion strength as a modifier to cell radius (SET, not modify to prevent accumulation)
-    float baseRadius = 1.0f; // Default cell radius
-    float adhesionModifier = 1.0f + (params.adhesionStrength * 0.2f); // Up to 20% radius increase
-    cellData.radius[cellIndex] = baseRadius * adhesionModifier;
+    // Use standard cell radius (no adhesion-based modification needed)
+    float baseRadius = 1.0f; // Standard cell radius
+    cellData.radius[cellIndex] = baseRadius;
 }
 
 void CPUGenomeManager::applyMetabolicParameters(CPUCellPhysics_SoA& cellData, const CPUGenomeParameters& params, uint32_t cellIndex) {
@@ -283,8 +282,15 @@ void CPUGenomeManager::applyColorParameters(CPUCellPhysics_SoA& cellData, const 
 
 // Validation helpers
 
-bool CPUGenomeManager::isValidAdhesionStrength(float strength) const {
-    return strength >= 0.0f && strength <= 1.0f && std::isfinite(strength);
+bool CPUGenomeManager::isValidAdhesionSettings(const AdhesionSettings& settings) const {
+    return settings.breakForce >= 0.0f && std::isfinite(settings.breakForce) &&
+           settings.restLength >= 0.0f && std::isfinite(settings.restLength) &&
+           settings.linearSpringStiffness >= 0.0f && std::isfinite(settings.linearSpringStiffness) &&
+           settings.linearSpringDamping >= 0.0f && std::isfinite(settings.linearSpringDamping) &&
+           settings.orientationSpringStiffness >= 0.0f && std::isfinite(settings.orientationSpringStiffness) &&
+           settings.orientationSpringDamping >= 0.0f && std::isfinite(settings.orientationSpringDamping) &&
+           settings.twistConstraintStiffness >= 0.0f && std::isfinite(settings.twistConstraintStiffness) &&
+           settings.twistConstraintDamping >= 0.0f && std::isfinite(settings.twistConstraintDamping);
 }
 
 bool CPUGenomeManager::isValidDivisionThreshold(float threshold) const {
@@ -316,9 +322,10 @@ float CPUGenomeManager::estimateCellTypeComplexity(uint32_t cellTypeFlags) const
     }
 }
 
-float CPUGenomeManager::estimateAdhesionComplexity(float adhesionStrength) const {
-    // Higher adhesion strength increases collision detection complexity
-    return 1.0f + (adhesionStrength * 0.3f);
+float CPUGenomeManager::estimateAdhesionComplexity(const AdhesionSettings& settings) const {
+    // Higher adhesion stiffness increases collision detection complexity
+    float normalizedStiffness = std::min(settings.linearSpringStiffness / 500.0f, 1.0f);
+    return 1.0f + (normalizedStiffness * 0.3f);
 }
 
 float CPUGenomeManager::estimateMetabolicComplexity(float metabolicRate) const {

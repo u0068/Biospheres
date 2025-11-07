@@ -4,8 +4,12 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <memory>
 #include <glm/glm.hpp>
 #include "../cell/common_structs.h"
+
+// Forward declarations
+class CPUAdhesionConnectionManager;
 
 /**
  * CPU Structure-of-Arrays (SoA) Data Structures
@@ -40,6 +44,14 @@ struct CPUCellPhysics_SoA {
     alignas(32) std::array<float, 256> quat_z;
     alignas(32) std::array<float, 256> quat_w;
     
+    // Angular motion (for complete adhesion physics)
+    alignas(32) std::array<float, 256> angularVel_x;
+    alignas(32) std::array<float, 256> angularVel_y;
+    alignas(32) std::array<float, 256> angularVel_z;
+    alignas(32) std::array<float, 256> angularAcc_x;
+    alignas(32) std::array<float, 256> angularAcc_y;
+    alignas(32) std::array<float, 256> angularAcc_z;
+    
     // Physics properties
     alignas(32) std::array<float, 256> mass;
     alignas(32) std::array<float, 256> radius;
@@ -56,26 +68,62 @@ struct CPUCellPhysics_SoA {
     alignas(32) std::array<float, 256> color_g;
     alignas(32) std::array<float, 256> color_b;
     
+    // Adhesion index management (20 slots per cell, -1 for empty)
+    alignas(32) std::array<std::array<int, 20>, 256> adhesionIndices;
+    
     size_t activeCellCount = 0;
 };
 
-// CPU SoA structure for adhesion connections
+// CPU SoA structure for adhesion connections (GPU-Compatible)
+// Matches GPU AdhesionConnection structure exactly with SoA layout for SIMD processing
+// Capacity: 5,120 connections (20 × 256 cells) as per requirements 7.1, 7.2, 7.3
 struct CPUAdhesionConnections_SoA {
-    alignas(32) std::array<uint32_t, 1024> cellA_indices;
-    alignas(32) std::array<uint32_t, 1024> cellB_indices;
-    alignas(32) std::array<float, 1024> anchor_dir_x;
-    alignas(32) std::array<float, 1024> anchor_dir_y;
-    alignas(32) std::array<float, 1024> anchor_dir_z;
-    alignas(32) std::array<float, 1024> rest_length;
-    alignas(32) std::array<float, 1024> stiffness;
-    alignas(32) std::array<float, 1024> twist_constraint;
+    // Connection topology (5,120 capacity = 256 cells × 20 connections)
+    alignas(32) std::array<uint32_t, 5120> cellAIndex;
+    alignas(32) std::array<uint32_t, 5120> cellBIndex;
+    alignas(32) std::array<uint32_t, 5120> modeIndex;
+    alignas(32) std::array<uint32_t, 5120> isActive;
+    
+    // Zone classification for division inheritance
+    alignas(32) std::array<uint32_t, 5120> zoneA;
+    alignas(32) std::array<uint32_t, 5120> zoneB;
+    
+    // Anchor directions in local cell space (normalized)
+    alignas(32) std::array<float, 5120> anchorDirectionA_x;
+    alignas(32) std::array<float, 5120> anchorDirectionA_y;
+    alignas(32) std::array<float, 5120> anchorDirectionA_z;
+    alignas(32) std::array<float, 5120> anchorDirectionB_x;
+    alignas(32) std::array<float, 5120> anchorDirectionB_y;
+    alignas(32) std::array<float, 5120> anchorDirectionB_z;
+    
+    // Twist constraint reference quaternions
+    alignas(32) std::array<float, 5120> twistReferenceA_x;
+    alignas(32) std::array<float, 5120> twistReferenceA_y;
+    alignas(32) std::array<float, 5120> twistReferenceA_z;
+    alignas(32) std::array<float, 5120> twistReferenceA_w;
+    alignas(32) std::array<float, 5120> twistReferenceB_x;
+    alignas(32) std::array<float, 5120> twistReferenceB_y;
+    alignas(32) std::array<float, 5120> twistReferenceB_z;
+    alignas(32) std::array<float, 5120> twistReferenceB_w;
     
     size_t activeConnectionCount = 0;
 };
 
+// Validation for structure size and alignment (Requirements 7.1, 7.2, 7.3)
+static_assert(alignof(CPUAdhesionConnections_SoA) >= 32, "CPUAdhesionConnections_SoA must have 32-byte alignment for SIMD operations");
+static_assert(sizeof(CPUAdhesionConnections_SoA) % 32 == 0, "CPUAdhesionConnections_SoA must be 32-byte aligned with zero padding waste");
+
+// Validate capacity matches requirements (5,120 connections = 20 × 256 cells)
+static_assert(std::tuple_size_v<decltype(CPUAdhesionConnections_SoA::cellAIndex)> == 5120, "Connection capacity must be 5,120 (20 × 256 cells)");
+
+// Validate SIMD compatibility (capacity must be multiple of 8 for AVX2)
+static_assert(5120 % 8 == 0, "Connection capacity must be multiple of 8 for SIMD operations");
+
 // CPU Genome parameters for instant updates
 struct CPUGenomeParameters {
-    float adhesionStrength;
+    // Adhesion settings (actual settings from genome, not derived strength)
+    AdhesionSettings adhesionSettings;
+    
     float divisionThreshold;
     float metabolicRate;
     float mutationRate;
@@ -103,10 +151,13 @@ struct CPUCellParameters {
 
 // CPU Adhesion connection parameters
 struct CPUAdhesionParameters {
-    glm::vec3 anchorDirection;
-    float restLength;
-    float stiffness;
-    float twistConstraint;
+    glm::vec3 anchorDirectionA;  // Anchor direction for cell A
+    glm::vec3 anchorDirectionB;  // Anchor direction for cell B
+    uint32_t modeIndex;          // Mode index for adhesion settings
+    uint32_t zoneA;              // Zone classification for cell A
+    uint32_t zoneB;              // Zone classification for cell B
+    glm::quat twistReferenceA;   // Twist reference quaternion for cell A
+    glm::quat twistReferenceB;   // Twist reference quaternion for cell B
 };
 
 /**
@@ -143,6 +194,9 @@ public:
     const CPUCellPhysics_SoA& getCellData() const { return m_cellData; }
     CPUAdhesionConnections_SoA& getAdhesionData() { return m_adhesionData; }
     const CPUAdhesionConnections_SoA& getAdhesionData() const { return m_adhesionData; }
+    
+    // Connection management access
+    class CPUAdhesionConnectionManager* getConnectionManager() { return m_connectionManager.get(); }
 
     // System information
     size_t getActiveCellCount() const { return m_cellData.activeCellCount; }
@@ -155,6 +209,15 @@ public:
     void analyzePaddingEfficiency();
     void runValidationTests(); // Run comprehensive validation tests
     void compactArrays(); // Remove gaps from deleted cells
+    
+    // Connection management validation (Requirements 10.4, 7.4, 7.5)
+    void validateConnectionIntegrity();
+    void runConnectionManagerTests();
+    
+    // Structure validation for enhanced adhesion support
+    static void validateAdhesionStructureAlignment();
+    static void analyzeAdhesionMemoryLayout();
+    void testEnhancedAdhesionStructure(); // Test the enhanced structure
 
 private:
     // Native CPU SoA data storage
@@ -164,6 +227,9 @@ private:
     // Free index management
     std::vector<uint32_t> m_freeCellIndices;
     std::vector<uint32_t> m_freeConnectionIndices;
+    
+    // Connection management system (Requirements 10.1-10.5, 7.4, 7.5)
+    std::unique_ptr<class CPUAdhesionConnectionManager> m_connectionManager;
 
     // Internal methods
     uint32_t allocateCellIndex();

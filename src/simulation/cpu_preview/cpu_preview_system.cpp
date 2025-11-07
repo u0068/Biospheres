@@ -122,10 +122,14 @@ void CPUPreviewSystem::update(float deltaTime) {
 
         // Run physics simulation with SIMD optimization
         if (m_physicsEngine && m_dataManager) {
+            // Convert genome parameters to mode settings (Requirements 4.5)
+            std::vector<GPUModeAdhesionSettings> modeSettings = createModeSettingsFromGenome(m_currentGenomeParams);
+            
             m_physicsEngine->simulateStep(
                 m_dataManager->getCellData(),
                 m_dataManager->getAdhesionData(),
                 deltaTime,
+                modeSettings,
                 &m_currentGenomeParams
             );
         }
@@ -167,10 +171,14 @@ void CPUPreviewSystem::fastForward(float totalTime, float timeStep) {
             
             // Direct physics simulation only
             if (m_physicsEngine && m_dataManager) {
+                // Convert genome parameters to mode settings (Requirements 4.5)
+                std::vector<GPUModeAdhesionSettings> modeSettings = createModeSettingsFromGenome(m_currentGenomeParams);
+                
                 m_physicsEngine->simulateStep(
                     m_dataManager->getCellData(),
                     m_dataManager->getAdhesionData(),
                     stepSize,
+                    modeSettings,
                     &m_currentGenomeParams
                 );
             }
@@ -936,4 +944,52 @@ void CPUPreviewSystem::renderRingGizmos(glm::vec2 resolution, const Camera& came
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
+}
+
+std::vector<GPUModeAdhesionSettings> CPUPreviewSystem::createModeSettingsFromGenome(const CPUGenomeParameters& genomeParams) {
+    // Create mode settings from genome parameters (Requirements 4.1, 4.2, 4.5)
+    // This ensures instant parameter updates when genome settings change
+    
+    std::vector<GPUModeAdhesionSettings> modeSettings;
+    
+    // Create a single mode setting based on current genome parameters
+    GPUModeAdhesionSettings settings;
+    
+    // Check if adhesion is enabled in the genome (bit 8 for adhesion capability)
+    bool adhesionEnabled = (genomeParams.cellTypeFlags & (1 << 8)) != 0;
+    
+    if (adhesionEnabled) {
+        // Use the actual adhesion settings from the genome (matching GPU implementation)
+        const AdhesionSettings& adhesion = genomeParams.adhesionSettings;
+        settings.canBreak = adhesion.canBreak ? 1 : 0;
+        settings.breakForce = adhesion.breakForce;
+        settings.restLength = adhesion.restLength;
+        settings.linearSpringStiffness = adhesion.linearSpringStiffness;
+        settings.linearSpringDamping = adhesion.linearSpringDamping;
+        settings.orientationSpringStiffness = adhesion.orientationSpringStiffness;
+        settings.orientationSpringDamping = adhesion.orientationSpringDamping;
+        settings.maxAngularDeviation = adhesion.maxAngularDeviation;
+        settings.twistConstraintStiffness = adhesion.twistConstraintStiffness;
+        settings.twistConstraintDamping = adhesion.twistConstraintDamping;
+        settings.enableTwistConstraint = adhesion.enableTwistConstraint ? 1 : 0;
+    } else {
+        // Disable all adhesion forces when adhesion is not enabled (matching GPU implementation)
+        settings.canBreak = 0;
+        settings.breakForce = 0.0f;
+        settings.restLength = 0.0f;
+        settings.linearSpringStiffness = 0.0f;
+        settings.linearSpringDamping = 0.0f;
+        settings.orientationSpringStiffness = 0.0f;
+        settings.orientationSpringDamping = 0.0f;
+        settings.maxAngularDeviation = 0.0f;
+        settings.twistConstraintStiffness = 0.0f;
+        settings.twistConstraintDamping = 0.0f;
+        settings.enableTwistConstraint = 0;
+    }
+    settings._padding = 0; // Ensure padding is zero
+    
+    // Add the mode setting to the vector
+    modeSettings.push_back(settings);
+    
+    return modeSettings;
 }

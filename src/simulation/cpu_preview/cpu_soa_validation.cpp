@@ -50,14 +50,14 @@ namespace CPUSoAValidation {
         std::cout << "CPUAdhesionConnections_SoA Structure:\n";
         std::cout << "  Total size: " << sizeof(CPUAdhesionConnections_SoA) << " bytes\n";
         std::cout << "  Alignment: " << alignof(CPUAdhesionConnections_SoA) << " bytes\n";
-        std::cout << "  Array count: 8 arrays (cellA_indices, cellB_indices, anchor_dir_xyz, rest_length, stiffness, twist_constraint)\n";
+        std::cout << "  Array count: 20 arrays (cellAIndex, cellBIndex, modeIndex, isActive, zoneA, zoneB, anchorDirection_xyz*2, twistReference_xyzw*2)\n";
         std::cout << "  Elements per array: " << MAX_CONNECTIONS << "\n";
-        std::cout << "  Uint32 arrays: 2 (cellA_indices, cellB_indices)\n";
-        std::cout << "  Float arrays: 6 (anchor_dir_xyz, rest_length, stiffness, twist_constraint)\n";
+        std::cout << "  Uint32 arrays: 6 (cellAIndex, cellBIndex, modeIndex, isActive, zoneA, zoneB)\n";
+        std::cout << "  Float arrays: 14 (anchorDirectionA_xyz, anchorDirectionB_xyz, twistReferenceA_xyzw, twistReferenceB_xyzw)\n";
         std::cout << "  Memory per uint32 array: " << (MAX_CONNECTIONS * sizeof(uint32_t)) << " bytes\n";
         std::cout << "  Memory per float array: " << (MAX_CONNECTIONS * sizeof(float)) << " bytes\n";
         
-        size_t totalAdhesionMemory = (2 * MAX_CONNECTIONS * sizeof(uint32_t)) + (6 * MAX_CONNECTIONS * sizeof(float));
+        size_t totalAdhesionMemory = (6 * MAX_CONNECTIONS * sizeof(uint32_t)) + (14 * MAX_CONNECTIONS * sizeof(float));
         std::cout << "  Total array memory: " << totalAdhesionMemory << " bytes\n";
         std::cout << "  Overhead: " << (sizeof(CPUAdhesionConnections_SoA) - totalAdhesionMemory) << " bytes\n\n";
         
@@ -103,18 +103,18 @@ namespace CPUSoAValidation {
         std::cout << "  mass alignment: " << (mass_addr % SIMD_ALIGNMENT) << " (should be 0)\n";
         
         // Adhesion connection arrays
-        uintptr_t cellA_addr = reinterpret_cast<uintptr_t>(testAdhesionData.cellA_indices.data());
-        uintptr_t anchor_x_addr = reinterpret_cast<uintptr_t>(testAdhesionData.anchor_dir_x.data());
+        uintptr_t cellA_addr = reinterpret_cast<uintptr_t>(testAdhesionData.cellAIndex.data());
+        uintptr_t anchorA_x_addr = reinterpret_cast<uintptr_t>(testAdhesionData.anchorDirectionA_x.data());
         
-        std::cout << "  cellA_indices alignment: " << (cellA_addr % SIMD_ALIGNMENT) << " (should be 0)\n";
-        std::cout << "  anchor_dir_x alignment: " << (anchor_x_addr % SIMD_ALIGNMENT) << " (should be 0)\n";
+        std::cout << "  cellAIndex alignment: " << (cellA_addr % SIMD_ALIGNMENT) << " (should be 0)\n";
+        std::cout << "  anchorDirectionA_x alignment: " << (anchorA_x_addr % SIMD_ALIGNMENT) << " (should be 0)\n";
         
         // Validate all alignments are correct
         bool allAligned = (pos_x_addr % SIMD_ALIGNMENT == 0) &&
                          (vel_x_addr % SIMD_ALIGNMENT == 0) &&
                          (mass_addr % SIMD_ALIGNMENT == 0) &&
                          (cellA_addr % SIMD_ALIGNMENT == 0) &&
-                         (anchor_x_addr % SIMD_ALIGNMENT == 0);
+                         (anchorA_x_addr % SIMD_ALIGNMENT == 0);
         
         if (allAligned) {
             std::cout << "✓ All arrays are properly aligned for SIMD operations\n";
@@ -305,8 +305,8 @@ namespace CPUSoAValidation {
         }
         
         // Calculate SIMD operation efficiency
-        size_t total_float_elements = 17 * MAX_CELLS + 6 * MAX_CONNECTIONS; // Float arrays
-        size_t total_uint32_elements = 3 * MAX_CELLS + 2 * MAX_CONNECTIONS; // Uint32 arrays
+        size_t total_float_elements = 17 * MAX_CELLS + 14 * MAX_CONNECTIONS; // Float arrays (17 cell + 14 adhesion)
+        size_t total_uint32_elements = 3 * MAX_CELLS + 6 * MAX_CONNECTIONS; // Uint32 arrays (3 cell + 6 adhesion)
         size_t simd_float_ops = total_float_elements / 8;
         size_t simd_uint32_ops = total_uint32_elements / 8;
         

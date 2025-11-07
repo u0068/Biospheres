@@ -145,6 +145,9 @@ private:
     void cleanupGPUBuffers();
     void uploadCellDataToGPU();
     
+    // Mode settings conversion (Requirements 4.5)
+    std::vector<GPUModeAdhesionSettings> createModeSettingsFromGenome(const CPUGenomeParameters& genomeParams);
+    
     // Gizmo system methods (reuse existing GPU gizmo infrastructure)
     void initializeGizmoSystem();
     void cleanupGizmoSystem();

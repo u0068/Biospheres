@@ -24,8 +24,8 @@ CPUGenomeParameters CPUGenomeConverter::convertToCPUFormat(const GenomeData& gen
 CPUGenomeParameters CPUGenomeConverter::convertModeToCPUFormat(const ModeSettings& mode) {
     CPUGenomeParameters params{};
     
-    // Convert adhesion parameters
-    params.adhesionStrength = convertAdhesionStrength(mode.adhesionSettings);
+    // Store the actual adhesion settings from the genome
+    params.adhesionSettings = mode.adhesionSettings;
     
     // Convert division parameters
     params.divisionThreshold = convertDivisionThreshold(mode);
@@ -230,12 +230,7 @@ float CPUGenomeConverter::estimatePerformanceImpact(const GenomeData& genomeData
 
 // Private helper methods
 
-float CPUGenomeConverter::convertAdhesionStrength(const AdhesionSettings& adhesion) {
-    // Convert linear spring stiffness to normalized adhesion strength
-    // Map from [0.1, 500.0] to [0.0, 1.0]
-    float normalizedStiffness = std::clamp((adhesion.linearSpringStiffness - 0.1f) / 499.9f, 0.0f, 1.0f);
-    return normalizedStiffness;
-}
+
 
 float CPUGenomeConverter::convertDivisionThreshold(const ModeSettings& mode) {
     // Use split interval as division threshold (age-based division)
