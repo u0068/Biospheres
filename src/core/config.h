@@ -81,4 +81,8 @@ namespace config
 	inline float scrubTimeStep{ 0.1f };	// DEPRECATED: Previously used for time scrubber, now uses fastForwardTimeStep
 	inline float maxAccumulatorTime{ 0.1f };// Maximum amount of time spent on simulating physics per frame. Max physics tpf = maxAccumulatorTime * tickrate
 	inline float maxDeltaTime{ 0.1f };		// The maximum amount of time that can be accumulated by 1 frame
+
+	// ========== CPU Physics Optimization Configuration ==========
+	inline bool useMultithreadedCollisions{ true };	// Enable multi-threaded collision detection for CPU physics
+	inline int collisionThreadCount{ 4 };			// Number of threads to use for collision detection (0 = auto-detect)
 }

@@ -26,6 +26,7 @@ CPUPreviewSystem::CPUPreviewSystem()
     , m_physicsEngine(std::make_unique<CPUSIMDPhysicsEngine>())
     , m_visualSystem(std::make_unique<CPUTripleBufferSystem>())
     , m_genomeManager(std::make_unique<CPUGenomeManager>())
+    , m_lastVisualUpdate(std::chrono::steady_clock::now())
 {
 }
 
@@ -143,9 +144,16 @@ void CPUPreviewSystem::update(float deltaTime) {
             );
         }
 
-        // Update visual data asynchronously for GPU rendering pipeline (unless suppressed)
+        // Update visual data at 60 FPS max (unless suppressed)
         if (m_visualSystem && m_dataManager && !m_suppressVisualUpdates) {
-            m_visualSystem->updateVisualData(m_dataManager->getCellData());
+            auto now = std::chrono::steady_clock::now();
+            float timeSinceLastVisualUpdate = std::chrono::duration<float>(now - m_lastVisualUpdate).count();
+            
+            // Only update visuals if enough time has passed (16.67ms for 60 FPS)
+            if (timeSinceLastVisualUpdate >= MIN_VISUAL_UPDATE_INTERVAL) {
+                m_visualSystem->updateVisualData(m_dataManager->getCellData());
+                m_lastVisualUpdate = now;
+            }
         }
 
         // Update performance metrics
@@ -1068,17 +1076,19 @@ void CPUPreviewSystem::renderRingGizmos(glm::vec2 resolution, const Camera& came
 }
 
 std::vector<GPUModeAdhesionSettings> CPUPreviewSystem::createModeSettingsFromGenome(const CPUGenomeParameters& genomeParams) {
-    // Create mode settings from genome parameters (Requirements 4.1, 4.2, 4.5)
-    // This ensures instant parameter updates when genome settings change
-    
-    std::vector<GPUModeAdhesionSettings> modeSettings;
-    
-    // Create a single mode setting based on current genome parameters
-    GPUModeAdhesionSettings settings;
-    
+    // OPTIMIZATION: Reuse cached vector to avoid repeated allocations every physics step
+    // This function is called every frame during simulation - cache is critical for performance
+
+    // Ensure cache has exactly 1 element
+    if (m_cachedModeSettings.size() != 1) {
+        m_cachedModeSettings.resize(1);
+    }
+
+    GPUModeAdhesionSettings& settings = m_cachedModeSettings[0];
+
     // Check if adhesion is enabled in the genome (bit 8 for adhesion capability)
     bool adhesionEnabled = (genomeParams.cellTypeFlags & (1 << 8)) != 0;
-    
+
     if (adhesionEnabled) {
         // Use the actual adhesion settings from the genome (matching GPU implementation)
         const AdhesionSettings& adhesion = genomeParams.adhesionSettings;
@@ -1108,11 +1118,8 @@ std::vector<GPUModeAdhesionSettings> CPUPreviewSystem::createModeSettingsFromGen
         settings.enableTwistConstraint = 0;
     }
     settings._padding = 0; // Ensure padding is zero
-    
-    // Add the mode setting to the vector
-    modeSettings.push_back(settings);
-    
-    return modeSettings;
+
+    return m_cachedModeSettings;
 }
 
 void CPUPreviewSystem::uploadAdhesionDataToGPU() {

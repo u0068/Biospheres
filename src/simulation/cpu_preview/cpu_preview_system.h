@@ -110,9 +110,15 @@ private:
     
     // Current genome parameters for division logic
     CPUGenomeParameters m_currentGenomeParams;
+    std::vector<GPUModeAdhesionSettings> m_cachedModeSettings; // Cached to avoid repeated allocations
 
     // Performance monitoring
     std::chrono::steady_clock::time_point m_frameStart;
+    
+    // Visual update rate limiting (60 FPS max)
+    std::chrono::steady_clock::time_point m_lastVisualUpdate;
+    static constexpr float TARGET_VISUAL_FPS = 60.0f;
+    static constexpr float MIN_VISUAL_UPDATE_INTERVAL = 1.0f / TARGET_VISUAL_FPS; // ~16.67ms
     
     // GPU gizmo system integration (reuses existing GPU gizmo infrastructure)
     GLuint m_gpuCellBuffer = 0;

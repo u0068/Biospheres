@@ -6,6 +6,8 @@
 #include <functional>
 #include <cmath>
 #include <algorithm>
+#include <thread>
+#include <atomic>
 #include <immintrin.h> // AVX2 SIMD intrinsics
 #include "cpu_soa_data_manager.h"
 #include "cpu_adhesion_force_calculator.h"
@@ -272,7 +274,7 @@ private:
 
     // Spatial grid system (CPU cache optimized)
     struct CPUSpatialGrid {
-        static constexpr int GRID_SIZE = 64;
+        static constexpr int GRID_SIZE = 32;
         static constexpr float CELL_SIZE = 100.0f / GRID_SIZE; // config::WORLD_SIZE / GRID_SIZE
         static constexpr int MAX_CELLS_PER_GRID = 32; // CPU cache optimization
         static constexpr int TOTAL_GRID_CELLS = GRID_SIZE * GRID_SIZE * GRID_SIZE;

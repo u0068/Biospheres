@@ -1,5 +1,6 @@
 #include "cpu_simd_physics_engine.h"
 #include "cpu_division_inheritance_handler.h"
+#include "../../core/config.h"
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -9,12 +10,10 @@
 
 CPUSIMDPhysicsEngine::CPUSIMDPhysicsEngine() 
 {
-    // Only create spatial grid if not in preview mode
-    if (!m_previewMode) {
-        m_spatialGrid = std::make_unique<CPUSpatialGrid>();
-        m_spatialGrid->initialize();
-        m_spatialGrid->clear();
-    }
+    // Always create spatial grid for collision optimization (even in preview mode)
+    m_spatialGrid = std::make_unique<CPUSpatialGrid>();
+    m_spatialGrid->initialize();
+    m_spatialGrid->clear();
     
     // Initialize complete adhesion force calculator (GPU-equivalent)
     m_adhesionCalculator = std::make_unique<CPUAdhesionForceCalculator>();
@@ -108,63 +107,104 @@ void CPUSIMDPhysicsEngine::simulateStep(CPUCellPhysics_SoA& cells,
 void CPUSIMDPhysicsEngine::calculateCollisionForces(CPUCellPhysics_SoA& cells) {
     // Reset accelerations using SIMD
     simd_vec3_scale(cells.acc_x.data(), cells.acc_y.data(), cells.acc_z.data(), 0.0f, cells.activeCellCount);
-    
+
     // Skip collision detection if there's only one cell (major optimization)
     if (cells.activeCellCount <= 1) {
         return;
     }
-    
+
     // Process collisions in cache-friendly batches for optimal CPU performance
     const size_t batchSize = BLOCK_SIZE; // 32 cells per batch for cache optimization
-    
-    for (size_t batchStart = 0; batchStart < cells.activeCellCount; batchStart += batchSize) {
-        size_t batchCount = std::min(batchSize, cells.activeCellCount - batchStart);
-        processCellBatch(cells, batchStart, batchCount);
+
+    // Single-threaded collision detection (multithreading disabled for preview mode)
+    // OPTIMIZATION: Use multi-threading for collision detection if enabled and beneficial
+    if (false && cells.activeCellCount >= 64) {
+        // Determine number of threads to use
+        int threadCount = config::collisionThreadCount;
+        if (threadCount <= 0) {
+            threadCount = std::max(1u, std::thread::hardware_concurrency() / 2); // Use half of available cores
+        }
+        threadCount = std::min(threadCount, 8); // Cap at 8 threads for diminishing returns
+
+        // Calculate batches per thread
+        size_t totalBatches = (cells.activeCellCount + batchSize - 1) / batchSize;
+        size_t batchesPerThread = std::max(size_t(1), totalBatches / threadCount);
+
+        std::vector<std::thread> threads;
+        threads.reserve(threadCount);
+
+        // Launch worker threads
+        for (int t = 0; t < threadCount; ++t) {
+            size_t threadStartBatch = t * batchesPerThread;
+            size_t threadEndBatch = (t == threadCount - 1) ? totalBatches : (t + 1) * batchesPerThread;
+
+            if (threadStartBatch >= totalBatches) break;
+
+            threads.emplace_back([this, &cells, batchSize, threadStartBatch, threadEndBatch]() {
+                for (size_t batch = threadStartBatch; batch < threadEndBatch; ++batch) {
+                    size_t batchStart = batch * batchSize;
+                    size_t batchCount = std::min(batchSize, cells.activeCellCount - batchStart);
+                    processCellBatch(cells, batchStart, batchCount);
+                }
+            });
+        }
+
+        // Wait for all threads to complete
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    } else {
+        // Single-threaded path for small cell counts
+        for (size_t batchStart = 0; batchStart < cells.activeCellCount; batchStart += batchSize) {
+            size_t batchCount = std::min(batchSize, cells.activeCellCount - batchStart);
+            processCellBatch(cells, batchStart, batchCount);
+        }
     }
-    
+
     // Apply GPU-style acceleration damping (behavioral equivalence)
     applyAccelerationDamping(cells);
 }
 
-void CPUSIMDPhysicsEngine::calculateAdhesionForces(CPUCellPhysics_SoA& cells, 
+void CPUSIMDPhysicsEngine::calculateAdhesionForces(CPUCellPhysics_SoA& cells,
                                                    const CPUAdhesionConnections_SoA& adhesions,
                                                    const std::vector<GPUModeAdhesionSettings>& modeSettings) {
     // Skip adhesion forces if no connections (major optimization)
     if (adhesions.activeConnectionCount == 0) {
         return;
     }
-    
-    // Use complete GPU-equivalent adhesion force calculator (Requirements 1.1, 1.2, 1.3, 1.4, 1.5)
-    if (m_adhesionCalculator) {
-        // Use per-cell adhesion processing matching GPU approach
-        processAdhesionForcesPerCell(cells, adhesions, modeSettings);
-    } else {
-        // Fallback: Use SIMD batch processor for optimal performance (Requirements 5.1-5.5)
-        if (m_simdBatchProcessor && adhesions.activeConnectionCount >= 8) {
-            // Track performance metrics
-            auto startTime = std::chrono::steady_clock::now();
-            
-            // Use SIMD batch processing for 8+ connections
-            m_simdBatchProcessor->processAllConnections(cells, adhesions, modeSettings);
-            
-            // Update performance metrics
-            auto endTime = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-            m_simdMetrics.lastBatchProcessingTime = duration.count() / 1000.0f; // Convert to milliseconds
-            m_simdMetrics.totalBatchesProcessed += (adhesions.activeConnectionCount + 7) / 8;
-            m_simdMetrics.totalConnectionsProcessed += adhesions.activeConnectionCount;
-            
-            // Update average batch time
-            if (m_simdMetrics.totalBatchesProcessed > 0) {
-                m_simdMetrics.averageBatchTime = m_simdMetrics.lastBatchProcessingTime / 
-                                               ((adhesions.activeConnectionCount + 7) / 8);
-            }
-        } else {
-            // Fallback to old implementation if neither processor is available
-            // Process connections individually using old method with mode settings
-            for (size_t i = 0; i < adhesions.activeConnectionCount; ++i) {
-                processAdhesionConnection(static_cast<uint32_t>(i), adhesions, cells, modeSettings);
-            }
+
+    // OPTIMIZATION: Use SIMD batch processor directly for best performance
+    // This avoids the massive memory copying in processAdhesionForcesPerCell
+    if (m_simdBatchProcessor && adhesions.activeConnectionCount >= 8) {
+        // Track performance metrics
+        auto startTime = std::chrono::steady_clock::now();
+
+        // Use SIMD batch processing for 8+ connections (Requirements 5.1-5.5)
+        m_simdBatchProcessor->processAllConnections(cells, adhesions, modeSettings);
+
+        // Update performance metrics
+        auto endTime = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+        m_simdMetrics.lastBatchProcessingTime = duration.count() / 1000.0f; // Convert to milliseconds
+        m_simdMetrics.totalBatchesProcessed += (adhesions.activeConnectionCount + 7) / 8;
+        m_simdMetrics.totalConnectionsProcessed += adhesions.activeConnectionCount;
+
+        // Update average batch time
+        if (m_simdMetrics.totalBatchesProcessed > 0) {
+            m_simdMetrics.averageBatchTime = m_simdMetrics.lastBatchProcessingTime /
+                                           ((adhesions.activeConnectionCount + 7) / 8);
+        }
+    } else if (adhesions.activeConnectionCount > 0) {
+        // Fallback for < 8 connections: process individually using optimized direct method
+        // Reset angular accelerations for torque accumulation
+        std::fill(cells.angularAcc_x.begin(), cells.angularAcc_x.begin() + cells.activeCellCount, 0.0f);
+        std::fill(cells.angularAcc_y.begin(), cells.angularAcc_y.begin() + cells.activeCellCount, 0.0f);
+        std::fill(cells.angularAcc_z.begin(), cells.angularAcc_z.begin() + cells.activeCellCount, 0.0f);
+
+        // Process connections individually using optimized method
+        for (size_t i = 0; i < adhesions.activeConnectionCount; ++i) {
+            if (adhesions.isActive[i] == 0) continue;
+            processAdhesionConnection(static_cast<uint32_t>(i), adhesions, cells, modeSettings);
         }
     }
 }
@@ -460,13 +500,13 @@ void CPUSIMDPhysicsEngine::updateOrientations(CPUCellPhysics_SoA& cells, float d
 }
 
 void CPUSIMDPhysicsEngine::updateSpatialGrid(const CPUCellPhysics_SoA& cells) {
-    // Skip spatial grid entirely in preview mode (max 256 cells)
-    if (m_previewMode || !m_spatialGrid) {
+    // Always use spatial grid for collision optimization (even in preview mode)
+    if (!m_spatialGrid) {
         return;
     }
     
-    // Skip spatial grid for small cell counts (direct collision is faster)
-    if (cells.activeCellCount <= 8) {
+    // Only skip for very small cell counts where direct collision is faster (2 or fewer)
+    if (cells.activeCellCount <= 2) {
         return;
     }
     
@@ -518,8 +558,8 @@ void CPUSIMDPhysicsEngine::applyAccelerationDamping(CPUCellPhysics_SoA& cells) {
 void CPUSIMDPhysicsEngine::processCellBatch(CPUCellPhysics_SoA& cells, size_t startIdx, size_t count) {
     const size_t endIdx = std::min(startIdx + count, cells.activeCellCount);
     
-    // Always use direct collision detection in preview mode (max 256 cells)
-    if (m_previewMode || !m_spatialGrid || cells.activeCellCount <= 8) {
+    // Use direct collision detection only for very small cell counts (2 or fewer)
+    if (!m_spatialGrid || cells.activeCellCount <= 2) {
         for (size_t i = startIdx; i < endIdx; ++i) {
             for (size_t j = i + 1; j < cells.activeCellCount; ++j) {
                 processCollisionPair(static_cast<uint32_t>(i), static_cast<uint32_t>(j), cells);
@@ -528,7 +568,7 @@ void CPUSIMDPhysicsEngine::processCellBatch(CPUCellPhysics_SoA& cells, size_t st
         return;
     }
     
-    // Use spatial grid for larger cell counts in non-preview mode
+    // Use spatial grid for 3+ cells (reduces O(n²) to O(n) for typical cases)
     prefetchCellData(cells, startIdx, endIdx - startIdx);
     
     for (size_t i = startIdx; i < endIdx; ++i) {
@@ -559,41 +599,49 @@ void CPUSIMDPhysicsEngine::prefetchCellData(const CPUCellPhysics_SoA& cells, siz
 
 void CPUSIMDPhysicsEngine::processCollisionPair(uint32_t cellA, uint32_t cellB, CPUCellPhysics_SoA& cells) {
     // Behavioral equivalence with GPU: cell_physics_spatial.comp collision detection
-    glm::vec3 myPos(cells.pos_x[cellA], cells.pos_y[cellA], cells.pos_z[cellA]);
-    glm::vec3 otherPos(cells.pos_x[cellB], cells.pos_y[cellB], cells.pos_z[cellB]);
-    
-    float myMass = cells.mass[cellA];
-    float otherMass = cells.mass[cellB];
-    
-    // GPU algorithm: radius = pow(mass, 1/3)
-    float myRadius = std::pow(myMass, 1.0f/3.0f);
-    float otherRadius = std::pow(otherMass, 1.0f/3.0f);
-    
-    glm::vec3 delta = myPos - otherPos;
-    float distance = glm::length(delta);
-    
-    // Early distance check (GPU optimization)
-    if (distance > 4.0f) {
-        return; // Approximate max interaction distance
+
+    // OPTIMIZATION: Use pre-calculated radius from SoA data instead of recalculating pow(mass, 1/3)
+    float myRadius = cells.radius[cellA];
+    float otherRadius = cells.radius[cellB];
+
+    // Early rejection based on radius - skip if cells are too far apart
+    float maxInteractionDist = myRadius + otherRadius + 0.5f;
+
+    // Calculate distance squared first (cheaper than full distance)
+    float dx = cells.pos_x[cellA] - cells.pos_x[cellB];
+    float dy = cells.pos_y[cellA] - cells.pos_y[cellB];
+    float dz = cells.pos_z[cellA] - cells.pos_z[cellB];
+    float distSq = dx * dx + dy * dy + dz * dz;
+
+    // Early distance check using squared distance (GPU optimization)
+    float maxDistSq = maxInteractionDist * maxInteractionDist;
+    if (distSq > maxDistSq || distSq < 0.000001f) {
+        return;
     }
-    
+
+    // Now calculate actual distance only if needed
+    float distance = std::sqrt(distSq);
     float minDistance = myRadius + otherRadius;
-    
-    if (distance < minDistance && distance > 0.001f) {
+
+    if (distance < minDistance) {
         // Collision detected - apply repulsion force (identical to GPU)
-        glm::vec3 direction = glm::normalize(delta);
+        float invDistance = 1.0f / distance;
+        glm::vec3 direction(dx * invDistance, dy * invDistance, dz * invDistance);
+
         float overlap = minDistance - distance;
         float hardness = 10.0f; // GPU constant
         glm::vec3 totalForce = direction * overlap * hardness;
-        
+
         // Calculate acceleration (F = ma, so a = F/m) - GPU algorithm
+        float myMass = cells.mass[cellA];
+        float otherMass = cells.mass[cellB];
         glm::vec3 acceleration = totalForce / myMass;
-        
+
         // Apply acceleration to cell A
         cells.acc_x[cellA] += acceleration.x;
         cells.acc_y[cellA] += acceleration.y;
         cells.acc_z[cellA] += acceleration.z;
-        
+
         // Newton's third law: equal and opposite force on cell B
         glm::vec3 otherAcceleration = -totalForce / otherMass;
         cells.acc_x[cellB] += otherAcceleration.x;
