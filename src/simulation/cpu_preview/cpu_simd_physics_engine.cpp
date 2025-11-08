@@ -1308,6 +1308,17 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
             break; // No space available, cancel remaining splits
         }
         
+        // Initialize genome orientation if not already set (first division)
+        // Check if parent's genome orientation is uninitialized (all zeros or invalid)
+        if (cells.genomeQuat_w[cellIndex] == 0.0f && cells.genomeQuat_x[cellIndex] == 0.0f &&
+            cells.genomeQuat_y[cellIndex] == 0.0f && cells.genomeQuat_z[cellIndex] == 0.0f) {
+            // Initialize parent's genome orientation to identity quaternion
+            cells.genomeQuat_w[cellIndex] = 1.0f;
+            cells.genomeQuat_x[cellIndex] = 0.0f;
+            cells.genomeQuat_y[cellIndex] = 0.0f;
+            cells.genomeQuat_z[cellIndex] = 0.0f;
+        }
+        
         // Create daughter cell
         uint32_t daughterIndex = static_cast<uint32_t>(cells.activeCellCount);
         cells.activeCellCount++;
@@ -1419,6 +1430,20 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
             glm::quat orientationA = genomeParams ? genomeParams->childOrientationA : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             glm::quat orientationB = genomeParams ? genomeParams->childOrientationB : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             
+            // GPU behavior: Save parent's genome orientation BEFORE updating (needed for inheritance)
+            // GPU uses cell.genomeOrientation which is the parent's orientation before division
+            glm::quat parentGenomeOrientationBeforeDivision(
+                cells.genomeQuat_w[cellIndex],
+                cells.genomeQuat_x[cellIndex],
+                cells.genomeQuat_y[cellIndex],
+                cells.genomeQuat_z[cellIndex]
+            );
+            
+            // GPU behavior: Update genome orientations for child cells
+            // GPU does: childA.genomeOrientation = normalize(quatMultiply(parent.genomeOrientation, mode.orientationA))
+            glm::quat childAGenomeOrientation = glm::normalize(parentGenomeOrientationBeforeDivision * orientationA);
+            glm::quat childBGenomeOrientation = glm::normalize(parentGenomeOrientationBeforeDivision * orientationB);
+            
             // CRITICAL FIX: Use splitDirection directly from genome, NOT perpendicular plane
             // The inheritance handler expects splitDirection for zone classification
             
@@ -1457,7 +1482,8 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
             allModes.push_back(parentMode);
 
             // Perform complete adhesion inheritance with geometric anchor placement
-            // CRITICAL FIX: Pass splitDirection (NOT splitPlane) - handler uses it for zone classification
+            // CRITICAL: Inheritance must happen BEFORE updating genome orientations
+            // GPU uses parent's genome orientation (before division) for inheritance calculations
             m_divisionInheritanceHandler->inheritAdhesionsOnDivision(
                 cellIndex,           // Parent cell index
                 cellIndex,           // Child A index (reuses parent index)
@@ -1473,6 +1499,18 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
                 parentMode,          // Parent mode data
                 allModes             // All mode data
             );
+            
+            // NOW update genome orientations for child cells (AFTER inheritance)
+            // This matches GPU behavior: inheritance uses parent's orientation, then cells are updated
+            cells.genomeQuat_w[cellIndex] = childAGenomeOrientation.w;
+            cells.genomeQuat_x[cellIndex] = childAGenomeOrientation.x;
+            cells.genomeQuat_y[cellIndex] = childAGenomeOrientation.y;
+            cells.genomeQuat_z[cellIndex] = childAGenomeOrientation.z;
+            
+            cells.genomeQuat_w[daughterIndex] = childBGenomeOrientation.w;
+            cells.genomeQuat_x[daughterIndex] = childBGenomeOrientation.x;
+            cells.genomeQuat_y[daughterIndex] = childBGenomeOrientation.y;
+            cells.genomeQuat_z[daughterIndex] = childBGenomeOrientation.z;
         }
     }
 }
