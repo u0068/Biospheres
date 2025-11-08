@@ -359,8 +359,8 @@ namespace CPUSoAValidation {
         static_assert(sizeof(CPUAdhesionConnections_SoA) < 1024 * 1024, "CPUAdhesionConnections_SoA is too large");
         
         // Validate parameter structures are efficiently packed
-        static_assert(sizeof(CPUGenomeParameters) <= 128, "CPUGenomeParameters should be cache-friendly");
-        static_assert(sizeof(CPUCellParameters) <= 192, "CPUCellParameters should be cache-friendly");
+        static_assert(sizeof(CPUGenomeParameters) <= 200, "CPUGenomeParameters should be cache-friendly (increased for child adhesion flags)");
+        static_assert(sizeof(CPUCellParameters) <= 200, "CPUCellParameters should be cache-friendly (increased for child adhesion flags)");
         static_assert(sizeof(CPUAdhesionParameters) <= 80, "CPUAdhesionParameters should be cache-friendly");
     }
 

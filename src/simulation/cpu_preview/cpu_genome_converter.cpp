@@ -54,7 +54,20 @@ CPUGenomeParameters CPUGenomeConverter::convertModeToCPUFormat(const ModeSetting
     // In a full implementation, this would come from the genome's mode hierarchy
     params.childModeA = 0; // Default to first mode
     params.childModeB = 0; // Default to first mode
-    
+
+    // Convert child orientations from mode settings
+    params.childOrientationA = mode.childA.orientation;
+    params.childOrientationB = mode.childB.orientation;
+
+    // Convert child adhesion inheritance flags from mode settings to bit flags
+    params.divisionFlags = 0;
+    if (mode.childA.keepAdhesion) {
+        params.divisionFlags |= (1 << 0); // Bit 0 for child A
+    }
+    if (mode.childB.keepAdhesion) {
+        params.divisionFlags |= (1 << 1); // Bit 1 for child B
+    }
+
     return params;
 }
 

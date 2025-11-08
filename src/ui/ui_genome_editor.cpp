@@ -293,7 +293,8 @@ void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& scene
                 defaultCell.radius = 1.0f;
                 defaultCell.cellType = 0;
                 defaultCell.genomeID = 0;
-                defaultCell.genome = CPUGenomeConverter::convertToCPUFormat(currentGenome);
+                // Convert the currently selected mode (not just initial mode) so child orientation changes are visible
+                defaultCell.genome = CPUGenomeConverter::convertToCPUFormat(currentGenome, selectedModeIndex);
                 
                 cpuPreviewSystem->addCell(defaultCell);
                 

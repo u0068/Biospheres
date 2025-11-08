@@ -75,13 +75,28 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         glm::vec3 neighborPos(cells.pos_x[neighborIndex], cells.pos_y[neighborIndex], cells.pos_z[neighborIndex]);
         float neighborRadius = cells.radius[neighborIndex];
         
-        // Calculate bond direction from parent to neighbor
-        glm::vec3 bondDirection = glm::normalize(neighborPos - parentPos);
+        // CRITICAL FIX: Use stored anchor direction in LOCAL SPACE (matches GPU implementation)
+        // GPU uses the anchor direction stored in the adhesion connection, NOT world-space positions
+        // Get the parent's anchor direction from the connection (in parent's local frame)
+        glm::vec3 localAnchorDirection;
+        if (parentIsA) {
+            localAnchorDirection = glm::vec3(
+                adhesions.anchorDirectionA_x[connectionIndex],
+                adhesions.anchorDirectionA_y[connectionIndex],
+                adhesions.anchorDirectionA_z[connectionIndex]
+            );
+        } else {
+            localAnchorDirection = glm::vec3(
+                adhesions.anchorDirectionB_x[connectionIndex],
+                adhesions.anchorDirectionB_y[connectionIndex],
+                adhesions.anchorDirectionB_z[connectionIndex]
+            );
+        }
 
-        // CRITICAL FIX: Classify using splitDirection from parent mode, NOT splitPlane!
-        // This matches GPU implementation exactly
+        // CRITICAL FIX: Classify using LOCAL anchor direction and splitDirection from genome
+        // This matches GPU implementation exactly - zones are classified in parent's local frame
         glm::vec3 splitDirection = glm::vec3(parentMode.splitDirection);
-        AdhesionZone zone = classifyBondDirection(bondDirection, splitDirection);
+        AdhesionZone zone = classifyBondDirection(localAnchorDirection, splitDirection);
 
         // Extract split direction and offset for geometric calculations (matching GPU)
         float splitMagnitude = glm::length(splitDirection);
@@ -97,16 +112,6 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
         
         // Get original connection properties
         uint32_t connectionModeIndex = adhesions.modeIndex[connectionIndex];
-        glm::vec3 originalAnchorA(
-            adhesions.anchorDirectionA_x[connectionIndex],
-            adhesions.anchorDirectionA_y[connectionIndex],
-            adhesions.anchorDirectionA_z[connectionIndex]
-        );
-        glm::vec3 originalAnchorB(
-            adhesions.anchorDirectionB_x[connectionIndex],
-            adhesions.anchorDirectionB_y[connectionIndex],
-            adhesions.anchorDirectionB_z[connectionIndex]
-        );
 
         // For the neighbor, we don't have direct mode info in the SoA, so we use index 0 as default
         // In a full implementation, this should be tracked separately
@@ -133,11 +138,20 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             cells.quat_z[neighborIndex]
         );
         
-        // Get local anchor direction in parent's frame
-        glm::vec3 localAnchorDirection = parentIsA ? originalAnchorA : originalAnchorB;
+        // localAnchorDirection already extracted above (in parent's local frame)
         
         // Calculate center-to-center distance using parent's adhesion rest length
         float centerToCenterDist = restLength + parentRadius + neighborRadius;
+        
+        // CRITICAL FIX: Transform local anchor direction to parent's world frame using genome orientation
+        // GPU does: rotateVectorByQuaternion(anchorDirection, cell.genomeOrientation)
+        glm::quat parentGenomeOrientation(
+            cells.genomeQuat_w[parentCellIndex],
+            cells.genomeQuat_x[parentCellIndex],
+            cells.genomeQuat_y[parentCellIndex],
+            cells.genomeQuat_z[parentCellIndex]
+        );
+        glm::vec3 worldAnchorDirection = parentGenomeOrientation * localAnchorDirection;
         
         // Apply inheritance rules based on zone classification (Requirements 8.2, 8.3, 8.4)
         if (zone == AdhesionZone::ZoneA && childBKeepAdhesion) {
@@ -145,7 +159,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
 
             // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
             glm::vec3 childBPos_parentFrame = -splitDir_parent * splitOffsetMagnitude;
-            glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
+            glm::vec3 neighborPos_parentFrame = worldAnchorDirection * centerToCenterDist;
             
             // Child anchor: direction from child to neighbor, transformed by genome orientation
             glm::vec3 directionToNeighbor_parentFrame = glm::normalize(neighborPos_parentFrame - childBPos_parentFrame);
@@ -153,7 +167,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             
             // Neighbor anchor: direction from neighbor to child, transformed to neighbor's frame
             glm::vec3 directionToChild_parentFrame = glm::normalize(childBPos_parentFrame - neighborPos_parentFrame);
-            glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentOrientation;
+            glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentGenomeOrientation;
             glm::vec3 neighborAnchorDirection = glm::normalize(relativeRotation * directionToChild_parentFrame);
             
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
@@ -185,7 +199,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
 
             // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
             glm::vec3 childAPos_parentFrame = splitDir_parent * splitOffsetMagnitude;
-            glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
+            glm::vec3 neighborPos_parentFrame = worldAnchorDirection * centerToCenterDist;
             
             // Child anchor: direction from child to neighbor, transformed by genome orientation
             glm::vec3 directionToNeighbor_parentFrame = glm::normalize(neighborPos_parentFrame - childAPos_parentFrame);
@@ -193,7 +207,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             
             // Neighbor anchor: direction from neighbor to child, transformed to neighbor's frame
             glm::vec3 directionToChild_parentFrame = glm::normalize(childAPos_parentFrame - neighborPos_parentFrame);
-            glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentOrientation;
+            glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentGenomeOrientation;
             glm::vec3 neighborAnchorDirection = glm::normalize(relativeRotation * directionToChild_parentFrame);
             
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
@@ -225,7 +239,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             if (childAKeepAdhesion) {
                 // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
                 glm::vec3 childAPos_parentFrame = splitDir_parent * splitOffsetMagnitude;
-                glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
+                glm::vec3 neighborPos_parentFrame = worldAnchorDirection * centerToCenterDist;
                 
                 // Child anchor: direction from child to neighbor, transformed by genome orientation
                 glm::vec3 directionToNeighbor_parentFrame = glm::normalize(neighborPos_parentFrame - childAPos_parentFrame);
@@ -233,7 +247,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
                 
                 // Neighbor anchor: direction from neighbor to child, transformed to neighbor's frame
                 glm::vec3 directionToChild_parentFrame = glm::normalize(childAPos_parentFrame - neighborPos_parentFrame);
-                glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentOrientation;
+                glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentGenomeOrientation;
                 glm::vec3 neighborAnchorDirection = glm::normalize(relativeRotation * directionToChild_parentFrame);
                 
                 // Preserve original side assignment
@@ -262,7 +276,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
             if (childBKeepAdhesion) {
                 // Calculate positions in parent frame for geometric anchor placement (MATCHES GPU)
                 glm::vec3 childBPos_parentFrame = -splitDir_parent * splitOffsetMagnitude;
-                glm::vec3 neighborPos_parentFrame = localAnchorDirection * centerToCenterDist;
+                glm::vec3 neighborPos_parentFrame = worldAnchorDirection * centerToCenterDist;
                 
                 // Child anchor: direction from child to neighbor, transformed by genome orientation
                 glm::vec3 directionToNeighbor_parentFrame = glm::normalize(neighborPos_parentFrame - childBPos_parentFrame);
@@ -270,7 +284,7 @@ void CPUDivisionInheritanceHandler::inheritAdhesionsOnDivision(
                 
                 // Neighbor anchor: direction from neighbor to child, transformed to neighbor's frame
                 glm::vec3 directionToChild_parentFrame = glm::normalize(childBPos_parentFrame - neighborPos_parentFrame);
-                glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentOrientation;
+                glm::quat relativeRotation = glm::inverse(neighborOrientation) * parentGenomeOrientation;
                 glm::vec3 neighborAnchorDirection = glm::normalize(relativeRotation * directionToChild_parentFrame);
                 
                 // Preserve original side assignment

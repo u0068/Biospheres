@@ -74,6 +74,8 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
         
         if (sliderChanged)
         {
+            float previousTime = sceneManager.getPreviewSimulationTime();
+            
             // Update input buffer when slider changes
             snprintf(timeInputBuffer, sizeof(timeInputBuffer), "%.2f", currentTime);
             targetTime = currentTime;
@@ -84,8 +86,14 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             // Ensure simulation stays paused (preview simulation is always manual)
             sceneManager.setPaused(true);
             
-            // Always trigger complete resimulation for every slider movement
-            needsSimulationReset = true;
+            // Only trigger resimulation if moving backward
+            // For forward movements, just continue simulating from current state
+            if (currentTime < previousTime) {
+                needsSimulationReset = true;
+            } else {
+                // Moving forward - just continue simulation
+                needsSimulationReset = false;
+            }
         }
         
         // No need for release-based triggering since we trigger on every movement
@@ -106,32 +114,38 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             ImVec2 slider_min = ImGui::GetItemRectMin();
             ImVec2 slider_max = ImGui::GetItemRectMax();
-            
+
             // Draw hover marker with time reference
             if (ImGui::IsItemHovered())
             {
                 ImVec2 mouse_pos = ImGui::GetMousePos();
-                
-                // Calculate the time at mouse position
-                float slider_width = slider_max.x - slider_min.x;
-                float mouse_x = mouse_pos.x - slider_min.x;
-                float hover_ratio = std::max(0.0f, std::min(1.0f, mouse_x / slider_width));
-                float hover_time = hover_ratio * maxTime;
-                
+
+                // Account for ImGui's internal padding in SliderFloat
+                // ImGui uses grab_padding which is typically style.GrabMinSize * 0.5f
+                const float grab_padding = ImGui::GetStyle().GrabMinSize * 0.5f;
+                const float slider_usable_sz = (slider_max.x - slider_min.x) - grab_padding * 2.0f;
+                const float slider_usable_pos_min = slider_min.x + grab_padding;
+
+                // Calculate the time at mouse position using ImGui's internal logic
+                float mouse_abs_pos = mouse_pos.x;
+                float clicked_t = (slider_usable_sz > 0.0f) ? std::max(0.0f, std::min(1.0f, (mouse_abs_pos - slider_usable_pos_min) / slider_usable_sz)) : 0.0f;
+                float hover_time = 0.0f + clicked_t * (maxTime - 0.0f);
+
+                // Calculate marker position using the same ratio
+                float marker_x = slider_usable_pos_min + clicked_t * slider_usable_sz;
+
                 // Draw vertical line at mouse position
                 ImU32 marker_color = IM_COL32(0, 255, 255, 200); // Cyan
-                float marker_x = slider_min.x + hover_ratio * slider_width;
                 draw_list->AddLine(
-                    ImVec2(marker_x, slider_min.y - 5.0f), 
-                    ImVec2(marker_x, slider_max.y + 5.0f), 
-                    marker_color, 
+                    ImVec2(marker_x, slider_min.y - 5.0f),
+                    ImVec2(marker_x, slider_max.y + 5.0f),
+                    marker_color,
                     3.0f
                 );
-                
+
                 // Draw time reference tooltip
                 ImGui::BeginTooltip();
-                ImGui::Text("Time: %.3f s", hover_time);
-                ImGui::Text("Complete resimulation from 0 to %.3f s", hover_time);
+                ImGui::Text("Time: %.2f s", hover_time);
                 ImGui::EndTooltip();
             }
         }
@@ -179,10 +193,8 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
                 updateKeyframes(cellManager, maxTime);
             }
         }
-        
-        // Complete resimulation info
-        ImGui::Text("Mode: Complete resimulation from time 0");
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Every slider movement triggers full resimulation");        // Handle time scrubbing - always do complete resimulation from scratch
+
+        // Handle time scrubbing - always do complete resimulation from scratch
         if (needsSimulationReset && isScrubbingTime)
         {
             if (cpuPreviewSystem)
@@ -245,6 +257,31 @@ void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& scene
             {
                 isScrubbingTime = false;
                 // Keep simulation paused - preview simulation is always manual
+                sceneManager.setPaused(true);
+            }
+        }
+        
+        // Handle forward-only simulation (no reset needed)
+        if (isScrubbingTime && !needsSimulationReset && cpuPreviewSystem)
+        {
+            float previousTime = sceneManager.getPreviewSimulationTime();
+            float deltaTime = targetTime - previousTime;
+            
+            if (deltaTime > 0.0f)
+            {
+                try {
+                    // Just simulate forward from current state
+                    cpuPreviewSystem->fastForward(deltaTime, config::resimulationTimeStep);
+                    sceneManager.setPreviewSimulationTime(targetTime);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error during forward simulation: " << e.what() << std::endl;
+                }
+            }
+            
+            // Mark scrubbing as complete if slider is not active
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                isScrubbingTime = false;
                 sceneManager.setPaused(true);
             }
         }

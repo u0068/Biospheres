@@ -135,12 +135,15 @@ struct CPUGenomeParameters {
     float mutationRate;
     glm::vec3 preferredDirection;
     glm::vec3 modeColor;  // RGB color for this mode
-    uint32_t cellTypeFlags;
-    
+
     // Cell division parameters (matching GPU implementation)
     glm::vec3 splitDirection;  // Direction vector for cell division
+    glm::quat childOrientationA; // Orientation quaternion for child A
+    glm::quat childOrientationB; // Orientation quaternion for child B
+    uint32_t cellTypeFlags;
     uint32_t childModeA;       // Mode index for child A
     uint32_t childModeB;       // Mode index for child B
+    uint32_t divisionFlags;    // Bit flags: bit 0 = childAKeepAdhesion, bit 1 = childBKeepAdhesion
 };
 
 // CPU Cell creation parameters

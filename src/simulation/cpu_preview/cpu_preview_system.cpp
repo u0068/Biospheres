@@ -530,10 +530,13 @@ void CPUPreviewSystem::uploadCellDataToGPU() {
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, gpuCells.size() * sizeof(ComputeCell), gpuCells.data());
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     
-    // Upload mode data (create a simple mode with split direction)
+    // Upload mode data (create a simple mode with split direction and child orientations)
     GPUMode mode{};
     mode.splitDirection = glm::vec4(m_currentGenomeParams.splitDirection, 0.0f);
     mode.splitInterval = m_currentGenomeParams.divisionThreshold;
+    // Set child orientations from genome parameters
+    mode.orientationA = m_currentGenomeParams.childOrientationA;
+    mode.orientationB = m_currentGenomeParams.childOrientationB;
     
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_gpuModeBuffer);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GPUMode), &mode);

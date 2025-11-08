@@ -1325,10 +1325,30 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
         cells.acc_y[daughterIndex] = 0.0f;
         cells.acc_z[daughterIndex] = 0.0f;
         
-        cells.quat_x[daughterIndex] = cells.quat_x[cellIndex];
-        cells.quat_y[daughterIndex] = cells.quat_y[cellIndex];
-        cells.quat_z[daughterIndex] = cells.quat_z[cellIndex];
-        cells.quat_w[daughterIndex] = cells.quat_w[cellIndex];
+        // Apply child orientations from genome parameters (matching GPU implementation)
+        // Get parent orientation
+        glm::quat parentOrientation(cells.quat_w[cellIndex], cells.quat_x[cellIndex], 
+                                     cells.quat_y[cellIndex], cells.quat_z[cellIndex]);
+        
+        // Get child orientation deltas from genome parameters
+        glm::quat childOrientationA = genomeParams ? genomeParams->childOrientationA : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        glm::quat childOrientationB = genomeParams ? genomeParams->childOrientationB : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        
+        // Apply child orientations: newOrientation = parentOrientation * childOrientation (matching GPU)
+        glm::quat newOrientationA = glm::normalize(parentOrientation * childOrientationA);
+        glm::quat newOrientationB = glm::normalize(parentOrientation * childOrientationB);
+        
+        // Apply child A orientation to parent cell (reusing parent index)
+        cells.quat_w[cellIndex] = newOrientationA.w;
+        cells.quat_x[cellIndex] = newOrientationA.x;
+        cells.quat_y[cellIndex] = newOrientationA.y;
+        cells.quat_z[cellIndex] = newOrientationA.z;
+        
+        // Apply child B orientation to daughter cell
+        cells.quat_w[daughterIndex] = newOrientationB.w;
+        cells.quat_x[daughterIndex] = newOrientationB.x;
+        cells.quat_y[daughterIndex] = newOrientationB.y;
+        cells.quat_z[daughterIndex] = newOrientationB.z;
         
         // GPU behavior: Mass is NOT split - both children keep parent's mass
         float originalMass = cells.mass[cellIndex];
@@ -1369,12 +1389,12 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
             }
         }
         
-        // GPU behavior: Apply split direction with cell orientation
-        // For now, use split direction directly (orientation transformation would be added later)
-        glm::vec3 separationDirection = splitDirection;
+        // GPU behavior: Rotate split direction by parent's genome orientation (matching GPU shader)
+        // GPU does: rotateVectorByQuaternion(mode.splitDirection.xyz, cell.genomeOrientation)
+        glm::vec3 worldSplitDirection = parentOrientation * splitDirection;
         
-        // GPU behavior: Move cells apart by 0.5 units in split direction
-        glm::vec3 offset = separationDirection * 0.5f;
+        // GPU behavior: Move cells apart by 0.5 units in rotated split direction
+        glm::vec3 offset = worldSplitDirection * 0.5f;
         
         // Child A gets +offset, Child B gets -offset (matching GPU)
         cells.pos_x[cellIndex] += offset.x;      // Child A (parent index)
@@ -1391,28 +1411,24 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
         // Only create adhesion connections if adhesion is enabled in the genome (check bit 8 for adhesion capability)
         bool adhesionEnabled = genomeParams && (genomeParams->cellTypeFlags & (1 << 8)) != 0;
         if (m_divisionInheritanceHandler && adhesionEnabled) {
-            // Get child mode settings for inheritance flags
-            bool childAKeepAdhesion = true; // Default - would come from genome
-            bool childBKeepAdhesion = true; // Default - would come from genome
+            // Get child mode settings for inheritance flags from genome (bit 0 = childA, bit 1 = childB)
+            bool childAKeepAdhesion = genomeParams ? ((genomeParams->divisionFlags & (1 << 0)) != 0) : true;
+            bool childBKeepAdhesion = genomeParams ? ((genomeParams->divisionFlags & (1 << 1)) != 0) : true;
+
+            // Get genome orientations for anchor direction calculations from genome parameters
+            glm::quat orientationA = genomeParams ? genomeParams->childOrientationA : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            glm::quat orientationB = genomeParams ? genomeParams->childOrientationB : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             
-            // Get genome orientations for anchor direction calculations
-            glm::quat orientationA = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Default identity
-            glm::quat orientationB = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Default identity
-            
-            // Calculate split plane normal (perpendicular to split direction)
-            glm::vec3 splitPlane = glm::normalize(glm::cross(splitDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
-            if (glm::length(splitPlane) < 0.001f) {
-                // Fallback if split direction is parallel to Y axis
-                splitPlane = glm::normalize(glm::cross(splitDirection, glm::vec3(1.0f, 0.0f, 0.0f)));
-            }
+            // CRITICAL FIX: Use splitDirection directly from genome, NOT perpendicular plane
+            // The inheritance handler expects splitDirection for zone classification
             
             // Create complete GPUMode from genome parameters
             GPUMode parentMode{};
 
-            // Set split direction from genome (CRITICAL for correct anchor placement)
+            // Set split direction from genome (CRITICAL for correct anchor placement and zone classification)
             parentMode.splitDirection = glm::vec4(splitDirection, 0.0f);
 
-            // Set orientation deltas for children (identity for now - would come from genome)
+            // Set orientation deltas for children from genome parameters
             parentMode.orientationA = orientationA;
             parentMode.orientationB = orientationB;
 
@@ -1441,11 +1457,12 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
             allModes.push_back(parentMode);
 
             // Perform complete adhesion inheritance with geometric anchor placement
+            // CRITICAL FIX: Pass splitDirection (NOT splitPlane) - handler uses it for zone classification
             m_divisionInheritanceHandler->inheritAdhesionsOnDivision(
                 cellIndex,           // Parent cell index
                 cellIndex,           // Child A index (reuses parent index)
                 daughterIndex,       // Child B index (new cell)
-                splitPlane,          // Division plane normal
+                splitDirection,      // FIXED: Split direction from genome (NOT perpendicular plane)
                 offset,              // Split offset vector
                 orientationA,        // Child A genome orientation
                 orientationB,        // Child B genome orientation
@@ -1676,7 +1693,7 @@ void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::calculateSIMDForces() {
     __m256 rel_vel_y = _mm256_sub_ps(velB_y, velA_y);
     __m256 rel_vel_z = _mm256_sub_ps(velB_z, velA_z);
     
-    // Calculate damping: dot(rel_vel, adhesion_dir) * damping
+    // Calculate damping: 1.0 - damping * dot(rel_vel, adhesion_dir) (GPU algorithm)
     __m256 rel_vel_dot_dir = _mm256_add_ps(
         _mm256_add_ps(
             _mm256_mul_ps(rel_vel_x, adhesion_dir_x),
@@ -1684,11 +1701,16 @@ void CPUSIMDPhysicsEngine::SIMDAdhesionBatchProcessor::calculateSIMDForces() {
         ),
         _mm256_mul_ps(rel_vel_z, adhesion_dir_z)
     );
-    
-    __m256 damping_mag = _mm256_mul_ps(damping, rel_vel_dot_dir);
-    
-    // Total force magnitude (spring + damping)
-    __m256 total_force_mag = _mm256_add_ps(spring_force_mag, damping_mag);
+
+    // GPU algorithm: dampMag = 1.0 - damping * dot(relVel, adhesionDir)
+    __m256 damping_mag = _mm256_sub_ps(one, _mm256_mul_ps(damping, rel_vel_dot_dir));
+
+    // GPU algorithm: dampingForce = -adhesionDir * dampMag
+    // Since we're calculating magnitude only, this becomes -dampMag
+    __m256 damping_force_mag = _mm256_sub_ps(_mm256_setzero_ps(), damping_mag);
+
+    // Total force magnitude (spring + damping force)
+    __m256 total_force_mag = _mm256_add_ps(spring_force_mag, damping_force_mag);
     
     // Calculate force vectors
     __m256 force_x = _mm256_mul_ps(adhesion_dir_x, total_force_mag);
