@@ -38,6 +38,11 @@ struct CPUCellPhysics_SoA {
     alignas(32) std::array<float, 256> acc_y;
     alignas(32) std::array<float, 256> acc_z;
     
+    // Previous acceleration (for Verlet integration)
+    alignas(32) std::array<float, 256> prevAcc_x;
+    alignas(32) std::array<float, 256> prevAcc_y;
+    alignas(32) std::array<float, 256> prevAcc_z;
+    
     // Orientation (quaternion) - affected by physics
     alignas(32) std::array<float, 256> quat_x;
     alignas(32) std::array<float, 256> quat_y;
@@ -57,6 +62,11 @@ struct CPUCellPhysics_SoA {
     alignas(32) std::array<float, 256> angularAcc_x;
     alignas(32) std::array<float, 256> angularAcc_y;
     alignas(32) std::array<float, 256> angularAcc_z;
+    
+    // Previous angular acceleration (for Verlet integration)
+    alignas(32) std::array<float, 256> prevAngularAcc_x;
+    alignas(32) std::array<float, 256> prevAngularAcc_y;
+    alignas(32) std::array<float, 256> prevAngularAcc_z;
     
     // Physics properties
     alignas(32) std::array<float, 256> mass;

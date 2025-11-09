@@ -90,6 +90,11 @@ uint32_t CPUSoADataManager::addCell(const CPUCellParameters& params) {
     m_cellData.acc_y[index] = 0.0f;
     m_cellData.acc_z[index] = 0.0f;
     
+    // Initialize previous acceleration to zero (for Verlet integration)
+    m_cellData.prevAcc_x[index] = 0.0f;
+    m_cellData.prevAcc_y[index] = 0.0f;
+    m_cellData.prevAcc_z[index] = 0.0f;
+    
     // Initialize angular motion to zero
     m_cellData.angularVel_x[index] = 0.0f;
     m_cellData.angularVel_y[index] = 0.0f;
@@ -97,6 +102,11 @@ uint32_t CPUSoADataManager::addCell(const CPUCellParameters& params) {
     m_cellData.angularAcc_x[index] = 0.0f;
     m_cellData.angularAcc_y[index] = 0.0f;
     m_cellData.angularAcc_z[index] = 0.0f;
+    
+    // Initialize previous angular acceleration to zero (for Verlet integration)
+    m_cellData.prevAngularAcc_x[index] = 0.0f;
+    m_cellData.prevAngularAcc_y[index] = 0.0f;
+    m_cellData.prevAngularAcc_z[index] = 0.0f;
     
     // Set orientation
     m_cellData.quat_x[index] = params.orientation.x;

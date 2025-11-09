@@ -165,6 +165,7 @@ void CPUAdhesionForceCalculator::computeAdhesionForces(
         glm::quat alignmentRotB = quatFromTwoVectors(currentAnchorB, targetAnchorB);
         
         // Apply the alignment rotation to the reference orientations to get target orientations (GPU algorithm)
+        // GPU uses normalize() directly on the quaternion multiplication result
         glm::quat targetOrientationA = normalizeQuaternion(quatMultiply(alignmentRotA, connection.twistReferenceA));
         glm::quat targetOrientationB = normalizeQuaternion(quatMultiply(alignmentRotB, connection.twistReferenceB));
         
@@ -185,16 +186,18 @@ void CPUAdhesionForceCalculator::computeAdhesionForces(
         twistCorrectionA = glm::clamp(twistCorrectionA, -TWIST_CLAMP_LIMIT, TWIST_CLAMP_LIMIT); // Limit to ±90 degrees
         twistCorrectionB = glm::clamp(twistCorrectionB, -TWIST_CLAMP_LIMIT, TWIST_CLAMP_LIMIT);
         
-        glm::vec3 twistTorqueA = adhesionAxis * twistCorrectionA * settings.twistConstraintStiffness * 0.3f;
-        glm::vec3 twistTorqueB = adhesionAxis * twistCorrectionB * settings.twistConstraintStiffness * 0.3f;
+        // Reduced twist strength for CPU stability (GPU uses 0.3, we use 0.05)
+        glm::vec3 twistTorqueA = adhesionAxis * twistCorrectionA * settings.twistConstraintStiffness * 0.05f;
+        glm::vec3 twistTorqueB = adhesionAxis * twistCorrectionB * settings.twistConstraintStiffness * 0.05f;
         
-        // Add strong damping to prevent oscillation and maintain stable snake body (GPU algorithm)
+        // Add strong damping to prevent oscillation and maintain stable snake body
+        // Increased damping for CPU stability (GPU uses 0.4, we use 0.6)
         float angularVelA = glm::dot(glm::vec3(A.angularVelocity), adhesionAxis);
         float angularVelB = glm::dot(glm::vec3(B.angularVelocity), adhesionAxis);
         float relativeAngularVel = angularVelA - angularVelB;
         
-        glm::vec3 twistDampingA = -adhesionAxis * relativeAngularVel * settings.twistConstraintDamping * 0.4f;
-        glm::vec3 twistDampingB = adhesionAxis * relativeAngularVel * settings.twistConstraintDamping * 0.4f;
+        glm::vec3 twistDampingA = -adhesionAxis * relativeAngularVel * settings.twistConstraintDamping * 0.6f;
+        glm::vec3 twistDampingB = adhesionAxis * relativeAngularVel * settings.twistConstraintDamping * 0.6f;
         
         torqueA += twistTorqueA + twistDampingA;
         torqueB += twistTorqueB + twistDampingB;
@@ -204,8 +207,7 @@ void CPUAdhesionForceCalculator::computeAdhesionForces(
     forceA += glm::cross(-deltaPos, torqueB);
     forceB += glm::cross(deltaPos, torqueA);
 
-    // This conserves angular momentum but makes cells look less natural (GPU algorithm)
-    // maybe better to comment it out
+    // This conserves angular momentum but makes cells look less natural, maybe better to comment it out
     torqueA -= torqueB;
     torqueB -= torqueA;
 }

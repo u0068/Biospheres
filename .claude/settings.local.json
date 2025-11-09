@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

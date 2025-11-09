@@ -173,35 +173,17 @@ void CPUSIMDPhysicsEngine::calculateAdhesionForces(CPUCellPhysics_SoA& cells,
         return;
     }
 
-    // OPTIMIZATION: Use SIMD batch processor directly for best performance
-    // This avoids the massive memory copying in processAdhesionForcesPerCell
-    if (m_simdBatchProcessor && adhesions.activeConnectionCount >= 8) {
-        // Track performance metrics
-        auto startTime = std::chrono::steady_clock::now();
-
-        // Use SIMD batch processing for 8+ connections (Requirements 5.1-5.5)
-        m_simdBatchProcessor->processAllConnections(cells, adhesions, modeSettings);
-
-        // Update performance metrics
-        auto endTime = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-        m_simdMetrics.lastBatchProcessingTime = duration.count() / 1000.0f; // Convert to milliseconds
-        m_simdMetrics.totalBatchesProcessed += (adhesions.activeConnectionCount + 7) / 8;
-        m_simdMetrics.totalConnectionsProcessed += adhesions.activeConnectionCount;
-
-        // Update average batch time
-        if (m_simdMetrics.totalBatchesProcessed > 0) {
-            m_simdMetrics.averageBatchTime = m_simdMetrics.lastBatchProcessingTime /
-                                           ((adhesions.activeConnectionCount + 7) / 8);
-        }
-    } else if (adhesions.activeConnectionCount > 0) {
-        // Fallback for < 8 connections: process individually using optimized direct method
+    // CRITICAL FIX: Always use non-SIMD path to ensure torques are applied correctly
+    // The SIMD batch processor does not handle torque calculations, causing adhesion
+    // connections to not apply rotational forces when activeConnectionCount >= 8
+    // This ensures consistent behavior regardless of connection count
+    if (adhesions.activeConnectionCount > 0) {
         // Reset angular accelerations for torque accumulation
         std::fill(cells.angularAcc_x.begin(), cells.angularAcc_x.begin() + cells.activeCellCount, 0.0f);
         std::fill(cells.angularAcc_y.begin(), cells.angularAcc_y.begin() + cells.activeCellCount, 0.0f);
         std::fill(cells.angularAcc_z.begin(), cells.angularAcc_z.begin() + cells.activeCellCount, 0.0f);
 
-        // Process connections individually using optimized method
+        // Process connections individually using optimized method with full torque support
         for (size_t i = 0; i < adhesions.activeConnectionCount; ++i) {
             if (adhesions.isActive[i] == 0) continue;
             processAdhesionConnection(static_cast<uint32_t>(i), adhesions, cells, modeSettings);
@@ -750,7 +732,9 @@ void CPUSIMDPhysicsEngine::processAdhesionConnection(uint32_t connectionIndex,
                                                     const CPUAdhesionConnections_SoA& adhesions,
                                                     CPUCellPhysics_SoA& cells,
                                                     const std::vector<GPUModeAdhesionSettings>& modeSettings) {
-    // Behavioral equivalence with GPU: adhesion_physics.comp algorithm
+    // Use the complete adhesion force calculator with full torque support
+    // This ensures behavioral equivalence with GPU adhesion_physics.comp
+    
     uint32_t cellA = adhesions.cellAIndex[connectionIndex];
     uint32_t cellB = adhesions.cellBIndex[connectionIndex];
     uint32_t modeIndex = adhesions.modeIndex[connectionIndex];
@@ -763,56 +747,37 @@ void CPUSIMDPhysicsEngine::processAdhesionConnection(uint32_t connectionIndex,
         return; // Invalid mode index
     }
     
-    // Get mode-specific adhesion settings (Requirements 4.1, 4.2)
-    const GPUModeAdhesionSettings& settings = modeSettings[modeIndex];
+    // Create a temporary single-connection structure for the adhesion calculator
+    CPUAdhesionConnections_SoA tempConnections;
+    tempConnections.activeConnectionCount = 1;
     
-    // Load cell data (matching GPU ComputeCell structure)
-    glm::vec3 posA(cells.pos_x[cellA], cells.pos_y[cellA], cells.pos_z[cellA]);
-    glm::vec3 posB(cells.pos_x[cellB], cells.pos_y[cellB], cells.pos_z[cellB]);
-    glm::vec3 velA(cells.vel_x[cellA], cells.vel_y[cellA], cells.vel_z[cellA]);
-    glm::vec3 velB(cells.vel_x[cellB], cells.vel_y[cellB], cells.vel_z[cellB]);
+    // Copy the connection data
+    tempConnections.cellAIndex[0] = adhesions.cellAIndex[connectionIndex];
+    tempConnections.cellBIndex[0] = adhesions.cellBIndex[connectionIndex];
+    tempConnections.modeIndex[0] = adhesions.modeIndex[connectionIndex];
+    tempConnections.isActive[0] = adhesions.isActive[connectionIndex];
+    tempConnections.zoneA[0] = adhesions.zoneA[connectionIndex];
+    tempConnections.zoneB[0] = adhesions.zoneB[connectionIndex];
     
-    float massA = cells.mass[cellA];
-    float massB = cells.mass[cellB];
+    tempConnections.anchorDirectionA_x[0] = adhesions.anchorDirectionA_x[connectionIndex];
+    tempConnections.anchorDirectionA_y[0] = adhesions.anchorDirectionA_y[connectionIndex];
+    tempConnections.anchorDirectionA_z[0] = adhesions.anchorDirectionA_z[connectionIndex];
+    tempConnections.anchorDirectionB_x[0] = adhesions.anchorDirectionB_x[connectionIndex];
+    tempConnections.anchorDirectionB_y[0] = adhesions.anchorDirectionB_y[connectionIndex];
+    tempConnections.anchorDirectionB_z[0] = adhesions.anchorDirectionB_z[connectionIndex];
     
-    // Connection vector from A to B (GPU algorithm)
-    glm::vec3 deltaPos = posB - posA;
-    float dist = glm::length(deltaPos);
-    if (dist < 0.0001f) return;
+    tempConnections.twistReferenceA_x[0] = adhesions.twistReferenceA_x[connectionIndex];
+    tempConnections.twistReferenceA_y[0] = adhesions.twistReferenceA_y[connectionIndex];
+    tempConnections.twistReferenceA_z[0] = adhesions.twistReferenceA_z[connectionIndex];
+    tempConnections.twistReferenceA_w[0] = adhesions.twistReferenceA_w[connectionIndex];
+    tempConnections.twistReferenceB_x[0] = adhesions.twistReferenceB_x[connectionIndex];
+    tempConnections.twistReferenceB_y[0] = adhesions.twistReferenceB_y[connectionIndex];
+    tempConnections.twistReferenceB_z[0] = adhesions.twistReferenceB_z[connectionIndex];
+    tempConnections.twistReferenceB_w[0] = adhesions.twistReferenceB_w[connectionIndex];
     
-    glm::vec3 adhesionDir = deltaPos / dist;
-    
-    // Use mode-specific parameters (Requirements 4.3, 4.4)
-    float restLength = settings.restLength;
-    float stiffness = settings.linearSpringStiffness;
-    float dampingCoeff = settings.linearSpringDamping;
-    
-    // Linear spring force (GPU algorithm)
-    float forceMag = stiffness * (dist - restLength);
-    glm::vec3 springForce = adhesionDir * forceMag;
-    
-    // Damping - oppose relative motion (GPU algorithm)
-    glm::vec3 relVel = velB - velA;
-    float dampMag = 1.0f - dampingCoeff * glm::dot(relVel, adhesionDir);
-    glm::vec3 dampingForce = -adhesionDir * dampMag;
-    
-    glm::vec3 totalForceA = springForce + dampingForce;
-    glm::vec3 totalForceB = -(springForce + dampingForce);
-    
-    // Apply forces as accelerations (F = ma, so a = F/m)
-    if (massA > 0.0f) {
-        glm::vec3 accA = totalForceA / massA;
-        cells.acc_x[cellA] += accA.x;
-        cells.acc_y[cellA] += accA.y;
-        cells.acc_z[cellA] += accA.z;
-    }
-    
-    if (massB > 0.0f) {
-        glm::vec3 accB = totalForceB / massB;
-        cells.acc_x[cellB] += accB.x;
-        cells.acc_y[cellB] += accB.y;
-        cells.acc_z[cellB] += accB.z;
-    }
+    // Use the complete adhesion force calculator (GPU-equivalent with full torque support)
+    // This properly calculates both linear forces and rotational torques
+    m_adhesionCalculator->computeAdhesionForces(tempConnections, cells, modeSettings, 0.0f);
 }
 
 void CPUSIMDPhysicsEngine::simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
@@ -920,61 +885,53 @@ void CPUSIMDPhysicsEngine::simd_adhesion_force_batch(CPUCellPhysics_SoA& cells,
 
 void CPUSIMDPhysicsEngine::updateVelocities(CPUCellPhysics_SoA& cells, float deltaTime) {
     // Behavioral equivalence with GPU: cell_velocity_update.comp
-    // This would be a separate compute shader in the GPU pipeline
+    // Uses Verlet velocity integration with damping (CRITICAL for stability)
     
-    const __m256 dt_vec = _mm256_set1_ps(deltaTime);
-    size_t simd_count = (cells.activeCellCount / SIMD_WIDTH) * SIMD_WIDTH;
+    const float damping = 0.98f; // GPU uniform u_damping
+    const float dampingFactor = std::pow(damping, deltaTime * 100.0f);
     
-    // SIMD velocity update (linear and angular)
-    for (size_t i = 0; i < simd_count; i += SIMD_WIDTH) {
-        // Linear velocity update
-        __m256 vel_x = _mm256_load_ps(&cells.vel_x[i]);
-        __m256 vel_y = _mm256_load_ps(&cells.vel_y[i]);
-        __m256 vel_z = _mm256_load_ps(&cells.vel_z[i]);
+    // Scalar implementation for clarity and correctness
+    // (SIMD optimization can be added later once behavior is verified)
+    for (size_t i = 0; i < cells.activeCellCount; ++i) {
+        // --- Linear Verlet velocity (GPU algorithm) ---
+        glm::vec3 vel(cells.vel_x[i], cells.vel_y[i], cells.vel_z[i]);
+        glm::vec3 acc_old(cells.prevAcc_x[i], cells.prevAcc_y[i], cells.prevAcc_z[i]);
+        glm::vec3 acc_new(cells.acc_x[i], cells.acc_y[i], cells.acc_z[i]);
         
-        __m256 acc_x = _mm256_load_ps(&cells.acc_x[i]);
-        __m256 acc_y = _mm256_load_ps(&cells.acc_y[i]);
-        __m256 acc_z = _mm256_load_ps(&cells.acc_z[i]);
+        // Verlet integration: vel += 0.5 * (acc_old + acc_new) * deltaTime
+        vel += 0.5f * (acc_old + acc_new) * deltaTime;
         
-        // GPU algorithm: vel += acc * deltaTime
-        __m256 new_vel_x = _mm256_add_ps(vel_x, _mm256_mul_ps(acc_x, dt_vec));
-        __m256 new_vel_y = _mm256_add_ps(vel_y, _mm256_mul_ps(acc_y, dt_vec));
-        __m256 new_vel_z = _mm256_add_ps(vel_z, _mm256_mul_ps(acc_z, dt_vec));
+        // Apply damping: vel *= pow(damping, deltaTime * 100.0)
+        vel *= dampingFactor;
         
-        _mm256_store_ps(&cells.vel_x[i], new_vel_x);
-        _mm256_store_ps(&cells.vel_y[i], new_vel_y);
-        _mm256_store_ps(&cells.vel_z[i], new_vel_z);
+        cells.vel_x[i] = vel.x;
+        cells.vel_y[i] = vel.y;
+        cells.vel_z[i] = vel.z;
         
-        // Angular velocity update
-        __m256 angVel_x = _mm256_load_ps(&cells.angularVel_x[i]);
-        __m256 angVel_y = _mm256_load_ps(&cells.angularVel_y[i]);
-        __m256 angVel_z = _mm256_load_ps(&cells.angularVel_z[i]);
+        // Store current acceleration as previous for next frame
+        cells.prevAcc_x[i] = acc_new.x;
+        cells.prevAcc_y[i] = acc_new.y;
+        cells.prevAcc_z[i] = acc_new.z;
         
-        __m256 angAcc_x = _mm256_load_ps(&cells.angularAcc_x[i]);
-        __m256 angAcc_y = _mm256_load_ps(&cells.angularAcc_y[i]);
-        __m256 angAcc_z = _mm256_load_ps(&cells.angularAcc_z[i]);
+        // --- Angular Verlet velocity (GPU algorithm) ---
+        glm::vec3 angVel(cells.angularVel_x[i], cells.angularVel_y[i], cells.angularVel_z[i]);
+        glm::vec3 angAcc_old(cells.prevAngularAcc_x[i], cells.prevAngularAcc_y[i], cells.prevAngularAcc_z[i]);
+        glm::vec3 angAcc_new(cells.angularAcc_x[i], cells.angularAcc_y[i], cells.angularAcc_z[i]);
         
-        // GPU algorithm: angularVel += angularAcc * deltaTime
-        __m256 new_angVel_x = _mm256_add_ps(angVel_x, _mm256_mul_ps(angAcc_x, dt_vec));
-        __m256 new_angVel_y = _mm256_add_ps(angVel_y, _mm256_mul_ps(angAcc_y, dt_vec));
-        __m256 new_angVel_z = _mm256_add_ps(angVel_z, _mm256_mul_ps(angAcc_z, dt_vec));
+        // Verlet integration: angularVel += 0.5 * (angAcc_old + angAcc_new) * deltaTime
+        angVel += 0.5f * (angAcc_old + angAcc_new) * deltaTime;
         
-        _mm256_store_ps(&cells.angularVel_x[i], new_angVel_x);
-        _mm256_store_ps(&cells.angularVel_y[i], new_angVel_y);
-        _mm256_store_ps(&cells.angularVel_z[i], new_angVel_z);
-    }
-    
-    // Handle remaining cells with scalar operations
-    for (size_t i = simd_count; i < cells.activeCellCount; ++i) {
-        // GPU algorithm: vel += acc * deltaTime
-        cells.vel_x[i] += cells.acc_x[i] * deltaTime;
-        cells.vel_y[i] += cells.acc_y[i] * deltaTime;
-        cells.vel_z[i] += cells.acc_z[i] * deltaTime;
+        // Apply damping: angularVel *= pow(damping, deltaTime * 100.0)
+        angVel *= dampingFactor;
         
-        // GPU algorithm: angularVel += angularAcc * deltaTime
-        cells.angularVel_x[i] += cells.angularAcc_x[i] * deltaTime;
-        cells.angularVel_y[i] += cells.angularAcc_y[i] * deltaTime;
-        cells.angularVel_z[i] += cells.angularAcc_z[i] * deltaTime;
+        cells.angularVel_x[i] = angVel.x;
+        cells.angularVel_y[i] = angVel.y;
+        cells.angularVel_z[i] = angVel.z;
+        
+        // Store current angular acceleration as previous for next frame
+        cells.prevAngularAcc_x[i] = angAcc_new.x;
+        cells.prevAngularAcc_y[i] = angAcc_new.y;
+        cells.prevAngularAcc_z[i] = angAcc_new.z;
     }
 }
 
@@ -1304,7 +1261,7 @@ void CPUSIMDPhysicsEngine::checkCellDivision(CPUCellPhysics_SoA& cells,
     
     // Process cell divisions (matching GPU capacity check)
     for (uint32_t cellIndex : cellsToSplit) {
-        if (cells.activeCellCount >= 255) { // CPU limit is 256, leave room for one more
+        if (cells.activeCellCount >= 256) { // CPU limit is 256 cells
             break; // No space available, cancel remaining splits
         }
         
