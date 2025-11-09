@@ -30,6 +30,9 @@
 
 CellManager::CellManager()
 {
+    // Set cell limit to maximum needed (10,000 for main simulation)
+    cellLimit = 10000;
+    
     // Generate sphere mesh - balanced quality and performance for preview cells
     sphereMesh.generateSphere(16, 24, 1.0f); // Medium poly: 16x24 = 768 triangles for better visual quality
     sphereMesh.setupBuffers();
@@ -1037,6 +1040,9 @@ void CellManager::runAdhesionPhysics(float deltaTime)
     // Dispatch compute shader
     GLuint numGroups = (totalCellCount + 255) / 256;
     adhesionPhysicsShader->dispatch(numGroups, 1, 1);
+
+    // Add memory barrier to ensure all writes are complete before next stage
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 

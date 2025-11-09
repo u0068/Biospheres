@@ -363,17 +363,38 @@ void main() {
     for (int i = 0; i < 20; ++i) {
         int adhesionIndex = thisCell.adhesionIndices[i];
         if (adhesionIndex < 0) continue; // No adhesion connection
+        
+        // Validate adhesion index is within bounds
+        if (uint(adhesionIndex) >= totalAdhesionCount) {
+            continue; // Skip out-of-bounds adhesion index
+        }
+        
         AdhesionConnection connection = connections[adhesionIndex];
         if (connection.isActive == 0) continue; // Inactive connection
+        
+        // Validate connection indices to prevent out-of-bounds access
+        if (connection.cellAIndex >= totalCellCount || connection.cellBIndex >= totalCellCount) {
+            continue; // Skip invalid connection
+        }
+        
+        // Verify this cell is actually part of the connection
         bool isCellA = (connection.cellAIndex == index);
-        uint otherIndex        = isCellA ? connection.cellBIndex : connection.cellAIndex;
-        ComputeCell otherCell  = inputCells[otherIndex];
+        bool isCellB = (connection.cellBIndex == index);
+        if (!isCellA && !isCellB) {
+            continue; // This cell is not part of this connection (stale index)
+        }
+        
+        uint otherIndex = isCellA ? connection.cellBIndex : connection.cellAIndex;
+        
+        // Validate otherIndex
+        if (otherIndex >= totalCellCount) {
+            continue; // Skip invalid connection
+        }
+        
+        ComputeCell otherCell = inputCells[otherIndex];
         
         ComputeCell cellA = isCellA ? thisCell : otherCell;
         ComputeCell cellB = isCellA ? otherCell : thisCell;
-
-        //GPUMode thisMode      = modes[thisCell.modeIndex];
-        //GPUMode otherMode     = modes[otherCell.modeIndex];
 
         GPUMode adhesionMode = modes[connection.modeIndex];
 

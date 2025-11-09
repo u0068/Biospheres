@@ -15,7 +15,7 @@ class SceneManager
 public:
     SceneManager() : currentScene(Scene::PreviewSimulation), sceneChanged(false), paused(true), simulationSpeed(1.0f), previewPaused(true), mainPaused(false) {
         sceneCellLimits[Scene::PreviewSimulation] = 256;
-        sceneCellLimits[Scene::MainSimulation] = config::MAX_CELLS;
+        sceneCellLimits[Scene::MainSimulation] = 10000;
     }
       Scene getCurrentScene() const { return currentScene; }
     void switchToScene(Scene newScene) 
@@ -141,7 +141,7 @@ private:
     bool previewPaused = true;   // Preview starts paused
     bool mainPaused = false;     // Main starts unpaused
 
-    std::map<Scene, int> sceneCellLimits{{Scene::PreviewSimulation, config::MAX_CELLS}, {Scene::MainSimulation, config::MAX_CELLS}};
+    std::map<Scene, int> sceneCellLimits{{Scene::PreviewSimulation, 256}, {Scene::MainSimulation, 10000}};
     
     // Independent system states (Requirements 3.4, 3.5)
     bool previewSystemActive = false;
