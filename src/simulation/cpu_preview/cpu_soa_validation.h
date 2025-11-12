@@ -7,6 +7,7 @@
 #include <iostream>
 #include <type_traits>
 #include "cpu_soa_data_manager.h"
+#include "../../core/config.h"
 
 /**
  * CPU SoA Data Structure Validation and Integrity Checks
@@ -23,7 +24,6 @@ namespace CPUSoAValidation {
     // Alignment validation constants
     static constexpr size_t SIMD_ALIGNMENT = 32;  // AVX2 alignment requirement
     static constexpr size_t CACHE_LINE_SIZE = 64; // CPU cache line size
-    static constexpr size_t MAX_CELLS = 256;
     static constexpr size_t MAX_CONNECTIONS = 5120;
 
     /**
@@ -110,10 +110,10 @@ namespace CPUSoAValidation {
             validateSIMDAlignment(data.flags, "flags");
             
             // Validate active cell count bounds
-            if (data.activeCellCount > MAX_CELLS) {
+            if (data.activeCellCount > config::CPU_PREVIEW_MAX_CAPACITY) {
                 throw std::runtime_error("Active cell count exceeds maximum: " + 
                                        std::to_string(data.activeCellCount) + " > " + 
-                                       std::to_string(MAX_CELLS));
+                                       std::to_string(config::CPU_PREVIEW_MAX_CAPACITY));
             }
         }
 
@@ -245,7 +245,7 @@ namespace CPUSoAValidation {
                 uint32_t cellA = data.cellAIndex[i];
                 uint32_t cellB = data.cellBIndex[i];
                 
-                if (cellA >= MAX_CELLS || cellB >= MAX_CELLS) {
+                if (cellA >= config::CPU_PREVIEW_MAX_CAPACITY || cellB >= config::CPU_PREVIEW_MAX_CAPACITY) {
                     throw std::runtime_error("Cell index out of bounds in connection " + std::to_string(i));
                 }
                 
@@ -286,7 +286,7 @@ namespace CPUSoAValidation {
         static void validateBounds(const CPUCellPhysics_SoA& cellData, 
                                   const CPUAdhesionConnections_SoA& adhesionData) {
             // Validate array bounds
-            if (cellData.activeCellCount > MAX_CELLS) {
+            if (cellData.activeCellCount > config::CPU_PREVIEW_MAX_CAPACITY) {
                 throw std::runtime_error("Active cell count exceeds maximum");
             }
             
@@ -351,7 +351,7 @@ namespace CPUSoAValidation {
                      "CPUAdhesionConnections_SoA must be 32-byte aligned for SIMD operations");
         
         // Validate array sizes are SIMD-friendly
-        static_assert(MAX_CELLS % 8 == 0, "MAX_CELLS should be multiple of 8 for optimal SIMD processing");
+        static_assert(config::CPU_PREVIEW_MAX_CAPACITY % 8 == 0, "CPU_PREVIEW_MAX_CAPACITY should be multiple of 8 for optimal SIMD processing");
         static_assert(MAX_CONNECTIONS % 8 == 0, "MAX_CONNECTIONS should be multiple of 8 for optimal SIMD processing");
         
         // Validate structure sizes are reasonable

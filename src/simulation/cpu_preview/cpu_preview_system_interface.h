@@ -76,12 +76,12 @@ namespace CPUPreviewSystemInterface {
      * - GPU Main: Full-scale simulation with thousands of cells
      */
     
-    constexpr size_t getCPUPreviewMaxCells() {
-        return 256; // Optimized for rapid genome iteration
+    constexpr size_t getCPUPreviewMaxCapacity() {
+        return config::CPU_PREVIEW_MAX_CAPACITY; // CPU Preview System: 256 cells for genome editing
     }
     
-    constexpr size_t getGPUMainMaxCells() {
-        return config::MAX_CELLS; // Full simulation capacity
+    constexpr size_t getGPUMainMaxCapacity() {
+        return config::GPU_MAIN_MAX_CAPACITY; // GPU Main System: 10,000 cells for full simulation
     }
     
     constexpr float getCPUPreviewPerformanceTarget() {

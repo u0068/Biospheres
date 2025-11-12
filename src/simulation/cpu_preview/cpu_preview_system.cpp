@@ -327,6 +327,39 @@ size_t CPUPreviewSystem::getActiveConnectionCount() const {
     return m_dataManager->getActiveConnectionCount();
 }
 
+// New unified getter methods for CPU Preview System
+size_t CPUPreviewSystem::getLiveCellCount() const {
+    if (!m_dataManager) {
+        return 0;
+    }
+    
+    return m_dataManager->getActiveCellCount();
+}
+
+size_t CPUPreviewSystem::getAllocatedCellCount() const {
+    if (!m_dataManager) {
+        return 0;
+    }
+    
+    return m_dataManager->getActiveCellCount();
+}
+
+size_t CPUPreviewSystem::getLiveAdhesionCount() const {
+    if (!m_dataManager) {
+        return 0;
+    }
+    
+    return m_dataManager->getActiveConnectionCount();
+}
+
+size_t CPUPreviewSystem::getAllocatedAdhesionCount() const {
+    if (!m_dataManager) {
+        return 0;
+    }
+    
+    return m_dataManager->getActiveConnectionCount();
+}
+
 void CPUPreviewSystem::validateSystemState() {
     if (!m_dataManager || !m_physicsEngine || !m_visualSystem) {
         throw std::runtime_error("CPU Preview System components not properly initialized");

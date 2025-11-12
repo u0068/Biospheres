@@ -36,13 +36,13 @@ namespace CPUSoAValidation {
         std::cout << "  Total size: " << sizeof(CPUCellPhysics_SoA) << " bytes\n";
         std::cout << "  Alignment: " << alignof(CPUCellPhysics_SoA) << " bytes\n";
         std::cout << "  Array count: 21 arrays (pos_xyz, vel_xyz, acc_xyz, quat_xyzw, mass, radius, age, energy, cellType, genomeID, flags)\n";
-        std::cout << "  Elements per array: " << MAX_CELLS << "\n";
+        std::cout << "  Elements per array: " << config::CPU_PREVIEW_MAX_CAPACITY << " (CPU Preview System)\n";
         std::cout << "  Float arrays: 17 (pos_xyz, vel_xyz, acc_xyz, quat_xyzw, mass, radius, age, energy)\n";
         std::cout << "  Uint32 arrays: 3 (cellType, genomeID, flags)\n";
-        std::cout << "  Memory per float array: " << (MAX_CELLS * sizeof(float)) << " bytes\n";
-        std::cout << "  Memory per uint32 array: " << (MAX_CELLS * sizeof(uint32_t)) << " bytes\n";
+        std::cout << "  Memory per float array: " << (config::CPU_PREVIEW_MAX_CAPACITY * sizeof(float)) << " bytes\n";
+        std::cout << "  Memory per uint32 array: " << (config::CPU_PREVIEW_MAX_CAPACITY * sizeof(uint32_t)) << " bytes\n";
         
-        size_t totalArrayMemory = (17 * MAX_CELLS * sizeof(float)) + (3 * MAX_CELLS * sizeof(uint32_t));
+        size_t totalArrayMemory = (17 * config::CPU_PREVIEW_MAX_CAPACITY * sizeof(float)) + (3 * config::CPU_PREVIEW_MAX_CAPACITY * sizeof(uint32_t));
         std::cout << "  Total array memory: " << totalArrayMemory << " bytes\n";
         std::cout << "  Overhead: " << (sizeof(CPUCellPhysics_SoA) - totalArrayMemory) << " bytes\n\n";
         
@@ -80,7 +80,7 @@ namespace CPUSoAValidation {
         std::cout << "  Alignment requirement: " << SIMD_ALIGNMENT << " bytes (AVX2)\n";
         std::cout << "  Elements per SIMD operation: 8 floats or 8 uint32s\n";
         std::cout << "  Optimal processing block size: " << (SIMD_ALIGNMENT / sizeof(float)) << " elements\n";
-        std::cout << "  Total SIMD blocks per array: " << (MAX_CELLS / 8) << "\n";
+        std::cout << "  Total SIMD blocks per array: " << (config::CPU_PREVIEW_MAX_CAPACITY / 8) << " (CPU Preview System)\n";
     }
 
     void validateMemoryLayout() {
@@ -128,9 +128,9 @@ namespace CPUSoAValidation {
         std::cout << "  Elements per cache line (float): " << (CACHE_LINE_SIZE / sizeof(float)) << "\n";
         std::cout << "  Elements per cache line (uint32): " << (CACHE_LINE_SIZE / sizeof(uint32_t)) << "\n";
         
-        // Calculate how many cache lines each array spans
-        size_t float_array_size = MAX_CELLS * sizeof(float);
-        size_t uint32_array_size = MAX_CELLS * sizeof(uint32_t);
+        // Calculate how many cache lines each array spans (CPU Preview System)
+        size_t float_array_size = config::CPU_PREVIEW_MAX_CAPACITY * sizeof(float);
+        size_t uint32_array_size = config::CPU_PREVIEW_MAX_CAPACITY * sizeof(uint32_t);
         size_t float_cache_lines = (float_array_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE;
         size_t uint32_cache_lines = (uint32_array_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE;
         
@@ -161,9 +161,9 @@ namespace CPUSoAValidation {
         std::cout << "  Fits in L2 cache: " << (totalMemory <= L2_CACHE_SIZE ? "Yes" : "No") << "\n";
         std::cout << "  Fits in L3 cache: " << (totalMemory <= L3_CACHE_SIZE ? "Yes" : "No") << "\n";
         
-        // SIMD operation estimates
-        size_t float_elements = 17 * MAX_CELLS; // 17 float arrays
-        size_t uint32_elements = 5 * MAX_CELLS; // 3 cell arrays + 2 adhesion arrays
+        // SIMD operation estimates (CPU Preview System)
+        size_t float_elements = 17 * config::CPU_PREVIEW_MAX_CAPACITY; // 17 float arrays
+        size_t uint32_elements = 5 * config::CPU_PREVIEW_MAX_CAPACITY; // 3 cell arrays + 2 adhesion arrays
         size_t simd_float_ops = float_elements / 8; // 8 floats per AVX2 operation
         size_t simd_uint32_ops = uint32_elements / 8; // 8 uint32s per AVX2 operation
         
@@ -195,9 +195,9 @@ namespace CPUSoAValidation {
                                const CPUAdhesionConnections_SoA& adhesionData) {
         std::cout << "=== Bounds Checking Validation ===\n";
         
-        // Test array bounds
-        if (cellData.activeCellCount > MAX_CELLS) {
-            throw std::runtime_error("Cell count exceeds maximum bounds");
+        // Test array bounds (CPU Preview System)
+        if (cellData.activeCellCount > config::CPU_PREVIEW_MAX_CAPACITY) {
+            throw std::runtime_error("Cell count exceeds CPU Preview System maximum capacity");
         }
         
         if (adhesionData.activeConnectionCount > MAX_CONNECTIONS) {
@@ -278,11 +278,11 @@ namespace CPUSoAValidation {
     void validateSIMDCompatibility() {
         std::cout << "=== SIMD Compatibility Validation ===\n";
         
-        // Check that array sizes are compatible with SIMD operations
-        if (MAX_CELLS % 8 != 0) {
-            std::cout << "⚠ Warning: MAX_CELLS (" << MAX_CELLS << ") is not a multiple of 8, may not be optimal for AVX2\n";
+        // Check that array sizes are compatible with SIMD operations (CPU Preview System)
+        if (config::CPU_PREVIEW_MAX_CAPACITY % 8 != 0) {
+            std::cout << "⚠ Warning: CPU_PREVIEW_MAX_CAPACITY (" << config::CPU_PREVIEW_MAX_CAPACITY << ") is not a multiple of 8, may not be optimal for AVX2\n";
         } else {
-            std::cout << "✓ MAX_CELLS is SIMD-compatible (multiple of 8)\n";
+            std::cout << "✓ CPU_PREVIEW_MAX_CAPACITY is SIMD-compatible (multiple of 8)\n";
         }
         
         if (MAX_CONNECTIONS % 8 != 0) {
@@ -304,9 +304,9 @@ namespace CPUSoAValidation {
             throw std::runtime_error("Structures do not meet SIMD alignment requirements");
         }
         
-        // Calculate SIMD operation efficiency
-        size_t total_float_elements = 17 * MAX_CELLS + 14 * MAX_CONNECTIONS; // Float arrays (17 cell + 14 adhesion)
-        size_t total_uint32_elements = 3 * MAX_CELLS + 6 * MAX_CONNECTIONS; // Uint32 arrays (3 cell + 6 adhesion)
+        // Calculate SIMD operation efficiency (CPU Preview System)
+        size_t total_float_elements = 17 * config::CPU_PREVIEW_MAX_CAPACITY + 14 * MAX_CONNECTIONS; // Float arrays (17 cell + 14 adhesion)
+        size_t total_uint32_elements = 3 * config::CPU_PREVIEW_MAX_CAPACITY + 6 * MAX_CONNECTIONS; // Uint32 arrays (3 cell + 6 adhesion)
         size_t simd_float_ops = total_float_elements / 8;
         size_t simd_uint32_ops = total_uint32_elements / 8;
         

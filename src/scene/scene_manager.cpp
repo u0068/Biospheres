@@ -5,6 +5,7 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <cassert>
 
 // Scene file management implementation (Requirements 3.4, 3.5)
 
@@ -150,4 +151,52 @@ void SceneManager::switchToMainMode() {
         
         std::cout << "Main mode activated - using GPU native AoS data format (no conversion)" << std::endl;
     }
+}
+
+// Scene-specific capacity management implementation
+void SceneManager::setSceneMaxCapacity(Scene scene, int capacity) {
+    // Validate against system limits
+    if (scene == Scene::PreviewSimulation) {
+        // Validate CPU Preview capacity
+        if (capacity <= 0 || capacity > config::CPU_PREVIEW_MAX_CAPACITY) {
+            std::cerr << "ERROR: CPU Preview capacity " << capacity 
+                      << " must be between 1 and " << config::CPU_PREVIEW_MAX_CAPACITY << std::endl;
+            // Use assertion for debug builds
+            assert(capacity > 0 && capacity <= config::CPU_PREVIEW_MAX_CAPACITY && 
+                   "CPU Preview capacity exceeds maximum");
+            return;
+        }
+    } else if (scene == Scene::MainSimulation) {
+        // Validate GPU Main capacity
+        if (capacity <= 0 || capacity > config::GPU_MAIN_MAX_CAPACITY) {
+            std::cerr << "ERROR: GPU Main capacity " << capacity 
+                      << " must be between 1 and " << config::GPU_MAIN_MAX_CAPACITY << std::endl;
+            // Use assertion for debug builds
+            assert(capacity > 0 && capacity <= config::GPU_MAIN_MAX_CAPACITY && 
+                   "GPU Main capacity exceeds maximum");
+            return;
+        }
+    }
+    
+    sceneMaxCapacities[scene] = capacity;
+}
+
+int SceneManager::getSceneMaxCapacity(Scene scene) const {
+    auto it = sceneMaxCapacities.find(scene);
+    if (it != sceneMaxCapacities.end()) {
+        return it->second;
+    }
+    
+    // Return default capacity based on scene type
+    if (scene == Scene::PreviewSimulation) {
+        return config::CPU_PREVIEW_MAX_CAPACITY;
+    } else if (scene == Scene::MainSimulation) {
+        return config::GPU_MAIN_MAX_CAPACITY;
+    }
+    
+    return config::CPU_PREVIEW_MAX_CAPACITY; // Fallback
+}
+
+int SceneManager::getCurrentSceneMaxCapacity() const {
+    return getSceneMaxCapacity(currentScene);
 }

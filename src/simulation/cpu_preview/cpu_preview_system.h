@@ -71,6 +71,12 @@ public:
     float getLastSimulationTime() const { return m_lastSimulationTime; }
     size_t getActiveCellCount() const;
     size_t getActiveConnectionCount() const;
+    
+    // Unified getter methods for CPU Preview System (Requirements 3.8, 3.9, 3.10, 3.11)
+    size_t getLiveCellCount() const;
+    size_t getAllocatedCellCount() const;
+    size_t getLiveAdhesionCount() const;
+    size_t getAllocatedAdhesionCount() const;
 
     // System boundaries - no GPU dependencies
     bool hasGPUDependencies() const { return false; }

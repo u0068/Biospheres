@@ -22,7 +22,7 @@
 
 void UIManager::renderCameraControls(CellManager &cellManager, Camera &camera, SceneManager& sceneManager)
 {
-    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+    cellManager.setGPUMainMaxCapacity(sceneManager.getCurrentSceneMaxCapacity());
     ImGui::SetNextWindowPos(ImVec2(3072, 461), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(320, 562), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();

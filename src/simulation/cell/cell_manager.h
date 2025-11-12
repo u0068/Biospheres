@@ -156,12 +156,25 @@ struct CellManager
     std::vector<ComputeCell> cpuCells;
     std::vector<ComputeCell> cellStagingBuffer;
     
-    // Cell count tracking (CPU-side approximation of GPU state)
-    int totalCellCount{ 0 };    // Approximate cell count, may not reflect exact GPU state due to being a frame behind
-	int liveCellCount{ 0 };     // Number of live cells (not dead or pending)
-	int totalAdhesionCount{ 0 };     // Total number of adhesion connections
-    int liveAdhesionCount{ 0 };     // Number of live adhesion connections
-    int pendingCellCount{ 0 };  // Number of cells pending addition by CPU
+    // DEPRECATED: Old cell count tracking (CPU-side approximation of GPU state)
+    // These variables use ambiguous naming and will be removed after migration
+    int totalCellCount{ 0 };    // DEPRECATED: Use allocatedCellCount instead
+	int liveCellCount{ 0 };     // DEPRECATED: Use getLiveCellCount() getter instead
+	int totalAdhesionCount{ 0 };     // DEPRECATED: Use allocatedAdhesionCount instead
+    int liveAdhesionCount{ 0 };     // DEPRECATED: Use getLiveAdhesionCount() getter instead
+    int pendingCellCount{ 0 };  // DEPRECATED: Use getPendingCellCount() getter instead
+    
+    // Unified cell count variables (GPU Main System)
+    // Invariant: allocatedCellCount = liveCellCount + deadCellCount
+    int allocatedCellCount{ 0 };      // Total cell slots in memory (living + dead)
+    int deadCellCount{ 0 };           // Dead cells awaiting recycling
+    int allocatedAdhesionCount{ 0 };  // Total adhesion slots (active + inactive)
+    int deadAdhesionCount{ 0 };       // Broken adhesions awaiting cleanup
+    
+    // GPU Main System capacity management
+    // Runtime capacity limit, initialized to GPU_MAIN_MAX_CAPACITY
+    // Can be adjusted at runtime but cannot exceed GPU_MAIN_MAX_CAPACITY
+    int gpuMainMaxCapacity{ config::GPU_MAIN_MAX_CAPACITY };
     
         void* mappedPtr = nullptr;      // Pointer to the cell count staging buffer
     GLuint* countPtr = nullptr;     // Typed pointer to the mapped buffer value
@@ -172,10 +185,7 @@ struct CellManager
     void updateCounts();
 
     // Configuration
-    static constexpr int DEFAULT_CELL_COUNT = config::DEFAULT_CELL_COUNT;
     float spawnRadius = config::DEFAULT_SPAWN_RADIUS;
-    int cellLimit = config::MAX_CELLS;
-	int getAdhesionLimit() const { return cellLimit * config::MAX_ADHESIONS_PER_CELL / 2; } // Maximum number of adhesion connections
 
     // Constructor and destructor
     CellManager();
@@ -187,7 +197,7 @@ struct CellManager
 
     void initializeGPUBuffers();
     void resetSimulation();
-    void spawnCells(int count = DEFAULT_CELL_COUNT);
+    void spawnCells(int count = 100);
     void renderCells(glm::vec2 resolution, Shader &cellShader, class Camera &camera, bool wireframe = false);
     
     // Global flagellocyte settings management
@@ -305,10 +315,23 @@ struct CellManager
     // These methods are now handled by SpatialGridSystem
 
     // Getter functions for debug information
-    int getCellCount() const { return totalCellCount; }
+    int getCellCount() const { return totalCellCount; }  // DEPRECATED: Use getAllocatedCellCount() instead
     float getSpawnRadius() const { return spawnRadius; }
     GLuint getInstanceBuffer() const { return instanceBuffer; }
     SphereMesh& getSphereMesh() { return sphereMesh; }
+    
+    // GPU Main System: Unified getter methods for cell counts
+    // These methods provide access to the current state of the GPU Main simulation
+    int getGPUMainMaxCapacity() const { return gpuMainMaxCapacity; }  // Maximum capacity for GPU Main System
+    int getAllocatedCellCount() const { return allocatedCellCount; }  // Total cell slots (living + dead)
+    int getLiveCellCount() const { return liveCellCount; }            // Currently living cells
+    int getDeadCellCount() const { return deadCellCount; }            // Dead cells awaiting recycling
+    int getPendingCellCount() const { return pendingCellCount; }      // Cells queued for addition
+    
+    // GPU Main System: Unified getter methods for adhesion counts
+    int getAllocatedAdhesionCount() const { return allocatedAdhesionCount; }  // Total adhesion slots
+    int getLiveAdhesionCount() const { return liveAdhesionCount; }            // Active adhesion connections
+    int getDeadAdhesionCount() const { return deadAdhesionCount; }            // Broken adhesions awaiting cleanup
 
     // Performance testing function
 	// Cell selection and interaction system
@@ -455,8 +478,10 @@ struct CellManager
 	//     2 |  R |  S |  W
 	//     3 |  S |  W |  R
 
-    void setCellLimit(int limit) { cellLimit = limit; }
-    int getCellLimit() const { return cellLimit; }
+    // GPU Main System: Capacity management setter with validation
+    // Sets the runtime capacity limit for the GPU Main System
+    // Validates that capacity does not exceed GPU_MAIN_MAX_CAPACITY
+    void setGPUMainMaxCapacity(int capacity);
     
     // LOD system functions
     void initializeLODSystem();

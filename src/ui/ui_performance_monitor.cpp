@@ -28,7 +28,7 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
     bool usePreviewSystem = (sceneManager.getCurrentScene() == Scene::PreviewSimulation && cpuPreviewSystem);
     
     if (!usePreviewSystem) {
-        cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+        cellManager.setGPUMainMaxCapacity(sceneManager.getCurrentSceneMaxCapacity());
         cellManager.updateCounts();
     }
     ImGui::SetNextWindowPos(ImVec2(405, 621), ImGuiCond_FirstUseEver);
@@ -189,29 +189,44 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
 
     if (usePreviewSystem) {
         // Use CPU Preview System metrics
-        int cellCount = static_cast<int>(cpuPreviewSystem->getActiveCellCount());
-        int connectionCount = static_cast<int>(cpuPreviewSystem->getActiveConnectionCount());
-        int maxCells = 256; // CPU Preview System limit
+        int live = static_cast<int>(cpuPreviewSystem->getLiveCellCount());
+        int allocated = static_cast<int>(cpuPreviewSystem->getAllocatedCellCount());
+        int capacity = 256; // CPU Preview System limit
         
-        ImGui::Text("Cells: %i / %i", cellCount, maxCells);
-        ImGui::Text("Adhesion Connections: %i", connectionCount);
+        ImGui::Text("Cells: %i / %i / %i", live, allocated, capacity);
+        ImGui::Text("Dead: %i", allocated - live);
+        
+        int liveAdhesions = static_cast<int>(cpuPreviewSystem->getLiveAdhesionCount());
+        int allocatedAdhesions = static_cast<int>(cpuPreviewSystem->getAllocatedAdhesionCount());
+        ImGui::Text("Adhesions: %i / %i", liveAdhesions, allocatedAdhesions);
+        
         ImGui::Text("System: CPU Preview (SoA)");
         
         // Memory estimate for CPU system
-        float memoryMB = (cellCount * sizeof(CPUCellPhysics_SoA)) / (1024.0f * 1024.0f);
+        float memoryMB = (allocated * sizeof(CPUCellPhysics_SoA)) / (1024.0f * 1024.0f);
         ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
     } else {
         // Use GPU CellManager metrics
-        int cellCount = cellManager.getCellCount();
-        ImGui::Text("Cells: %i / %i / %i", cellManager.liveCellCount, cellManager.totalCellCount, cellManager.cellLimit);
-        ImGui::Text("Adhesion Connections: %i / %i / %i", cellManager.liveAdhesionCount, cellManager.totalAdhesionCount, cellManager.getAdhesionLimit());
-        ImGui::Text("Pending Cells: %i", cellManager.pendingCellCount);
+        int live = cellManager.getLiveCellCount();
+        int allocated = cellManager.getAllocatedCellCount();
+        int capacity = cellManager.getGPUMainMaxCapacity();
+        int dead = cellManager.getDeadCellCount();
+        int pending = cellManager.getPendingCellCount();
+        
+        ImGui::Text("Cells: %i / %i / %i", live, allocated, capacity);
+        ImGui::Text("Dead: %i", dead);
+        ImGui::Text("Pending: %i", pending);
+        
+        int liveAdhesions = cellManager.getLiveAdhesionCount();
+        int allocatedAdhesions = cellManager.getAllocatedAdhesionCount();
+        ImGui::Text("Adhesions: %i / %i", liveAdhesions, allocatedAdhesions);
+        
         ImGui::Text("Triangles: %i", cellManager.getTotalTriangleCount());
         ImGui::Text("Vertices: %i", cellManager.getTotalVertexCount());
         ImGui::Text("System: GPU Compute Shaders");
 
         // Memory estimate for GPU system
-        float memoryMB = (cellCount * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
+        float memoryMB = (allocated * sizeof(ComputeCell)) / (1024.0f * 1024.0f);
         ImGui::Text("Cell Data Memory: %.2f MB", memoryMB);
     }
 
@@ -250,12 +265,12 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
                 ImGui::Text("LOD 2 (8x8):   %d cells", lodCounts[2]);
                 ImGui::Text("LOD 3 (4x4):   %d cells", lodCounts[3]);
                 
-                int cellCount = cellManager.getCellCount();
+                int allocated = cellManager.getAllocatedCellCount();
                 int totalLodCells = lodCounts[0] + lodCounts[1] + lodCounts[2] + lodCounts[3];
                 if (totalLodCells > 0) {
                     ImGui::Text("LOD Coverage: %d / %d cells (%.1f%%)", 
-                        totalLodCells, cellCount, 
-                        (float)totalLodCells / cellCount * 100.0f);
+                        totalLodCells, allocated, 
+                        (float)totalLodCells / allocated * 100.0f);
                 }
             }
         }
@@ -269,11 +284,11 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
             } else {
                 ImGui::Text("Enabled: %s", cellManager.useFrustumCulling ? "Yes" : "No");
                 if (cellManager.useFrustumCulling) {
-                    int cellCount = cellManager.getCellCount();
+                    int allocated = cellManager.getAllocatedCellCount();
                     int visibleCells = cellManager.getVisibleCellCount();
-                    ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
-                    if (cellCount > 0) {
-                        float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
+                    ImGui::Text("Visible Cells: %d / %d", visibleCells, allocated);
+                    if (allocated > 0) {
+                        float cullingRatio = (float)(allocated - visibleCells) / allocated * 100.0f;
                         ImGui::Text("Culled: %.1f%%", cullingRatio);
                     }
                 }
@@ -289,11 +304,11 @@ void UIManager::renderPerformanceMonitor(CellManager &cellManager, PerformanceMo
             } else {
                 ImGui::Text("Enabled: %s", cellManager.useDistanceCulling ? "Yes" : "No");
                 if (cellManager.useDistanceCulling) {
-                    int cellCount = cellManager.getCellCount();
+                    int allocated = cellManager.getAllocatedCellCount();
                     int visibleCells = cellManager.getVisibleCellCount();
-                    ImGui::Text("Visible Cells: %d / %d", visibleCells, cellCount);
-                    if (cellCount > 0) {
-                        float cullingRatio = (float)(cellCount - visibleCells) / cellCount * 100.0f;
+                    ImGui::Text("Visible Cells: %d / %d", visibleCells, allocated);
+                    if (allocated > 0) {
+                        float cullingRatio = (float)(allocated - visibleCells) / allocated * 100.0f;
                         ImGui::Text("Culled: %.1f%%", cullingRatio);
                     }
                 }

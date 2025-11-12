@@ -610,7 +610,7 @@ int CPUAdhesionConnectionManager::findFreeConnectionSlot() const {
 }
 
 bool CPUAdhesionConnectionManager::isValidCellIndex(uint32_t cellIndex) const {
-    return m_cellData && cellIndex < m_cellData->activeCellCount && cellIndex < MAX_CELLS;
+    return m_cellData && cellIndex < m_cellData->activeCellCount && cellIndex < config::CPU_PREVIEW_MAX_CAPACITY;
 }
 
 bool CPUAdhesionConnectionManager::isValidConnectionIndex(int connectionIndex) const {

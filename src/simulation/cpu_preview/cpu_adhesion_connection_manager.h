@@ -9,6 +9,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include "cpu_soa_data_manager.h"
 #include "../cell/common_structs.h"
+#include "../../core/config.h"
 
 /**
  * CPU Adhesion Connection Manager
@@ -107,7 +108,6 @@ private:
     // Connection management constants
     static constexpr int MAX_ADHESIONS_PER_CELL = 20;
     static constexpr size_t MAX_CONNECTIONS = 5120; // 20 × 256 cells
-    static constexpr size_t MAX_CELLS = 256;
 
     // Internal helper methods
     int findFreeConnectionSlot() const;

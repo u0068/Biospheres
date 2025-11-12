@@ -40,7 +40,7 @@ void CellManager::initializeUnifiedCulling()
         glCreateBuffers(1, &unifiedOutputBuffers[i]);
         glNamedBufferStorage(
             unifiedOutputBuffers[i],
-            cellLimit * sizeof(float) * 16, // 4 vec4s per instance (positionAndRadius, color, orientation, fadeFactor)
+            gpuMainMaxCapacity * sizeof(float) * 16, // 4 vec4s per instance (positionAndRadius, color, orientation, fadeFactor)
             nullptr,
             GL_DYNAMIC_STORAGE_BIT
         );
@@ -49,7 +49,7 @@ void CellManager::initializeUnifiedCulling()
         glCreateBuffers(1, &flagellocyteOutputBuffers[i]);
         glNamedBufferStorage(
             flagellocyteOutputBuffers[i],
-            cellLimit * sizeof(float) * 16,
+            gpuMainMaxCapacity * sizeof(float) * 16,
             nullptr,
             GL_DYNAMIC_STORAGE_BIT
         );
@@ -82,8 +82,8 @@ void CellManager::initializeUnifiedCulling()
     const int CAP_INDICES = (CAP_SEGMENTS - 1) * RADIAL_SEGMENTS * 6 + RADIAL_SEGMENTS * 3; // Quads + tip triangles
     const int INDICES_PER_CELL = BODY_INDICES + CAP_INDICES;
     
-    tailVertexCount = cellLimit * VERTICES_PER_CELL;
-    tailIndexCount = cellLimit * INDICES_PER_CELL;
+    tailVertexCount = gpuMainMaxCapacity * VERTICES_PER_CELL;
+    tailIndexCount = gpuMainMaxCapacity * INDICES_PER_CELL;
     
     // Create tail vertex buffer
     glCreateBuffers(1, &tailVertexBuffer);

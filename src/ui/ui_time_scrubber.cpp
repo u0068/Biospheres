@@ -25,7 +25,7 @@
 
 void UIManager::renderTimeScrubber(CellManager& cellManager, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem)
 {
-    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+    cellManager.setGPUMainMaxCapacity(sceneManager.getCurrentSceneMaxCapacity());
     // Set window size and position for a long horizontal resizable window
     ImGui::SetNextWindowPos(ImVec2(1398, 15), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 120), ImGuiCond_FirstUseEver);

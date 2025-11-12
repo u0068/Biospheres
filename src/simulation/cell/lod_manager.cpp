@@ -33,7 +33,7 @@ void CellManager::initializeLODSystem()
     for (int i = 0; i < 4; i++) {
         glNamedBufferStorage(
             lodInstanceBuffers[i],
-            cellLimit * sizeof(float) * 12, // 3 vec4s per instance (positionAndRadius, color, orientation)
+            gpuMainMaxCapacity * sizeof(float) * 12, // 3 vec4s per instance (positionAndRadius, color, orientation)
             nullptr,
             GL_DYNAMIC_STORAGE_BIT
         );

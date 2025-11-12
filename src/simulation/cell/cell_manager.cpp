@@ -30,8 +30,8 @@
 
 CellManager::CellManager()
 {
-    // Set cell limit to maximum needed (10,000 for main simulation)
-    cellLimit = 10000;
+    // GPU Main System: Initialize capacity variable to maximum capacity
+    gpuMainMaxCapacity = config::GPU_MAIN_MAX_CAPACITY;
     
     // Generate sphere mesh - balanced quality and performance for preview cells
     sphereMesh.generateSphere(16, 24, 1.0f); // Medium poly: 16x24 = 768 triangles for better visual quality
@@ -257,14 +257,15 @@ void CellManager::cleanup()
 // ============================================================================
 
 void CellManager::initializeGPUBuffers()
-{    // Create triple buffered compute buffers for cell data
+{    // GPU Main System: Create triple buffered compute buffers for cell data
+    // Uses gpuMainMaxCapacity for buffer allocation (initialized to GPU_MAIN_MAX_CAPACITY)
     for (int i = 0; i < 3; i++)
     {
-        std::vector<ComputeCell> zeroCells(cellLimit);
+        std::vector<ComputeCell> zeroCells(gpuMainMaxCapacity);
         glCreateBuffers(1, &cellBuffer[i]);
         glNamedBufferData(
             cellBuffer[i],
-            cellLimit * sizeof(ComputeCell),
+            gpuMainMaxCapacity * sizeof(ComputeCell),
             zeroCells.data(),
             GL_DYNAMIC_COPY  // Used by both GPU compute and CPU read operations
         );
@@ -274,7 +275,7 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &instanceBuffer);
     glNamedBufferData(
         instanceBuffer,
-        cellLimit * sizeof(glm::vec4) * 3, // 3 vec4s: positionAndRadius, color, orientation
+        gpuMainMaxCapacity * sizeof(glm::vec4) * 3, // 3 vec4s: positionAndRadius, color, orientation
         nullptr,
         GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
     );
@@ -283,14 +284,14 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &freeCellSlotBuffer);
     glNamedBufferData(
         freeCellSlotBuffer,
-        cellLimit * sizeof(int),
+        gpuMainMaxCapacity * sizeof(int),
         nullptr,
         GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
     );
     glCreateBuffers(1, &freeAdhesionSlotBuffer);
     glNamedBufferData(
         freeAdhesionSlotBuffer,
-        cellLimit * config::MAX_ADHESIONS_PER_CELL * sizeof(int) / 2,
+        gpuMainMaxCapacity * config::MAX_ADHESIONS_PER_CELL * sizeof(int) / 2,
         nullptr,
         GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
     );
@@ -298,12 +299,13 @@ void CellManager::initializeGPUBuffers()
     // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
     glNamedBufferData(modeBuffer,
-        cellLimit * sizeof(GPUMode),
+        gpuMainMaxCapacity * sizeof(GPUMode),
         nullptr,
         GL_DYNAMIC_COPY  // Written once by CPU, read frequently by GPU compute shaders
     );
 
-    // A buffer that keeps track of how many cells there are in the simulation
+    // GPU Main System: Buffer that tracks cell and adhesion counts
+    // Stores: allocatedCellCount, liveCellCount, allocatedAdhesionCount, freeAdhesionTop
     glCreateBuffers(1, &gpuCellCountBuffer);
     glNamedBufferStorage(
         gpuCellCountBuffer,
@@ -326,18 +328,18 @@ void CellManager::initializeGPUBuffers()
     glCreateBuffers(1, &stagingCellBuffer);
     glNamedBufferStorage(
         stagingCellBuffer,
-        cellLimit * sizeof(ComputeCell),
+        gpuMainMaxCapacity * sizeof(ComputeCell),
         nullptr,
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
     );
-    mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, cellLimit * sizeof(ComputeCell),
+    mappedCellPtr = glMapNamedBufferRange(stagingCellBuffer, 0, gpuMainMaxCapacity * sizeof(ComputeCell),
         GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
 
     
     // Cell addition queue buffer - FIXED: Increased size for 100k cells
     glCreateBuffers(1, &cellAdditionBuffer);
     glNamedBufferData(cellAdditionBuffer,
-        cellLimit * sizeof(ComputeCell), // Full size to handle large simultaneous splits
+        gpuMainMaxCapacity * sizeof(ComputeCell), // Full size to handle large simultaneous splits
         nullptr,
         GL_STREAM_COPY  // Frequently updated by GPU compute shaders
     );
@@ -346,7 +348,7 @@ void CellManager::initializeGPUBuffers()
     sphereMesh.setupInstanceBuffer(instanceBuffer);
 
     // Reserve CPU storage
-    cpuCells.reserve(cellLimit);
+    cpuCells.reserve(gpuMainMaxCapacity);
 }
 
 // ============================================================================
@@ -357,7 +359,7 @@ void CellManager::addCellsToQueueBuffer(const std::vector<ComputeCell> &cells)
 { // Prefer to not use this directly, use addCellToStagingBuffer instead
     int newCellCount = static_cast<int>(cells.size());
 
-    if (totalCellCount + newCellCount > cellLimit)
+    if (totalCellCount + newCellCount > gpuMainMaxCapacity)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -373,7 +375,7 @@ void CellManager::addCellsToQueueBuffer(const std::vector<ComputeCell> &cells)
 
 void CellManager::addCellToStagingBuffer(const ComputeCell &newCell)
 {
-    if (totalCellCount + 1 > cellLimit)
+    if (totalCellCount + 1 > gpuMainMaxCapacity)
     {
         std::cout << "Warning: Maximum cell count reached!\n";
         return;
@@ -412,7 +414,7 @@ void CellManager::restoreCellsDirectlyToGPUBuffer(const std::vector<ComputeCell>
     
     int newCellCount = static_cast<int>(cells.size());
     
-    if (newCellCount > cellLimit) {
+    if (newCellCount > gpuMainMaxCapacity) {
         std::cout << "Warning: Restoration cell count exceeds limit!\n";
         return;
     }
@@ -646,11 +648,12 @@ void CellManager::updateCells(float deltaTime)
     int previousCellCount = totalCellCount;
     updateCounts();
     
-    // CRITICAL FIX: Safety check to prevent cell count overflow
-    if (totalCellCount > cellLimit) {
-        std::cout << "Warning: Cell count exceeded limit! Clamping to " << cellLimit << std::endl;
-        totalCellCount = cellLimit;
-        liveCellCount = std::min(liveCellCount, cellLimit);
+    // GPU Main System: Safety check to prevent cell count overflow
+    // Ensures allocated cells do not exceed GPU Main System capacity
+    if (totalCellCount > gpuMainMaxCapacity) {
+        std::cout << "Warning: Cell count exceeded GPU Main System capacity! Clamping to " << gpuMainMaxCapacity << std::endl;
+        totalCellCount = gpuMainMaxCapacity;
+        liveCellCount = std::min(liveCellCount, gpuMainMaxCapacity);
         
         // Update GPU buffer with clamped values
         GLuint counts[4] = { 
@@ -699,9 +702,9 @@ void CellManager::updateCellsFastForward(float deltaTime)
     updateCounts();
     
     // CRITICAL FIX: Safety check to prevent cell count overflow
-    if (totalCellCount > cellLimit) {
-        totalCellCount = cellLimit;
-        liveCellCount = std::min(liveCellCount, cellLimit);
+    if (totalCellCount > gpuMainMaxCapacity) {
+        totalCellCount = gpuMainMaxCapacity;
+        liveCellCount = std::min(liveCellCount, gpuMainMaxCapacity);
         
         // Update GPU buffer with clamped values
         GLuint counts[4] = { 
@@ -1121,8 +1124,8 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
 
     // Set uniforms
     internalUpdateShader->setFloat("u_deltaTime", deltaTime);
-    internalUpdateShader->setInt("u_maxCells", cellLimit);
-    internalUpdateShader->setInt("u_maxAdhesions", getAdhesionLimit());
+    internalUpdateShader->setInt("u_maxCells", gpuMainMaxCapacity);
+    internalUpdateShader->setInt("u_maxAdhesions", gpuMainMaxCapacity * config::MAX_ADHESIONS_PER_CELL / 2);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, getCellReadBuffer());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, modeBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, getCellWriteBuffer());
@@ -1145,7 +1148,7 @@ void CellManager::runInternalUpdateCompute(float deltaTime)
     rotateBuffers();
     
     // CRITICAL FIX: Add safety check for high cell counts
-    if (totalCellCount > cellLimit * 0.95) { // If we're at 95% capacity
+    if (totalCellCount > gpuMainMaxCapacity * 0.95) { // If we're at 95% capacity
         // Force a memory barrier to ensure all operations are complete
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
     }
@@ -1158,7 +1161,7 @@ void CellManager::applyCellAdditions()
     cellAdditionShader->use();
 
     // Set uniforms
-    cellAdditionShader->setInt("u_maxCells", cellLimit);
+    cellAdditionShader->setInt("u_maxCells", gpuMainMaxCapacity);
     cellAdditionShader->setInt("u_pendingCellCount", pendingCellCount);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, cellAdditionBuffer);
@@ -1190,6 +1193,12 @@ void CellManager::resetSimulation()
     pendingCellCount = 0;
     totalAdhesionCount = 0;
     liveAdhesionCount = 0;
+    
+    // Reset new unified variables
+    allocatedCellCount = 0;
+    deadCellCount = 0;
+    allocatedAdhesionCount = 0;
+    deadAdhesionCount = 0;
     
     // CRITICAL FIX: Reset buffer rotation state for consistent keyframe restoration
     bufferRotation = 0;
@@ -1295,7 +1304,7 @@ void CellManager::spawnCells(int count)
 {
     TimerCPU cpuTimer("Spawning Cells");
 
-    for (int i = 0; i < count && totalCellCount < cellLimit; ++i)
+    for (int i = 0; i < count && totalCellCount < gpuMainMaxCapacity; ++i)
     {
         // Random position within spawn radius
         float angle1 = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
@@ -1332,20 +1341,35 @@ void CellManager::updateCounts()
     // Add buffer update barrier but don't flush yet
     addBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 
+    // Update legacy variables (for backward compatibility during migration)
     totalCellCount = countPtr[0];
     liveCellCount = countPtr[1];
     totalAdhesionCount = countPtr[2]; // This is the number of adhesion connections, not cells
     liveAdhesionCount = totalAdhesionCount - countPtr[3];
     
+    // Update new unified variables
+    allocatedCellCount = countPtr[0];  // Total cell slots (living + dead)
+    // liveCellCount already updated above (shared between old and new)
+    deadCellCount = allocatedCellCount - liveCellCount;  // Calculate dead cells
+    // pendingCellCount is managed separately by CPU
+    
+    allocatedAdhesionCount = countPtr[2];  // Total adhesion slots
+    liveAdhesionCount = allocatedAdhesionCount - countPtr[3];  // Active adhesions
+    deadAdhesionCount = countPtr[3];  // Broken adhesions
+    
     // CRITICAL FIX: Clamp cell counts to prevent overflow
-    if (totalCellCount > cellLimit) {
-        totalCellCount = cellLimit;
-        countPtr[0] = static_cast<GLuint>(cellLimit);
+    if (totalCellCount > gpuMainMaxCapacity) {
+        totalCellCount = gpuMainMaxCapacity;
+        allocatedCellCount = gpuMainMaxCapacity;
+        countPtr[0] = static_cast<GLuint>(gpuMainMaxCapacity);
     }
-    if (liveCellCount > cellLimit) {
-        liveCellCount = cellLimit;
-        countPtr[1] = static_cast<GLuint>(cellLimit);
+    if (liveCellCount > gpuMainMaxCapacity) {
+        liveCellCount = gpuMainMaxCapacity;
+        countPtr[1] = static_cast<GLuint>(gpuMainMaxCapacity);
     }
+    
+    // Recalculate dead count after clamping
+    deadCellCount = allocatedCellCount - liveCellCount;
     
     // CRITICAL FIX: If we had to clamp values, update the GPU buffer
     if (countPtr[0] != totalCellCount || countPtr[1] != liveCellCount) {
@@ -1357,6 +1381,31 @@ void CellManager::updateCounts()
         };
         glNamedBufferSubData(gpuCellCountBuffer, 0, sizeof(GLuint) * 4, counts);
     }
+}
+
+// ============================================================================
+// CAPACITY MANAGEMENT
+// ============================================================================
+
+void CellManager::setGPUMainMaxCapacity(int capacity)
+{
+    // Validate against absolute maximum
+    assert(capacity > 0 && capacity <= config::GPU_MAIN_MAX_CAPACITY);
+    
+    if (capacity <= 0 || capacity > config::GPU_MAIN_MAX_CAPACITY) {
+        std::cerr << "ERROR: Requested capacity " << capacity 
+                  << " exceeds GPU_MAIN_MAX_CAPACITY " << config::GPU_MAIN_MAX_CAPACITY << "\n";
+        return;
+    }
+    
+    // Validate against current allocation
+    if (capacity < allocatedCellCount) {
+        std::cerr << "ERROR: Cannot reduce capacity below current allocation (" 
+                  << allocatedCellCount << " cells)\n";
+        return;
+    }
+    
+    gpuMainMaxCapacity = capacity;
 }
 
 // ============================================================================

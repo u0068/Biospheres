@@ -19,13 +19,14 @@
 
 void CellManager::initializeAdhesionLineBuffers()
 {
-    std::cout << "Initializing adhesion line buffers with capacity for " << getAdhesionLimit() << " connections\n";
+    int adhesionLimit = gpuMainMaxCapacity * config::MAX_ADHESIONS_PER_CELL / 2;
+    std::cout << "Initializing adhesion line buffers with capacity for " << adhesionLimit << " connections\n";
     
     // Create buffer for adhesion line vertices (each connection has 2 segments = 4 vertices)
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &adhesionLineBuffer);
     glNamedBufferData(adhesionLineBuffer,
-        getAdhesionLimit() * sizeof(AdhesionLineVertex) * 4, // 4 vertices per connection (2 segments)
+        adhesionLimit * sizeof(AdhesionLineVertex) * 4, // 4 vertices per connection (2 segments)
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for adhesion line rendering
@@ -34,7 +35,7 @@ void CellManager::initializeAdhesionLineBuffers()
     // Create VBO that will be bound to the adhesion line buffer
     glCreateBuffers(1, &adhesionLineVBO);
     glNamedBufferData(adhesionLineVBO,
-        getAdhesionLimit() * sizeof(AdhesionLineVertex) * 4, // 4 vertices per connection (2 segments)
+        adhesionLimit * sizeof(AdhesionLineVertex) * 4, // 4 vertices per connection (2 segments)
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
@@ -173,14 +174,15 @@ void CellManager::cleanupAdhesionLines()
 // ============================================================================
 void CellManager::initializeAdhesionConnectionSystem()
 {
-    std::cout << "Initializing adhesion connection system with capacity for " << getAdhesionLimit() << " connections\n";
+    int adhesionLimit = gpuMainMaxCapacity * config::MAX_ADHESIONS_PER_CELL / 2;
+    std::cout << "Initializing adhesion connection system with capacity for " << adhesionLimit << " connections\n";
     
     // Create buffer for adhesion connections
     // Each connection stores: cellAIndex, cellBIndex, modeIndex, isActive, anchorDirectionA, paddingA, anchorDirectionB, paddingB, twistReferenceA, twistReferenceB
     // Total size: 4 uints + 2 vec3s + 2 floats + 2 quats = 4*4 + 2*12 + 2*4 + 2*16 = 16 + 24 + 8 + 32 = 80 bytes
     glCreateBuffers(1, &adhesionConnectionBuffer);
     glNamedBufferData(adhesionConnectionBuffer,
-        getAdhesionLimit() * sizeof(AdhesionConnection),
+        adhesionLimit * sizeof(AdhesionConnection),
         nullptr, GL_DYNAMIC_READ);  // GPU produces data, CPU reads for connection count
     
     // Clear all existing adhesion connections to ensure clean state with new structure format
@@ -190,7 +192,7 @@ void CellManager::initializeAdhesionConnectionSystem()
     
     std::cout << "Adhesion connection system initialized successfully\n";
     std::cout << "  - adhesionConnectionBuffer: " << adhesionConnectionBuffer << "\n";
-    std::cout << "  - Buffer size: " << (getAdhesionLimit() * sizeof(AdhesionConnection)) << " bytes\n";
+    std::cout << "  - Buffer size: " << (adhesionLimit * sizeof(AdhesionConnection)) << " bytes\n";
     std::cout << "  - Structure size: " << sizeof(AdhesionConnection) << " bytes (was 48, now 80)\n";
     std::cout << "  - Current totalAdhesionCount: " << totalAdhesionCount << " (reset to 0)\n";
     std::cout << "  - Current totalCellCount: " << totalCellCount << "\n";

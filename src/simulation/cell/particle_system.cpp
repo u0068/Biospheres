@@ -185,7 +185,7 @@ void CellManager::updateParticles(float deltaTime)
     particleGridInsertShader->setFloat("u_gridCellSize", config::GRID_CELL_SIZE);
     particleGridInsertShader->setFloat("u_worldSize", config::WORLD_SIZE);
     particleGridInsertShader->setInt("u_maxCellsPerGrid", config::MAX_CELLS_PER_GRID);
-    particleGridInsertShader->setInt("u_particleIndexOffset", config::DEFAULT_CELL_COUNT); // Offset to distinguish from cells
+    particleGridInsertShader->setInt("u_particleIndexOffset", config::PARTICLE_SPATIAL_GRID_INDEX_OFFSET); // Offset to distinguish from cells
     
     // Bind buffers for unified grid insertion
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);     // Particle data

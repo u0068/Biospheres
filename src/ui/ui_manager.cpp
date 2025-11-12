@@ -26,7 +26,7 @@
 
 void UIManager::renderCellInspector(CellManager &cellManager, SceneManager& sceneManager)
 {
-    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+    cellManager.setGPUMainMaxCapacity(sceneManager.getCurrentSceneMaxCapacity());
     ImGui::SetNextWindowPos(ImVec2(6, 620), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(388, 347), ImGuiCond_FirstUseEver);
 	int flags = windowsLocked ? getWindowFlags() : getWindowFlags();

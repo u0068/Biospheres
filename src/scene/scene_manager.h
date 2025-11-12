@@ -14,8 +14,8 @@ class SceneManager
 {
 public:
     SceneManager() : currentScene(Scene::PreviewSimulation), sceneChanged(false), paused(true), simulationSpeed(1.0f), previewPaused(true), mainPaused(false) {
-        sceneCellLimits[Scene::PreviewSimulation] = 256;
-        sceneCellLimits[Scene::MainSimulation] = 10000;
+        sceneMaxCapacities[Scene::PreviewSimulation] = config::CPU_PREVIEW_MAX_CAPACITY;
+        sceneMaxCapacities[Scene::MainSimulation] = config::GPU_MAIN_MAX_CAPACITY;
     }
       Scene getCurrentScene() const { return currentScene; }
     void switchToScene(Scene newScene) 
@@ -95,14 +95,13 @@ public:
         return getSceneName(currentScene);
     }
 
-    // Per-scene cell limits
-    void setCellLimit(Scene scene, int limit) { sceneCellLimits[scene] = limit; }
-    int getCellLimit(Scene scene) const {
-        auto it = sceneCellLimits.find(scene);
-        if (it != sceneCellLimits.end()) return it->second;
-        return config::MAX_CELLS;
-    }
-    int getCurrentCellLimit() const { return getCellLimit(currentScene); }
+    // Scene-specific capacity management
+    // Maps each scene to its appropriate system capacity:
+    // - PreviewSimulation -> CPU_PREVIEW_MAX_CAPACITY (256 cells)
+    // - MainSimulation -> GPU_MAIN_MAX_CAPACITY (10,000 cells)
+    void setSceneMaxCapacity(Scene scene, int capacity);
+    int getSceneMaxCapacity(Scene scene) const;
+    int getCurrentSceneMaxCapacity() const;
 
     // Scene file management (Requirements 3.4, 3.5)
     void loadPreviewScene(const std::string& filename);
@@ -141,7 +140,10 @@ private:
     bool previewPaused = true;   // Preview starts paused
     bool mainPaused = false;     // Main starts unpaused
 
-    std::map<Scene, int> sceneCellLimits{{Scene::PreviewSimulation, 256}, {Scene::MainSimulation, 10000}};
+    // Scene-to-capacity mapping
+    // PreviewSimulation uses CPU Preview System capacity (256 cells)
+    // MainSimulation uses GPU Main System capacity (10,000 cells)
+    std::map<Scene, int> sceneMaxCapacities{{Scene::PreviewSimulation, config::CPU_PREVIEW_MAX_CAPACITY}, {Scene::MainSimulation, config::GPU_MAIN_MAX_CAPACITY}};
     
     // Independent system states (Requirements 3.4, 3.5)
     bool previewSystemActive = false;

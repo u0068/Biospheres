@@ -19,12 +19,34 @@ namespace config
 	constexpr bool VSYNC{ false };
 
 	// ========== Cell Simulation Configuration ==========
-	constexpr int MAX_CELLS{256};
-	constexpr int DEFAULT_CELL_COUNT{100000};
+	
+	// System-Specific Capacity Constants
+	// CPU Preview System: Limited to 256 cells for genome editing and preview
+	// Used by CPUSoADataManager and CPUPreviewSystem
+	constexpr int CPU_PREVIEW_MAX_CAPACITY{256};
+	
+	// GPU Main System: Full-scale simulation supporting up to 10,000 cells
+	// Used by CellManager for GPU-accelerated simulation
+	constexpr int GPU_MAIN_MAX_CAPACITY{10000};
+	
+	// Adhesion Configuration (shared between both systems)
 	constexpr int MAX_ADHESIONS_PER_CELL{ 20 }; // Maximum number of adhesions per cell
-	constexpr int MAX_ADHESIONS{ MAX_CELLS * MAX_ADHESIONS_PER_CELL / 2};
+	
+	// System-Specific Adhesion Capacities
+	// CPU Preview System: Maximum adhesion connections for preview simulation
+	constexpr int CPU_PREVIEW_MAX_ADHESIONS{ (CPU_PREVIEW_MAX_CAPACITY * MAX_ADHESIONS_PER_CELL) / 2 };
+	
+	// GPU Main System: Maximum adhesion connections for full simulation
+	constexpr int GPU_MAIN_MAX_ADHESIONS{ (GPU_MAIN_MAX_CAPACITY * MAX_ADHESIONS_PER_CELL) / 2 };
+	
+	// Other Configuration
 	constexpr float DEFAULT_SPAWN_RADIUS{50.0f};
 	constexpr int COUNTER_NUMBER{ 4 }; // Number of counters in the cell count buffer
+
+	// ========== Particle System Configuration ==========
+	// Particle indices in the unified spatial grid start after all possible cell indices
+	// This offset ensures particles and cells can coexist in the same grid without ID conflicts
+	constexpr int PARTICLE_SPATIAL_GRID_INDEX_OFFSET{ GPU_MAIN_MAX_CAPACITY };
 
 	// ========== Spatial Partitioning Configuration ==========
 	constexpr float WORLD_SIZE{100.0f};                          // Size of the simulation world (cube from -50 to +50)

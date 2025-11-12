@@ -25,7 +25,7 @@
 
 void UIManager::renderGenomeEditor(CellManager& cellManager, SceneManager& sceneManager, CPUPreviewSystem* cpuPreviewSystem)
 {
-    cellManager.setCellLimit(sceneManager.getCurrentCellLimit());
+    cellManager.setGPUMainMaxCapacity(sceneManager.getCurrentSceneMaxCapacity());
     ImGui::SetNextWindowPos(ImVec2(4, 13), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     

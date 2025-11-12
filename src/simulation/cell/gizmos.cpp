@@ -24,7 +24,7 @@ void CellManager::initializeGizmoBuffers()
     // Each vertex now has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &gizmoBuffer);
     glNamedBufferData(gizmoBuffer,
-        cellLimit * 6 * sizeof(glm::vec4) * 2, // position + color for each vertex
+        gpuMainMaxCapacity * 6 * sizeof(glm::vec4) * 2, // position + color for each vertex
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for gizmo rendering
@@ -33,7 +33,7 @@ void CellManager::initializeGizmoBuffers()
     // Create VBO that will be bound to the gizmo buffer
     glCreateBuffers(1, &gizmoVBO);
     glNamedBufferData(gizmoVBO,
-        cellLimit * 6 * sizeof(glm::vec4) * 2,
+        gpuMainMaxCapacity * 6 * sizeof(glm::vec4) * 2,
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
@@ -146,7 +146,7 @@ void CellManager::initializeRingGizmoBuffers()
     // Each vertex has vec4 position + vec4 color = 8 floats = 32 bytes
     glCreateBuffers(1, &ringGizmoBuffer);
     glNamedBufferData(ringGizmoBuffer,
-        cellLimit * 384 * sizeof(glm::vec4) * 2, // position + color for each vertex
+        gpuMainMaxCapacity * 384 * sizeof(glm::vec4) * 2, // position + color for each vertex
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create VAO for ring gizmo rendering
@@ -155,7 +155,7 @@ void CellManager::initializeRingGizmoBuffers()
     // Create VBO that will be bound to the ring gizmo buffer
     glCreateBuffers(1, &ringGizmoVBO);
     glNamedBufferData(ringGizmoVBO,
-        cellLimit * 384 * sizeof(glm::vec4) * 2,
+        gpuMainMaxCapacity * 384 * sizeof(glm::vec4) * 2,
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up VAO with vertex attributes (stride is now 2 vec4s = 32 bytes)
@@ -175,17 +175,17 @@ void CellManager::initializeRingGizmoBuffers()
 void CellManager::initializeAnchorGizmoBuffers()
 {
     // Create buffer for anchor instances (variable size - depends on number of adhesions)
-    // Maximum possible anchors: cellLimit * 20 adhesions per cell
+    // Maximum possible anchors: gpuMainMaxCapacity * 20 adhesions per cell
     // Each instance is AnchorInstance = 48 bytes (verified by static_assert)
     glCreateBuffers(1, &anchorGizmoBuffer);
     glNamedBufferData(anchorGizmoBuffer,
-        cellLimit * 20 * sizeof(AnchorInstance), // Maximum possible anchor instances
+        gpuMainMaxCapacity * 20 * sizeof(AnchorInstance), // Maximum possible anchor instances
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Create instance VBO for rendering
     glCreateBuffers(1, &anchorGizmoVBO);
     glNamedBufferData(anchorGizmoVBO,
-        cellLimit * 20 * sizeof(AnchorInstance),
+        gpuMainMaxCapacity * 20 * sizeof(AnchorInstance),
         nullptr, GL_DYNAMIC_COPY);  // GPU produces data, GPU consumes for rendering
     
     // Set up the sphere mesh for instanced rendering (use the same mesh as cells)

@@ -44,11 +44,13 @@ layout(std430, binding = 3) restrict buffer GridCountBuffer {
     uint gridCounts[];
 };
 
+// Cell count buffer for GPU Main System
+// Tracks cell and adhesion counts for the main simulation
 layout(std430, binding = 4) buffer CellCountBuffer {
-    uint totalCellCount;
-    uint liveCellCount;
-    uint totalAdhesionCount;
-    uint freeAdhesionTop;
+    uint allocatedCellCount;      // Total cell slots (living + dead)
+    uint liveCellCount;           // Currently living cells
+    uint allocatedAdhesionCount;  // Total adhesion slots
+    uint freeAdhesionTop;         // Top of free adhesion stack
 };
 
 // Uniforms
@@ -78,7 +80,7 @@ uint gridToIndex(ivec3 gridPos) {
 void main() {
     uint cellIndex = gl_GlobalInvocationID.x;
       // Check bounds
-    if (cellIndex >= totalCellCount) {
+    if (cellIndex >= allocatedCellCount) {
         return;
     }
     
