@@ -1,0 +1,58 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock)
+    vec4 genomeOrientation; // Quaternion for genome-derived orientation - NEVER affected by physics
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    // Internal:
+    vec4 signallingSubstances; // 4 substances for now
+    int modeIndex;  // absolute index of the cell's mode
+    float age; // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+    
+    // Padding to maintain 16-byte alignment for the entire struct
+    uint _padding[4];
+};
+
+// Shader storage buffer objects
+layout(std430, binding = 0) restrict buffer ReadCellBuffer {
+    ComputeCell cells[];
+};
+
+layout(std430, binding = 1) restrict buffer ReservationsBuffer {
+    uint reservations[];
+};
+
+layout(std430, binding = 2) restrict buffer FreeSlotsBuffer {
+    uint freeSlots[];
+};
+
+layout(std430, binding = 3) restrict buffer AssignmentsBuffer {
+    uint assignments[];
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    assignments[index] = 0xFFFFFFu; // initialize assignments to big number to indicate unassigned
+
+    if (cells[index].age == -1) { // check if cell at the index is dead
+      // dead cell means the slot is free
+      freeSlots[index] = index; // store the index of the free slot
+      // every thread has a unique value for index so no chance of conflict
+    } else {
+      freeSlots[index] = 0xFFFFFFu; // mark the slot as occupied. big number ensures that it goes to the end of the array after sorting/compacting
+    }
+}

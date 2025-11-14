@@ -1,0 +1,23 @@
+#version 460 core
+const uint WG_SIZE = 256u; // workgroup size
+layout(local_size_x = WG_SIZE) in;
+
+layout(std430, binding = 0) readonly buffer Flags {
+    uint flags[];         // original flags (0/1)
+};
+layout(std430, binding = 1) readonly buffer Ranks {
+    uint ranks[];         // final exclusive ranks (global)
+};
+layout(std430, binding = 2) writeonly buffer Compact {
+    uint compact[];       // compacted result: compact[ ranks[i] ] = i
+};
+layout(push_constant) uniform PC { uint N; } pc;
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= pc.N) return;
+    if (flags[gid] == 1u) {
+        uint pos = ranks[gid];
+        compact[pos] = gid; // store the source index or value you want compacted
+    }
+}

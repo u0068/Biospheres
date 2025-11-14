@@ -1,4 +1,4 @@
-#version 460 core
+﻿#version 460 core
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -113,8 +113,13 @@ layout(std430, binding = 6) coherent buffer freeAdhesionSlotBuffer {
     uint freeAdhesionSlotIndices[];
 };
 
+layout(std430, binding = 7) coherent buffer cellAssignmentBuffer {
+    uint cellAssignmentIndices[];
+};
 
-
+layout(std430, binding = 8) coherent buffer adhesionAssignmentBuffer {
+    uint adhesionAssignmentIndices[];
+};
 
 uniform float u_deltaTime;
 uniform int u_maxCells;
@@ -265,36 +270,10 @@ vec4 smallRandomQuat(float angle, uint seed) {
     return normalize(vec4(axis * s, cos(halfAngle)));
 }
 
-
-uint getNewAdhesionIndex() {
-    // Try to reserve a free adhesion slot
-    // Snapshot free top value without modifying it first
-    int freeTopBefore = freeAdhesionTop;
-    if (freeTopBefore > 0) {
-        // Now reserve slot *safely*
-        int freeTop = atomicAdd(freeAdhesionTop, -1);
-        if (freeTop > 0) {
-            return freeAdhesionSlotIndices[freeTop - 1];
-        } else {
-            // Another thread raced and depleted the stack before we got here
-            atomicAdd(freeAdhesionTop, 1); // revert
-        }
-    }
-
-    // Fallback to allocating a new slot
-    uint newAdhesionIndex = atomicAdd(totalAdhesionCount, 1);
-    if (newAdhesionIndex >= u_maxAdhesions) {
-        atomicMin(totalAdhesionCount, u_maxAdhesions);
-        return -1;
-    }
-    return newAdhesionIndex;
-}
-
 // Add adhesion with preserved anchor directions (for inheritance)
 // Returns the connection index on success, -1 on failure
-int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB) {
-    uint newAdhesionIndex = getNewAdhesionIndex();
-    if (newAdhesionIndex == uint(-1)) {
+int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, vec3 preservedAnchorA, vec3 preservedAnchorB, uint newAdhesionIndex) {
+    if (newAdhesionIndex == 0xFFFFFFu) {
         // Failed to reserve an adhesion index
         return -1;
     }
@@ -379,100 +358,6 @@ int addAdhesionWithDirections(uint cellAIndex, uint cellBIndex, uint modeIndex, 
     memoryBarrierBuffer();
 
     return int(newAdhesionIndex);
-}
-
-bool addAdhesion(uint cellAIndex, uint cellBIndex, uint modeIndex) {
-    uint newAdhesionIndex = getNewAdhesionIndex();
-    if (newAdhesionIndex == uint(-1)) {
-        // Failed to reserve an adhesion index
-        return false;
-    }
-
-    // Check for available slot in cell A
-    int slotA = -1;
-    for (int j = 0; j < 20; ++j) {
-        if (outputCells[cellAIndex].adhesionIndices[j] < 0) {
-            slotA = j;
-            break;
-        }
-    }
-
-    // Check for available slot in cell B
-    int slotB = -1;
-    for (int j = 0; j < 20; ++j) {
-        if (outputCells[cellBIndex].adhesionIndices[j] < 0) {
-            slotB = j;
-            break;
-        }
-    }
-
-    if (slotA == -1 || slotB == -1) {
-        // Roll back the reservation if any cell has no free slot
-        int reservation = atomicAdd(freeAdhesionTop, 1);
-        int topIndex = reservation;
-        freeAdhesionSlotIndices[topIndex] = newAdhesionIndex;
-        return false;
-    }
-
-    // Calculate initial anchor directions using ONLY genome-based data
-    // This function is called for sibling bonds during split
-    // We need to use genome-derived orientations, not actual cell orientations
-    GPUMode modeForBond = modes[modeIndex];
-    
-    // The split direction in the parent's local frame
-    vec3 splitDirLocal = modeForBond.splitDirection.xyz;
-    
-    // Direction vectors in parent's local frame
-    // Child A is at +offset, child B is at -offset
-    vec3 directionAtoB_parentLocal = -splitDirLocal;  // A points toward B (at -offset)
-    vec3 directionBtoA_parentLocal = splitDirLocal;   // B points toward A (at +offset)
-
-    // Transform to each child's local space using genome-derived orientation deltas
-    // Child A's local space: rotate by inverse of orientationA
-    vec4 invDeltaA = quatInverse(modeForBond.orientationA);
-    vec3 anchorDirectionA = normalize(rotateVectorByQuaternion(directionAtoB_parentLocal, invDeltaA));
-    
-    // Child B's local space: rotate by inverse of orientationB
-    vec4 invDeltaB = quatInverse(modeForBond.orientationB);
-    vec3 anchorDirectionB = normalize(rotateVectorByQuaternion(directionBtoA_parentLocal, invDeltaB));
-
-    // Get cell data for mode lookup
-    ComputeCell cellA = inputCells[cellAIndex];
-    ComputeCell cellB = inputCells[cellBIndex];
-    
-    // Use genome-based orientations as twist reference (deterministic, independent of physics)
-    // This ensures twist constraints are consistent regardless of cell rotation before split
-    vec4 twistReferenceA = cellA.genomeOrientation;
-    vec4 twistReferenceB = cellB.genomeOrientation;
-
-    // Classify zones using the genome-derived anchor directions (already in local space)
-    GPUMode modeA = modes[cellA.modeIndex];
-    GPUMode modeB = modes[cellB.modeIndex];
-
-    // Zone classification using genome-based anchors
-    uint zoneA = classifyBondDirection(anchorDirectionA, modeA.splitDirection.xyz, 2.0);
-    uint zoneB = classifyBondDirection(anchorDirectionB, modeB.splitDirection.xyz, 2.0);
-
-    // Write connection and assign indices
-    connections[newAdhesionIndex] = AdhesionConnection(
-        cellAIndex,
-        cellBIndex,
-        modeIndex,
-        1, // isActive
-        zoneA,
-        zoneB,
-        anchorDirectionA,
-        0.0, // paddingA
-        anchorDirectionB,
-        0.0, // paddingB
-        twistReferenceA,
-        twistReferenceB,
-        uint[4](0u, 0u, 0u, 0u) // padding to ensure 16-byte alignment
-    );
-    outputCells[cellAIndex].adhesionIndices[slotA] = int(newAdhesionIndex);
-    outputCells[cellBIndex].adhesionIndices[slotB] = int(newAdhesionIndex);
-
-    return true;
 }
 
 void removeAdhesion(int adhesionIndex){
@@ -568,35 +453,9 @@ void main() {
         outputCells[index] = cell;
         return;
     }
-    
-    // Try to reserve a slot atomically
-    uint newIndex = atomicAdd(totalCellCount, 1);
 
-    // Check if we successfully got a valid slot
-    if (newIndex >= u_maxCells) {
-        // We exceeded the limit, rollback and cancel
-        atomicAdd(totalCellCount, -1);
-        outputCells[index] = cell;
-        return;
-    }
-
-    // Successfully reserved a slot, increment live count
-    atomicAdd(liveCellCount, 1);
-
-    // CRITICAL FIX: Add memory barrier to ensure atomic operations are complete
-    memoryBarrierBuffer();
-    
-    // CRITICAL FIX: Double-check bounds after memory barrier
-    if (newIndex >= u_maxCells) {
-        // Rollback the increment if we're still out of bounds
-        atomicAdd(totalCellCount, -1);
-        atomicAdd(liveCellCount, -1);
-        outputCells[index] = cell;
-        return;
-    }
-
-    uint childAIndex = index;
-    uint childBIndex = newIndex;
+    uint childAIndex = cellAssignmentIndices[2*index];
+    uint childBIndex = cellAssignmentIndices[2*index+1];
 
     vec3 offset = rotateVectorByQuaternion(mode.splitDirection.xyz, cell.genomeOrientation) * 0.5;
 
@@ -757,13 +616,13 @@ void main() {
             ));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
-            int newConnectionIndex;
+            int newConnectionIndex = int(adhesionAssignmentIndices[40*index+i]);
             if (neighborWasCellA) {
                 // Neighbor was cellA, child becomes cellB
-                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childAIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection);
+                addAdhesionWithDirections(neighborIndex, childAIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection, newConnectionIndex);
             } else {
                 // Neighbor was cellB, child becomes cellA
-                newConnectionIndex = addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
+                addAdhesionWithDirections(childAIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection, newConnectionIndex);
             }
             
             // If connection creation failed for Child A, skip logging but continue to allow Child B to inherit
@@ -801,13 +660,13 @@ void main() {
             ));
 
             // Preserve original side assignment: if neighbor was originally cellA, keep them as cellA
-            int newConnectionIndex;
+            int newConnectionIndex = int(adhesionAssignmentIndices[40*index+20+i]);
             if (neighborWasCellA) {
                 // Neighbor was cellA, child becomes cellB
-                newConnectionIndex = addAdhesionWithDirections(neighborIndex, childBIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection);
+                addAdhesionWithDirections(neighborIndex, childBIndex, oldConnection.modeIndex, neighborAnchorDirection, childAnchorDirection, newConnectionIndex);
             } else {
                 // Neighbor was cellB, child becomes cellA
-                newConnectionIndex = addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection);
+                addAdhesionWithDirections(childBIndex, neighborIndex, oldConnection.modeIndex, childAnchorDirection, neighborAnchorDirection, newConnectionIndex);
             }
             
             // If connection creation failed, skip logging but continue processing
@@ -842,8 +701,8 @@ void main() {
     uint childZoneA = classifyBondDirection(anchorDirectionA, mode.splitDirection.xyz, 5.0);
     uint childZoneB = classifyBondDirection(anchorDirectionB, mode.splitDirection.xyz, 5.0);
 
-    uint childToChildConnectionIndex = getNewAdhesionIndex();
-    if (childToChildConnectionIndex == uint(-1)) return;
+    uint childToChildConnectionIndex = adhesionAssignmentIndices[40*index+19];
+    if (childToChildConnectionIndex == 0xFFFFFFu) return;
 
     // Create child-to-child adhesion connection with properly classified zones
     connections[childToChildConnectionIndex] = AdhesionConnection(

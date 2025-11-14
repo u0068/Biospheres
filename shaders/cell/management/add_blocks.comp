@@ -1,0 +1,24 @@
+#version 460 core
+
+const uint WG_SIZE = 256u; // workgroup size
+layout(local_size_x = WG_SIZE) in;
+
+layout(std430, binding = 0) readonly buffer InPerBlockRanks {
+    uint perBlockRank[]; // the per-element rank computed in pass 2 (outRanks from pass2)
+};
+layout(std430, binding = 1) readonly buffer BlockOffsets {
+    uint blockOffsets[]; // exclusive prefix sum across blocks (output of pass 3)
+};
+layout(std430, binding = 2) writeonly buffer OutRanksGlobal {
+    uint outRanksGlobal[]; // final exclusive rank (global)
+};
+
+layout(push_constant) uniform PC { uint N; } pc;
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= pc.N) return;
+    uint group = gl_WorkGroupID.x;
+    uint offset = blockOffsets[group];
+    outRanksGlobal[gid] = perBlockRank[gid] + offset;
+}

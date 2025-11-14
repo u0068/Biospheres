@@ -162,6 +162,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="shaders\cell\management\add_blocks.comp" />
+    <ClCompile Include="shaders\cell\management\scan_blocks.comp" />
+    <ClCompile Include="shaders\cell\management\scatter_compact.comp" />
     <ClCompile Include="src\audio\audio_engine.cpp" />
     <ClCompile Include="src\rendering\camera\camera.cpp" />
     <ClCompile Include="src\simulation\cell\adhesion_manager.cpp" />
@@ -172,7 +175,6 @@
     <ClCompile Include="src\rendering\systems\frustum_culling.cpp" />
     <ClCompile Include="src\rendering\systems\brush_renderer.cpp" />
     <ClCompile Include="src\rendering\systems\visualization_renderer.cpp" />
-
     <ClCompile Include="src\simulation\cell\particle_system.cpp" />
     <ClCompile Include="src\simulation\cpu_preview\cpu_adhesion_connection_manager.cpp" />
     <ClCompile Include="src\simulation\cpu_preview\cpu_adhesion_force_calculator.cpp" />
@@ -262,6 +264,14 @@
     <ClInclude Include="src\rendering\core\mesh\sphere_mesh.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\cell\management\assign_additions.comp" />
+    <None Include="shaders\cell\management\clear_buffer.comp" />
+    <None Include="shaders\cell\management\execute_divisions.comp" />
+    <None Include="shaders\cell\management\generate_adhesion_free_slots.comp" />
+    <None Include="shaders\cell\management\generate_cell_free_slots.comp" />
+    <None Include="shaders\cell\management\make_reservations.comp" />
+    <None Include="shaders\cell\physics\momentum_correction.comp" />
+    <None Include="shaders\cell\physics\rigid_body_constraints.comp" />
     <None Include="shaders\shared_structs.glsl" />
     <None Include="shaders\cell\physics\cell_position_update.comp" />
     <None Include="shaders\cell\physics\adhesion_physics.comp" />

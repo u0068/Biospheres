@@ -52,6 +52,10 @@ struct CellManager
     
 	GLuint freeCellSlotBuffer{}; // Buffer for tracking free slots in the cell buffer
     GLuint freeAdhesionSlotBuffer{}; // Buffer for tracking free slots in the adhesion buffer
+    GLuint cellReservationBuffer{}; // Buffer for tracking reservations in the cell buffer
+    GLuint adhesionReservationBuffer{}; // Buffer for tracking reservations in the adhesion buffer
+    GLuint cellAssignmentBuffer{}; // Buffer for tracking assigned slots in the cell buffer
+    GLuint adhesionAssignmentBuffer{}; // Buffer for tracking assigned slots in the adhesion buffer
 
     // Cell data staging buffer for CPU reads (avoids GPU->CPU transfer warnings)
     GLuint stagingCellBuffer{};      // CPU-accessible cell data buffer
@@ -147,6 +151,13 @@ struct CellManager
     Shader* extractShader = nullptr; // For extracting instance data efficiently
     Shader* internalUpdateShader = nullptr;
     Shader* cellAdditionShader = nullptr;
+
+	Shader* generateCellFreeSlotsShader = nullptr;
+	Shader* generateAdhesionFreeSlotsShader = nullptr;
+	Shader* makeReservationsShader = nullptr;
+	Shader* compactionShader = nullptr;
+	Shader* assignAdditionsShader = nullptr;
+	Shader* executeDivisionsShader = nullptr;
 
     // Spatial partitioning compute shaders - MOVED TO SpatialGridSystem
     // These shaders are now managed by SpatialGridSystem

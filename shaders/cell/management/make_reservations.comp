@@ -1,0 +1,312 @@
+#version 460 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Cell data structure for compute shader
+struct ComputeCell {
+    // Physics:
+    vec4 positionAndMass;   // x, y, z, mass
+    vec4 velocity;          // x, y, z, padding
+    vec4 acceleration;      // x, y, z, padding
+    vec4 prevAcceleration;  // x, y, z, padding
+    vec4 orientation;       // Quaternion to (prevent gimbal lock) - affected by physics
+    vec4 genomeOrientation; // Quaternion for genome-derived orientation - NEVER affected by physics
+    vec4 angularVelocity;   // Pseudo-vector for easy math
+    vec4 angularAcceleration;       // Pseudo-vector for easy math
+    vec4 prevAngularAcceleration;   // Pseudo-vector for easy math
+    // Internal:
+    vec4 signallingSubstances;  // 4 substances for now
+    int modeIndex;              // absolute index of the cell's mode
+    float age;                  // also used for split timer
+    float toxins;
+    float nitrates;
+    int adhesionIndices[20];
+
+    // Padding to maintain 16-byte alignment for the entire struct
+    uint _padding[4];
+    
+};
+
+struct GPUModeAdhesionSettings
+{
+    int canBreak;                 // bool -> int (4 bytes)
+    float breakForce;
+    float restLength;
+    float linearSpringStiffness;
+    float linearSpringDamping;
+    float orientationSpringStiffness;
+    float orientationSpringDamping;
+    float maxAngularDeviation;
+    float twistConstraintStiffness;
+    float twistConstraintDamping;
+    int enableTwistConstraint;    // bool -> int (4 bytes)
+    int _padding;                 // pad to 48 bytes
+};
+
+// GPU Mode structure
+struct GPUMode {
+    vec4 color;
+    vec4 orientationA;
+    vec4 orientationB;
+    vec4 splitDirection;
+    ivec2 childModes;
+    float splitInterval;
+    int genomeOffset;
+    GPUModeAdhesionSettings adhesionSettings;
+    int parentMakeAdhesion;
+    int childAKeepAdhesion;
+    int childBKeepAdhesion;
+    int maxAdhesions;
+    float flagellocyteThrustForce;
+    float _padding1;
+    float _padding2;
+    float _padding3;
+};
+
+// Adhesion connection structure - stores permanent connections between sibling cells
+struct AdhesionConnection {
+    uint cellAIndex;      // Index of first cell in the connection
+    uint cellBIndex;      // Index of second cell in the connection
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
+    uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    uint zoneA;           // Zone classification for cell A (0=ZoneA, 1=ZoneB, 2=ZoneC)
+    uint zoneB;           // Zone classification for cell B (0=ZoneA, 1=ZoneB, 2=ZoneC)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
+    vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
+    uint _padding[4];     // Padding to ensure 16-byte alignment (96 bytes total)
+};
+
+layout(std430, binding = 0) restrict buffer ReadCellBuffer {
+    ComputeCell inputCells[];
+};
+
+layout(std430, binding = 1) restrict buffer modeBuffer {
+    GPUMode modes[];
+};
+
+layout(std430, binding = 2) restrict buffer WriteCellBuffer {
+    ComputeCell outputCells[];
+};
+
+layout(std430, binding = 3) coherent buffer CellCountBuffer {
+    uint totalCellCount;
+    uint liveCellCount;
+    uint totalAdhesionCount;
+    int freeAdhesionTop;
+};
+
+layout(std430, binding = 4) coherent buffer AdhesionConnectionBuffer {
+    AdhesionConnection connections[];
+};
+
+layout(std430, binding = 5) coherent buffer freeCellSlotBuffer {
+    uint freeCellSlotFlags[];
+};
+
+layout(std430, binding = 6) coherent buffer freeAdhesionSlotBuffer {
+    uint freeAdhesionSlotFlags[];
+};
+
+layout(std430, binding = 7) coherent buffer cellReservationBuffer {
+    uint cellReservationFlags[];
+};
+
+layout(std430, binding = 8) coherent buffer adhesionReservationBuffer {
+    uint adhesionReservationFlags[];
+};
+
+uniform float u_deltaTime;
+uniform int u_maxCells;
+uniform int u_maxAdhesions;
+
+// Hash function to generate a pseudo-random float in [0,1] from a uint seed
+float hash11(uint n) {
+    n = (n ^ 61u) ^ (n >> 16u);
+    n *= 9u;
+    n = n ^ (n >> 4u);
+    n *= 0x27d4eb2du;
+    n = n ^ (n >> 15u);
+    return float(n & 0x00FFFFFFu) / float(0x01000000u);
+}
+
+void removeAdhesion(int adhesionIndex){
+    if (adhesionIndex >= 0 && adhesionIndex < connections.length()) {
+        AdhesionConnection conn = connections[adhesionIndex];
+    }
+    
+    // Mark as inactive
+    
+    // Remove from cellA
+    connections[adhesionIndex].isActive = 0;
+    for (int i = 0; i < 20; ++i) {
+        if (outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] == adhesionIndex) {
+            outputCells[connections[adhesionIndex].cellAIndex].adhesionIndices[i] = -1;
+            break;
+        }
+    }
+
+    // Remove from cellB
+    for (int i = 0; i < 20; ++i) {
+        if (outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[i] == adhesionIndex) {
+            outputCells[connections[adhesionIndex].cellBIndex].adhesionIndices[i] = -1;
+            break;
+        }
+    }
+
+    freeAdhesionSlotFlags[adhesionIndex] = 1u;
+}
+
+float priority(uint seed) {
+    // Use cell index directly for fully deterministic ordering
+    // This ensures no priority collisions and strict sequential split order
+    return float(seed);
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= totalCellCount) return;
+
+    ComputeCell cell = inputCells[index];
+    GPUMode mode = modes[cell.modeIndex];
+
+    if (cell.age < mode.splitInterval) return;
+
+    int adhesionCount = 0;
+    for (int i = 0; i < 20; ++i) {
+        if (cell.adhesionIndices[i] >= 0) {
+            adhesionCount++;
+        }
+    }
+    if (adhesionCount >= mode.maxAdhesions) return; // Too many adhesions, cannot split
+
+    // Begin split logic
+
+    // === Compute Split Priority ===
+    float myPriority = priority(index);
+
+    // === Check Adhered Cells ===
+    for (int i = 0; i < 20; ++i) {
+        int adhesionIdx = cell.adhesionIndices[i];
+        if (adhesionIdx < 0) continue;
+
+        AdhesionConnection conn = connections[adhesionIdx];
+        if (conn.isActive == 0) continue;
+
+        uint otherIndex = (conn.cellAIndex == index) ? conn.cellBIndex : conn.cellAIndex;
+        ComputeCell other = inputCells[otherIndex];
+        GPUMode otherMode = modes[other.modeIndex];
+
+        if (other.age < otherMode.splitInterval) continue; // Other cell not splitting
+
+        // If other cell wants to split, compare priority
+        float otherPriority = priority(otherIndex);
+        if (otherPriority < myPriority) {
+            // Defer this split - other cell has higher priority (lower index)
+            return;
+        }
+    }
+
+    // First, check if we have space for a new cell
+    uint currentCount = totalCellCount;
+    if (currentCount >= u_maxCells) {
+        // No space available, cancel the split
+        return;
+    }
+    
+    // Reserve child cell slots
+    cellReservationFlags[2*index] = 1u; //child A
+    cellReservationFlags[2*index+1] = 1u; //child B
+    freeCellSlotFlags[index] = 0u; // Free up parent's slot, this line may be ommitted if its causing problems
+
+    // Inherit adhesions for the new child cells
+    for (int i = 0; i < 20; ++i) {
+        int oldAdhesionIndex = cell.adhesionIndices[i];
+        if (oldAdhesionIndex < 0) continue;
+
+        // Read connection data
+        AdhesionConnection oldConnection = connections[oldAdhesionIndex];
+
+        // Skip if this connection is already inactive
+        // This prevents creating duplicate connections when both cells try to split
+        if (oldConnection.isActive == 0) continue;
+
+
+        // Determine who the parent was connected to
+        uint neighborIndex = (oldConnection.cellAIndex == index)
+            ? oldConnection.cellBIndex
+            : oldConnection.cellAIndex;
+
+        // Remove the old connection (this marks it inactive, but we already have the data)
+        removeAdhesion(oldAdhesionIndex);
+
+        // Use stored anchor direction instead of spatial calculation
+        // Determine which anchor direction to use based on parent's role in the connection
+        bool isParentCellA = (oldConnection.cellAIndex == index);
+        vec3 localAnchorDirection = isParentCellA ? oldConnection.anchorDirectionA : oldConnection.anchorDirectionB;
+
+        // Use the stored zone information from the original connection instead of recalculating
+        // The original connection already has the correct zone classification
+
+        float splitMagnitude = length(mode.splitDirection.xyz);
+        vec3 splitDir_parent;
+        float splitOffset;
+        if (splitMagnitude < 0.0001) {
+            splitDir_parent = vec3(0.0, 0.0, 1.0);
+            splitOffset = 0.0;
+        } else {
+            splitDir_parent = mode.splitDirection.xyz / splitMagnitude;
+            splitOffset = splitMagnitude * 0.5;
+        }
+
+        vec3 bondDir_parent = normalize(localAnchorDirection);
+
+        float dotSplitBond = dot(splitDir_parent, bondDir_parent);
+        float equatorialThreshold = sin(radians(2.0));
+
+        uint parentZone;
+        if (abs(dotSplitBond) <= equatorialThreshold) {
+            parentZone = 2u;
+        } else if (dotSplitBond > 0.0) {
+            parentZone = 1u;
+        } else {
+            parentZone = 0u;
+        }
+
+        // Apply inheritance logic - simple zone-based rules
+        bool childAInherits = false;
+        bool childBInherits = false;
+        
+        // Zone classification determines inheritance
+        if (parentZone == 2u) {
+            // Zone C (equatorial) - both children inherit
+            childAInherits = (mode.childAKeepAdhesion == 1);
+            childBInherits = (mode.childBKeepAdhesion == 1);
+        } else if (parentZone == 1u) {
+            // Zone B - Child A inherits
+            childAInherits = (mode.childAKeepAdhesion == 1);
+        } else {
+            // Zone A - Child B inherits
+            childBInherits = (mode.childBKeepAdhesion == 1);
+        }
+
+        // Child A inheritance
+        if (childAInherits) {
+            adhesionReservationFlags[40*index+i] = 1u;
+        }
+
+        // Child B inheritance (Zone C bonds can also create this)
+        if (childBInherits) {
+            adhesionReservationFlags[40*index+20+i] = 1u;
+        }
+    }
+
+    // Now we need to add the adhesion connection between the children
+    if (mode.parentMakeAdhesion == 0)  return;
+
+    // Reserve adhesion between child A and child B
+    adhesionReservationFlags[40*index+19] = 1u;
+}

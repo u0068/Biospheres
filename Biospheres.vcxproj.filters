@@ -90,9 +90,6 @@
     <ClCompile Include="third_party\imgui\imgui_tables.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="src\simulation\cell\spatial_grid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\simulation\cell\particle_system.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -130,6 +127,63 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\ui\ui_keyframe_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\rendering\systems\brush_renderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\rendering\systems\visualization_renderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_adhesion_connection_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_adhesion_force_calculator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_division_inheritance_handler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_preview_system.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_simd_physics_engine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_soa_data_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_soa_validation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_triple_buffer_system.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_genome_converter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\cpu_preview\cpu_genome_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\simulation\spatial\spatial_grid_system.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\scene\scene_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui\ui_injection_controls.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\input\injection_system.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="shaders\cell\management\scan_blocks.comp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="shaders\cell\management\scatter_compact.comp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="shaders\cell\management\add_blocks.comp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -216,6 +270,54 @@
       <Filter>Header Files\imgui</Filter>
     </ClInclude>
     <ClInclude Include="src\simulation\cell\cell_selection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_adhesion_connection_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_adhesion_force_calculator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_division_inheritance_handler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_preview_system.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_simd_physics_engine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_soa_data_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_soa_validation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_triple_buffer_system.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_genome_converter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_genome_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_preview_system_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\cpu_preview\cpu_validation_harness.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\simulation\spatial\spatial_grid_system.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rendering\systems\brush_renderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rendering\systems\visualization_renderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\input\injection_system.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -328,5 +430,26 @@
     <None Include="tools\sync_structs.ps1">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="shaders\rendering\debug\brush.frag" />
+    <None Include="shaders\rendering\debug\brush.vert" />
+    <None Include="shaders\rendering\flagella\flagellocyte.vert" />
+    <None Include="shaders\rendering\flagella\flagellocyte.frag" />
+    <None Include="shaders\rendering\flagella\flagellocyte.geom" />
+    <None Include="shaders\volumetric\density_visualization.comp" />
+    <None Include="shaders\volumetric\density_wireframe.frag" />
+    <None Include="shaders\volumetric\density_wireframe.vert" />
+    <None Include="shaders\volumetric\flow_line_generation.comp" />
+    <None Include="shaders\volumetric\flow_line_render.frag" />
+    <None Include="shaders\volumetric\flow_line_render.vert" />
+    <None Include="shaders\volumetric\voxel_compaction.comp" />
+    <None Include="shaders\volumetric\update_indirect_commands.comp" />
+    <None Include="shaders\cell\management\make_reservations.comp" />
+    <None Include="shaders\cell\management\generate_adhesion_free_slots.comp" />
+    <None Include="shaders\cell\management\generate_cell_free_slots.comp" />
+    <None Include="shaders\cell\management\execute_divisions.comp" />
+    <None Include="shaders\cell\management\assign_additions.comp" />
+    <None Include="shaders\cell\physics\momentum_correction.comp" />
+    <None Include="shaders\cell\physics\rigid_body_constraints.comp" />
+    <None Include="shaders\cell\management\clear_buffer.comp" />
   </ItemGroup>
 </Project>

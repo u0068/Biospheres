@@ -1,0 +1,29 @@
+#version 460 core
+const uint WG_SIZE = 256u; // workgroup size
+layout(local_size_x = WG_SIZE) in;
+
+layout(std430, binding = 0) readonly buffer ReservationsCompact {
+    uint reservationsCompact[]; // reservation indices
+};
+layout(std430, binding = 1) readonly buffer FreeCompact {
+    uint freeCompact[]; // free slot indices
+};
+layout(std430, binding = 2) writeonly buffer Assignments {
+    uint assignments[]; // size N, default some sentinel like 0xFFFFFFFF if not assigned
+};
+layout(std430, binding = 3) readonly buffer Counts {
+    uint counts[]; // counts[0]=reservationCount, counts[1]=freeCount
+};
+layout(push_constant) uniform PC { uint N; } pc;
+
+void main() {
+    uint k = gl_GlobalInvocationID.x;
+    uint resCount = counts[0];
+    uint freeCount = counts[1];
+    uint M = (resCount < freeCount) ? resCount : freeCount;
+    if (k >= M) return;
+
+    uint resIdx = reservationsCompact[k];
+    uint freeSlot = freeCompact[k];
+    assignments[resIdx] = freeSlot; // deterministic mapping: k -> k
+}

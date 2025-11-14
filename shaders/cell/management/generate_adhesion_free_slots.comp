@@ -1,0 +1,50 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Adhesion connection structure - stores permanent connections between sibling cells
+struct AdhesionConnection {
+    uint cellAIndex;      // Index of first cell in the connection
+    uint cellBIndex;      // Index of second cell in the connection
+    uint modeIndex;       // Mode index for the connection ( to lookup adhesion settings )
+    uint isActive;        // Whether this connection is still active (1 = active, 0 = inactive)
+    uint zoneA;           // Zone classification for cell A (0=ZoneA, 1=ZoneB, 2=ZoneC)
+    uint zoneB;           // Zone classification for cell B (0=ZoneA, 1=ZoneB, 2=ZoneC)
+    vec3 anchorDirectionA; // Anchor direction for cell A in local cell space (normalized)
+    float paddingA;       // Padding to ensure 16-byte alignment
+    vec3 anchorDirectionB; // Anchor direction for cell B in local cell space (normalized)
+    float paddingB;       // Padding to ensure 16-byte alignment
+    vec4 twistReferenceA; // Reference quaternion for twist constraint for cell A (16 bytes)
+    vec4 twistReferenceB; // Reference quaternion for twist constraint for cell B (16 bytes)
+    uint _padding[2];     // Padding to ensure 16-byte alignment (96 bytes total)
+};
+
+// Shader storage buffer objects
+layout(std430, binding = 2) buffer AdhesionConnectionBuffer {
+    AdhesionConnection connections[];
+};
+
+layout(std430, binding = 1) restrict buffer ReservationsBuffer {
+    uint reservations[];
+};
+
+layout(std430, binding = 2) restrict buffer FreeSlotsBuffer {
+    uint freeSlots[];
+};
+
+layout(std430, binding = 3) restrict buffer AssignmentsBuffer {
+    uint assignments[];
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+
+    assignments[index] = 0xFFFFFFu; // initialize assignments to big number to indicate unassigned
+
+    if (connections[index].isActive == 1) { // check if adhesion is inactive
+      freeSlots[index] = index; // store the index of the free slot
+      // every thread has a unique value for index so no chance of conflict
+    } else {
+      freeSlots[index] = 0xFFFFFF; // mark the slot as occupied. big number ensures that it goes to the end of the array after sorting/compacting
+    }
+}

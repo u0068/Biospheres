@@ -1,0 +1,51 @@
+#version 460 core
+const uint WG_SIZE = 256u; // workgroup size
+layout(local_size_x = WG_SIZE) in;
+
+layout(std430, binding = 0) readonly buffer InFlags {
+    uint inFlags[]; // input flags (0 or 1)
+};
+layout(std430, binding = 1) writeonly buffer OutRanks {
+    uint outRanks[]; // exclusive rank results (per element)
+};
+layout(std430, binding = 2) writeonly buffer BlockSums {
+    uint blockSums[]; // one entry per workgroup
+};
+
+layout(push_constant) uniform PC { uint N; } pc;
+
+shared uint sdata[WG_SIZE];
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;      // global index
+    uint tid = gl_LocalInvocationID.x;       // thread index within group
+    uint group = gl_WorkGroupID.x;
+
+    // load input (0 if out of range)
+    uint val = 0u;
+    if (gid < pc.N) val = inFlags[gid];
+    sdata[tid] = val;
+    memoryBarrierShared();
+    barrier();
+
+    // inclusive Hillis-Steele scan in shared memory (WG_SIZE steps)
+    for (uint offset = 1u; offset < WG_SIZE; offset <<= 1u) {
+        uint add = 0u;
+        if (tid >= offset) add = sdata[tid - offset];
+        barrier();
+        sdata[tid] = sdata[tid] + add;
+        barrier();
+    }
+
+    // compute exclusive rank for this element: exclusive = inclusive - val
+    uint exclusive = 0u;
+    if (gid < pc.N) {
+        exclusive = sdata[tid] - val;
+        outRanks[gid] = exclusive;
+    }
+
+    // group sum: sdata[WG_SIZE-1] (OK because threads > groupSize had 0)
+    if (tid == WG_SIZE - 1u) {
+        blockSums[group] = sdata[tid];
+    }
+}

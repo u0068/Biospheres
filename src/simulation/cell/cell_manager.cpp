@@ -53,6 +53,13 @@ CellManager::CellManager()
     extractShader = new Shader("shaders/cell/management/extract_instances.comp");
     cellAdditionShader = new Shader("shaders/cell/management/apply_additions.comp");
 
+    generateCellFreeSlotsShader = new Shader("shaders/cell/management/generate_cell_free_slots.comp");
+    generateAdhesionFreeSlotsShader = new Shader("shaders/cell/management/generate_adhesion_free_slots.comp");
+    makeReservationsShader = new Shader("shaders/cell/management/make_reservations.comp");
+    compactionShader = new Shader("shaders/cell/management/bitonic_merge_sort.comp");
+    assignAdditionsShader = new Shader("shaders/cell/management/assign_additions.comp");
+    executeDivisionsShader = new Shader("shaders/cell/management/execute_divisions.comp");
+
     // Spatial grid shaders are now managed by SpatialGridSystem
     
     // Initialize gizmo shaders
@@ -157,6 +164,26 @@ void CellManager::cleanup()
         glDeleteBuffers(1, &freeAdhesionSlotBuffer);
         freeAdhesionSlotBuffer = 0;
     }
+    if (cellReservationBuffer != 0)
+    {
+        glDeleteBuffers(1, &cellReservationBuffer);
+        cellReservationBuffer = 0;
+    }
+    if (adhesionReservationBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionReservationBuffer);
+        adhesionReservationBuffer = 0;
+    }
+    if (cellAssignmentBuffer != 0)
+    {
+        glDeleteBuffers(1, &cellAssignmentBuffer);
+        cellAssignmentBuffer = 0;
+	}
+    if (adhesionAssignmentBuffer != 0)
+    {
+        glDeleteBuffers(1, &adhesionAssignmentBuffer);
+        adhesionAssignmentBuffer = 0;
+	}
     
     // Cleanup SpatialGridSystem (NEW)
     if (this->spatialGridSystem) {
@@ -295,6 +322,38 @@ void CellManager::initializeGPUBuffers()
         nullptr,
         GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
     );
+
+    // Create reservation buffers for storing indices of reserved cells and adhesions
+	glCreateBuffers(1, &cellReservationBuffer);
+    glNamedBufferData(
+        cellReservationBuffer,
+        gpuMainMaxCapacity * sizeof(int),
+        nullptr,
+        GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+	);
+	glCreateBuffers(1, &adhesionReservationBuffer);
+    glNamedBufferData(
+        adhesionReservationBuffer,
+        gpuMainMaxCapacity * config::MAX_ADHESIONS_PER_CELL * sizeof(int) / 2,
+        nullptr,
+		GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+	);
+
+	// Create assignment buffers for storing indices of assigned cells and adhesions
+	glCreateBuffers(1, &cellAssignmentBuffer);
+    glNamedBufferData(
+        cellAssignmentBuffer,
+        gpuMainMaxCapacity * sizeof(int),
+        nullptr,
+		GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+	);
+	glCreateBuffers(1, &adhesionAssignmentBuffer);
+    glNamedBufferData(
+        adhesionAssignmentBuffer,
+        gpuMainMaxCapacity * config::MAX_ADHESIONS_PER_CELL * sizeof(int) / 2,
+		nullptr,
+		GL_DYNAMIC_COPY  // GPU produces data, GPU consumes for rendering
+	);
 
     // Create single buffered genome buffer
     glCreateBuffers(1, &modeBuffer);
