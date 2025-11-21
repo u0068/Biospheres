@@ -1,5 +1,9 @@
 # Bio-Spheres
 
+# This prototype is no longer being developed!
+This version has become an unmanagable mess of spaghetti code, so we have decided to start over with rust and webgpu
+See the first rust prototype [here](https://github.com/Quadraxis77/BioSpheres-Q)
+
 A real-time 3D cellular simulation and visualization engine built with OpenGL and GPU compute shaders. Bio-Spheres simulates the behavior of biological cells in a 3D environment with physics, genetics, and interactive visualization.
 
 ![Bio-Spheres](https://img.shields.io/badge/OpenGL-4.6-blue) ![Bio-Spheres](https://img.shields.io/badge/C++-20-orange) ![Bio-Spheres](https://img.shields.io/badge/Windows-10+-green)
