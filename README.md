@@ -1,5 +1,5 @@
 # This prototype is no longer being developed!
-This version has become an unmanagable mess of spaghetti code, so we have decided to start over with rust and webgpu
+This version has become an unmanagable mess of spaghetti code, so we have decided to start over with rust and webgpu <br>
 See the first rust prototype [here](https://github.com/Quadraxis77/BioSpheres-Q)
 
 # Bio-Spheres
